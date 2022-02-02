@@ -1,7 +1,9 @@
+import sys
 import re
 import io
 from collections import namedtuple, OrderedDict
 import json
+import time
 
 ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
 String = namedtuple("String", ["s", "offset"])
@@ -25,24 +27,36 @@ def folder_search(dict_list, input, duuid):
                     folder_search(dic, input, duuid)
 
 
+def progress(count, total, status=''):
+    bar_len = 60
+    filled_len = int(round(bar_len * count / float(total)))
+
+    percents = round(100.0 * count / float(total), 1)
+    bar = '=' * filled_len + '-' * (bar_len - filled_len)
+
+    sys.stdout.write(f'[{bar}] {percents}% ...{status}\r')
+    sys.stdout.flush()
+
+
 dir_list = []
 folder_structure = OrderedDict()
 
 
 def main():
-    import sys
-
+    start = time.time()
     with open(sys.argv[1], 'rb') as f:
         b = f.read()
-
+    data = io.BytesIO(b)
+    total = len(b)
     for match in re.finditer(uuid4hex, b):
-        data = io.BytesIO(b)
         s = match.start()
+        count = s
         diroffset = s - 40
         data.seek(diroffset)
         duuid = data.read(32).decode("utf-8")
         if duuid not in dir_list:
             dir_list.append(duuid)
+        progress(count, total, status='Building folder list. Pleas wait....')
 
     folder_structure = {'Folder_UUID': '',
                         'Object_UUID': dir_list[0],
@@ -52,8 +66,8 @@ def main():
                         }
 
     for match in re.finditer(uuid4hex, b):
-        data = io.BytesIO(b)
         s = match.start()
+        count = s
         diroffset = s - 40
         objoffset = s - 79
         data.seek(diroffset)
@@ -82,6 +96,7 @@ def main():
                 folder_structure['Children'].append(input)
             else:
                 folder_search(folder_structure, input, duuid)
+        progress(count, total, status='Recreating OneDrive folder. Pleas wait....')
 
     json_object = json.dumps(folder_structure,
                              sort_keys=False,
@@ -89,7 +104,8 @@ def main():
                              separators=(',', ': ')
                              )
     print(json_object)
-
+    print(f'\033[1;37mProcessed file in {format((time.time() - start), ".4f")} seconds \033[1;0m')
+    sys.exit()
 
 if __name__ == '__main__':
     main()

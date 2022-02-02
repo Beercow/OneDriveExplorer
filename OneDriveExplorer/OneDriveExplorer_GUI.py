@@ -35,16 +35,25 @@ def main():
     def parent_child(d, parent_id=None):
         if parent_id is None:
             # This line is only for the first call of the function
-            parent_id = tv.insert("", "end", text=d['Name'], values=(d['Folder_UUID'],d['Object_UUID']))
+            parent_id = tv.insert("", "end", text=d['Name'], values=(d['Folder_UUID'], d['Object_UUID'], d['Name'], d['Type'], len(d['Children'])))
 
         for c in d['Children']:
             # Here we create a new row object in the TreeView and pass its return value for recursion
             # The return value will be used as the argument for the first parameter of this same line of code after recursion
-            parent_child(c, tv.insert(parent_id, "end", text=c['Name'], values=(c['Folder_UUID'],c['Object_UUID'])))
+            parent_child(c, tv.insert(parent_id, "end", text=c['Name'], values=(c['Folder_UUID'], c['Object_UUID'], c['Name'], c['Type'], len(c['Children']))))
 
     def selectItem(a):
         curItem = tv.focus()
-        print(tv.item(curItem))
+#        print(tv.item(curItem))
+        values = tv.item(curItem, 'values')
+        details.config(state='normal')
+        details.delete('1.0', tk.END)
+        line = f'Name: {values[2]}\nType: {values[3]}\nFolder_UUID: {values[0]}\nObject_UUID: {values[1]}'
+        if values[3] == 'Folder':
+            line += f'\n\n# Children: {values[4]}'
+        details.insert(tk.END, line)
+        details.see(tk.END)
+        details.config(state='disable')
 
     import sys
 
@@ -137,13 +146,37 @@ def main():
     main_frame.grid_rowconfigure(0, weight=1)
     main_frame.grid_columnconfigure(0, weight=1)
 
-    tv = ttk.Treeview(main_frame, selectmode='browse')
+    pw = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+
+    tv_frame = ttk.Frame(main_frame)
+    tv = ttk.Treeview(tv_frame, show='tree', selectmode='browse')
+    scrollb = ttk.Scrollbar(tv_frame, orient="vertical", command=tv.yview)
+    tabControl = ttk.Notebook(main_frame)
+    tab1 = ttk.Frame(tabControl)
+    tabControl.add(tab1, text='Details')
     sg = ttk.Sizegrip(main_frame)
+
+    details = tk.Text(tab1, undo=False, width=50, state='disable')
+    tv.configure(yscrollcommand=scrollb.set)
+
+    tabControl.grid_rowconfigure(0, weight=1)
+    tabControl.grid_columnconfigure(0, weight=1)
+    tab1.grid_rowconfigure(0, weight=1)
+    tab1.grid_columnconfigure(0, weight=1)
+
+    tv_frame.grid_rowconfigure(0, weight=1)
+    tv_frame.grid_columnconfigure(0, weight=1)
 
     parent_child(folder_structure)
 
+    pw.add(tv_frame)
+    pw.add(tabControl)
+
     tv.grid(row=0, column=0, sticky="nsew")
-    sg.grid(row=1, sticky='se')
+    scrollb.grid(row=0, column=1, sticky="nsew")
+    sg.grid(row=1, columnspan=3, sticky='se')
+    details.grid(row=0, column=0, sticky="nsew")
+    pw.grid(row=0, column=0, sticky="nsew")
 
     tv.bind('<<TreeviewSelect>>', selectItem)
 
