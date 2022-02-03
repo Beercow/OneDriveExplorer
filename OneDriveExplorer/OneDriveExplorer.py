@@ -1,10 +1,16 @@
 import sys
 import re
 import io
-from collections import namedtuple, OrderedDict
+from collections import namedtuple
 import json
-import time
+import argparse
 
+__author__ = "Brian Maloney"
+__version__ = "2022.02.03"
+__email__ = "bmmaloney97@gmail.com"
+
+dir_list = []
+folder_structure = {}
 ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
 String = namedtuple("String", ["s", "offset"])
 uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
@@ -38,15 +44,13 @@ def progress(count, total, status=''):
     sys.stdout.flush()
 
 
-dir_list = []
-folder_structure = OrderedDict()
-
-
-def main():
-    start = time.time()
-    with open(sys.argv[1], 'rb') as f:
+def parse_onedrive(usercid, outfile):
+    with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
+    if data.read(11) != b'4\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01':
+        print('Not a valid OneDrive file')
+        sys.exit()
     total = len(b)
     for match in re.finditer(uuid4hex, b):
         s = match.start()
@@ -57,6 +61,8 @@ def main():
         if duuid not in dir_list:
             dir_list.append(duuid)
         progress(count, total, status='Building folder list. Pleas wait....')
+
+    print('\n')
 
     folder_structure = {'Folder_UUID': '',
                         'Object_UUID': dir_list[0],
@@ -98,14 +104,44 @@ def main():
                 folder_search(folder_structure, input, duuid)
         progress(count, total, status='Recreating OneDrive folder. Pleas wait....')
 
+    print('\n')
+
     json_object = json.dumps(folder_structure,
                              sort_keys=False,
                              indent=4,
                              separators=(',', ': ')
                              )
-    print(json_object)
-    print(f'\033[1;37mProcessed file in {format((time.time() - start), ".4f")} seconds \033[1;0m')
+    output = open(outfile, 'w')
+    output.write(json_object)
     sys.exit()
+
+
+def main():
+    banner = r'''
+     _____                ___                           ___                 _                            
+    (  _  )              (  _`\        _               (  _`\              (_ )                          
+    | ( ) |  ___     __  | | ) | _ __ (_) _   _    __  | (_(_)       _ _    | |    _    _ __   __   _ __ 
+    | | | |/' _ `\ /'__`\| | | )( '__)| |( ) ( ) /'__`\|  _)_ (`\/')( '_`\  | |  /'_`\ ( '__)/'__`\( '__)
+    | (_) || ( ) |(  ___/| |_) || |   | || \_/ |(  ___/| (_( ) >  < | (_) ) | | ( (_) )| |  (  ___/| |   
+    (_____)(_) (_)`\____)(____/'(_)   (_)`\___/'`\____)(____/'(_/\_)| ,__/'(___)`\___/'(_)  `\____)(_) v{}  
+                                                                    | |        by @bmmaloney97        
+                                                                    (_)               
+    '''.format(__version__)
+
+    print(banner)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
+    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name", default="OneDrive.json")
+
+    if len(sys.argv) == 1:
+        parser.print_help()
+        parser.exit()
+
+    args = parser.parse_args()
+
+    if args.file:
+        parse_onedrive(args.file, args.outfile)
+
 
 if __name__ == '__main__':
     main()
