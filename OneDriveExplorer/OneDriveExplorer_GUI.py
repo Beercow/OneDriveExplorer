@@ -113,6 +113,11 @@ def folder_search(dict_list, input, duuid):
                     folder_search(dic, input, duuid)
 
 
+def clear_all():
+    for item in tv.get_children():
+        tv.delete(item)
+
+
 def progress(total, count, ltext):
     if pb['value'] != 100:
         pb['value'] = round(100.0 * count / float(total))
@@ -120,12 +125,16 @@ def progress(total, count, ltext):
 
 
 def parse_onederive(usercid):
+    clear_all()
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    details.config(state='disable')
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Tools", state="disabled")
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
-    if data.read(11) != b'4\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01':
+    if data.read(11)[10] != 1:
         value_label['text'] = 'Not a valid OneDrive file'
         menubar.entryconfig("File", state="normal")
         menubar.entryconfig("Tools", state="normal")

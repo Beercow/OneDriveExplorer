@@ -48,7 +48,7 @@ def parse_onedrive(usercid, outfile, pretty):
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
-    if data.read(11) != b'4\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01':
+    if data.read(11)[10] != 1:
         print('Not a valid OneDrive file')
         sys.exit()
     total = len(b)
