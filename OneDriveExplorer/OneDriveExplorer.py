@@ -44,7 +44,7 @@ def progress(count, total, status=''):
     sys.stdout.flush()
 
 
-def parse_onedrive(usercid, outfile):
+def parse_onedrive(usercid, outfile, pretty):
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
@@ -106,11 +106,15 @@ def parse_onedrive(usercid, outfile):
 
     print('\n')
 
-    json_object = json.dumps(folder_structure,
-                             sort_keys=False,
-                             indent=4,
-                             separators=(',', ': ')
-                             )
+    if pretty:
+        json_object = json.dumps(folder_structure,
+                                 sort_keys=False,
+                                 indent=4,
+                                 separators=(',', ': ')
+                                 )
+    else:
+        json_object = json.dumps(folder_structure)
+
     output = open(outfile, 'w')
     output.write(json_object)
     sys.exit()
@@ -118,20 +122,21 @@ def parse_onedrive(usercid, outfile):
 
 def main():
     banner = r'''
-     _____                ___                           ___                 _                            
-    (  _  )              (  _`\        _               (  _`\              (_ )                          
-    | ( ) |  ___     __  | | ) | _ __ (_) _   _    __  | (_(_)       _ _    | |    _    _ __   __   _ __ 
+     _____                ___                           ___                 _
+    (  _  )              (  _`\        _               (  _`\              (_ )
+    | ( ) |  ___     __  | | ) | _ __ (_) _   _    __  | (_(_)       _ _    | |    _    _ __   __   _ __
     | | | |/' _ `\ /'__`\| | | )( '__)| |( ) ( ) /'__`\|  _)_ (`\/')( '_`\  | |  /'_`\ ( '__)/'__`\( '__)
-    | (_) || ( ) |(  ___/| |_) || |   | || \_/ |(  ___/| (_( ) >  < | (_) ) | | ( (_) )| |  (  ___/| |   
-    (_____)(_) (_)`\____)(____/'(_)   (_)`\___/'`\____)(____/'(_/\_)| ,__/'(___)`\___/'(_)  `\____)(_) v{}  
-                                                                    | |        by @bmmaloney97        
-                                                                    (_)               
+    | (_) || ( ) |(  ___/| |_) || |   | || \_/ |(  ___/| (_( ) >  < | (_) ) | | ( (_) )| |  (  ___/| |
+    (_____)(_) (_)`\____)(____/'(_)   (_)`\___/'`\____)(____/'(_/\_)| ,__/'(___)`\___/'(_)  `\____)(_) v{}
+                                                                    | |        by @bmmaloney97
+                                                                    (_)
     '''.format(__version__)
 
     print(banner)
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
     parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name", default="OneDrive.json")
+    parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -140,7 +145,7 @@ def main():
     args = parser.parse_args()
 
     if args.file:
-        parse_onedrive(args.file, args.outfile)
+        parse_onedrive(args.file, args.outfile, args.pretty)
 
 
 if __name__ == '__main__':
