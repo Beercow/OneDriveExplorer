@@ -7,6 +7,11 @@ import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
 from tkinter import filedialog
+import threading
+
+__author__ = "Brian Maloney"
+__version__ = "2022.02.03"
+__email__ = "bmmaloney97@gmail.com"
 
 
 class quit:
@@ -109,19 +114,23 @@ def folder_search(dict_list, input, duuid):
 
 
 def progress(total, count, ltext):
-    print(pb['value'])
     if pb['value'] != 100:
         pb['value'] = round(100.0 * count / float(total))
         value_label['text'] = f"{ltext}: {pb['value']}%"
-        root.update_idletasks()
 
 
 def parse_onederive(usercid):
+    menubar.entryconfig("File", state="disabled")
+    menubar.entryconfig("Tools", state="disabled")
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
+    if data.read(11) != b'4\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01':
+        value_label['text'] = 'Not a valid OneDrive file'
+        menubar.entryconfig("File", state="normal")
+        menubar.entryconfig("Tools", state="normal")
+        return
     total = len(b)
-
     for match in re.finditer(uuid4hex, b):
         s = match.start()
         count = s
@@ -174,6 +183,11 @@ def parse_onederive(usercid):
             else:
                 folder_search(folder_structure, input, duuid)
         progress(total, count, 'Recreating OneDrive folder')
+
+    pb['value'] = 0
+    value_label['text'] = 'Complete!'
+    menubar.entryconfig("File", state="normal")
+    menubar.entryconfig("Tools", state="normal")
     parent_child(folder_structure)
 
 
@@ -208,7 +222,7 @@ def open_dat():
                                           filetypes=(("OneDrive dat file", "*.dat"),))
 
     if filename:
-        parse_onederive(filename)
+        threading.Thread(target=parse_onederive, args=(filename,), daemon=True).start()
 
 
 def save_settings():
@@ -219,7 +233,7 @@ def save_settings():
 
 root = ThemedTk()
 ttk.Style().theme_use(menu_data['theme'])
-root.title('OneDriveExplorer')
+root.title(f'OneDriveExplorer v{__version__}')
 root.iconbitmap('Images/OneDrive.ico')
 root.protocol("WM_DELETE_WINDOW", lambda: quit(root))
 
@@ -247,6 +261,8 @@ menubar.add_cascade(label="File",
                     menu=file_menu)
 menubar.add_cascade(label="Tools",
                     menu=tool_menu)
+submenu.entryconfig(submenu.index(ttk.Style().theme_use()),
+                    background='grey')
 
 outer_frame = ttk.Frame(root)
 main_frame = ttk.Frame(outer_frame,
@@ -292,7 +308,7 @@ scrollb.grid(row=0, column=1, sticky="nsew")
 sg.grid(row=1, column=2, sticky='se')
 details.grid(row=0, column=0, sticky="nsew")
 pb.grid(row=1, column=1, sticky='se')
-value_label.grid(row=1, column=0)
+value_label.grid(row=1, column=0, sticky='se')
 pw.grid(row=0, column=0, columnspan=3, sticky="nsew")
 
 tv.bind('<<TreeviewSelect>>', selectItem)
