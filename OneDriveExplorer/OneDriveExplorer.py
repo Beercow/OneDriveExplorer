@@ -6,31 +6,33 @@ import json
 import argparse
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.03"
+__version__ = "2022.02.08"
 __email__ = "bmmaloney97@gmail.com"
 
 dir_list = []
 folder_structure = {}
 ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
 String = namedtuple("String", ["s", "offset"])
-uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
 
 
-def unicode_strings(buf, n=4):
+def unicode_strings(buf, n=2):
     reg = rb"((?:[%s]\x00){%d,})" % (ASCII_BYTE, n)
     uni_re = re.compile(reg)
     match = uni_re.search(buf)
     return match.group().decode("utf-16")
 
 
-def folder_search(dict_list, input, duuid):
+def folder_search(dict_list, input, duuid, added):
     for k, v in dict_list.items():
         if(isinstance(v, list)):
             for dic in v:
-                if duuid in dic['Object_UUID']:
+                if duuid == dic['Object_UUID']:
                     dic['Children'].append(input)
+                    added = True
                 else:
-                    folder_search(dic, input, duuid)
+                    r = folder_search(dic, input, duuid, added)
+                    added = r
+    return added
 
 
 def progress(count, total, status=''):
@@ -45,19 +47,25 @@ def progress(count, total, status=''):
 
 
 def parse_onedrive(usercid, outfile, pretty):
+    misfits = []
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
     if data.read(11)[10] != 1:
         print('Not a valid OneDrive file')
         sys.exit()
+    data.seek(-7, 1)
+    if data.read(1) == b'\x01':
+        uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
+    else:
+        uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
     total = len(b)
     for match in re.finditer(uuid4hex, b):
         s = match.start()
         count = s
         diroffset = s - 40
         data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8")
+        duuid = data.read(32).decode("utf-8").strip('\u0000')
         if duuid not in dir_list:
             dir_list.append(duuid)
         progress(count, total, status='Building folder list. Please wait....')
@@ -72,14 +80,15 @@ def parse_onedrive(usercid, outfile, pretty):
                         }
 
     for match in re.finditer(uuid4hex, b):
+        added = False
         s = match.start()
         count = s
         diroffset = s - 40
         objoffset = s - 79
         data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8")
+        duuid = data.read(32).decode("utf-8").strip('\u0000')
         data.seek(objoffset)
-        ouuid = data.read(32).decode("utf-8")
+        ouuid = data.read(32).decode("utf-8").strip('\u0000')
         name = unicode_strings(data.read())
         if ouuid in dir_list:
             input = {'Folder_UUID': duuid,
@@ -88,21 +97,34 @@ def parse_onedrive(usercid, outfile, pretty):
                      'Name': name,
                      'Children': []
                      }
-            if duuid in folder_structure['Object_UUID']:
+            if duuid == folder_structure['Object_UUID']:
                 folder_structure['Children'].append(input)
             else:
-                folder_search(folder_structure, input, duuid)
+                added = folder_search(folder_structure, input, duuid, added)
+                if not added:
+                    misfits.append(input)
         else:
             input = {'Folder_UUID': duuid,
                      'Object_UUID': ouuid,
                      'Type': 'File',
                      'Name': name
                      }
-            if duuid in folder_structure['Object_UUID']:
+            if duuid == folder_structure['Object_UUID']:
                 folder_structure['Children'].append(input)
             else:
-                folder_search(folder_structure, input, duuid)
+                added = folder_search(folder_structure, input, duuid, added)
+                if not added:
+                    misfits.append(input)
         progress(count, total, status='Recreating OneDrive folder. Please wait....')
+
+    print('\n')
+
+    total = len(misfits)
+    count = 0
+    for i in misfits:
+        added = folder_search(folder_structure, i, i['Folder_UUID'], added)
+        count += 1
+        progress(count, total, status='Adding missing files/folders. Please wait....')
 
     print('\n')
 

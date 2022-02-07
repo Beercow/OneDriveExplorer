@@ -10,7 +10,7 @@ from tkinter import filedialog
 import threading
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.03"
+__version__ = "2022.02.08"
 __email__ = "bmmaloney97@gmail.com"
 
 
@@ -103,19 +103,21 @@ def unicode_strings(buf, n=4):
     return match.group().decode("utf-16")
 
 
-def folder_search(dict_list, input, duuid):
+def folder_search(dict_list, input, duuid, added):
     for k, v in dict_list.items():
         if(isinstance(v, list)):
             for dic in v:
-                if duuid in dic['Object_UUID']:
+                if duuid == dic['Object_UUID']:
                     dic['Children'].append(input)
+                    added = True
                 else:
-                    folder_search(dic, input, duuid)
+                    r = folder_search(dic, input, duuid, added)
+                    added = r
+    return added
 
 
 def clear_all():
-    for item in tv.get_children():
-        tv.delete(item)
+    tv.delete(*tv.get_children())
 
 
 def progress(total, count, ltext):
@@ -131,6 +133,7 @@ def parse_onederive(usercid):
     details.config(state='disable')
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Tools", state="disabled")
+    misfits = []
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
@@ -139,13 +142,18 @@ def parse_onederive(usercid):
         menubar.entryconfig("File", state="normal")
         menubar.entryconfig("Tools", state="normal")
         return
+    data.seek(-7, 1)
+    if data.read(1) == b'\x01':
+        uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
+    else:
+        uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
     total = len(b)
     for match in re.finditer(uuid4hex, b):
         s = match.start()
         count = s
         diroffset = s - 40
         data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8")
+        duuid = data.read(32).decode("utf-8").strip('\u0000')
         if duuid not in dir_list:
             dir_list.append(duuid)
         progress(total, count, 'Building folder list')
@@ -160,14 +168,15 @@ def parse_onederive(usercid):
     pb['value'] = 0
 
     for match in re.finditer(uuid4hex, b):
+        added = False
         s = match.start()
         count = s
         diroffset = s - 40
         objoffset = s - 79
         data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8")
+        duuid = data.read(32).decode("utf-8").strip('\u0000')
         data.seek(objoffset)
-        ouuid = data.read(32).decode("utf-8")
+        ouuid = data.read(32).decode("utf-8").strip('\u0000')
         name = unicode_strings(data.read())
         if ouuid in dir_list:
             input = {'Folder_UUID': duuid,
@@ -176,10 +185,12 @@ def parse_onederive(usercid):
                      'Name': name,
                      'Children': []
                      }
-            if duuid in folder_structure['Object_UUID']:
+            if duuid == folder_structure['Object_UUID']:
                 folder_structure['Children'].append(input)
             else:
-                folder_search(folder_structure, input, duuid)
+                added = folder_search(folder_structure, input, duuid, added)
+                if not added:
+                    misfits.append(input)
         else:
             input = {'Folder_UUID': duuid,
                      'Object_UUID': ouuid,
@@ -187,17 +198,26 @@ def parse_onederive(usercid):
                      'Name': name,
                      'Children': []
                      }
-            if duuid in folder_structure['Object_UUID']:
+            if duuid == folder_structure['Object_UUID']:
                 folder_structure['Children'].append(input)
             else:
-                folder_search(folder_structure, input, duuid)
+                added = folder_search(folder_structure, input, duuid, added)
+                if not added:
+                    misfits.append(input)
         progress(total, count, 'Recreating OneDrive folder')
 
-    pb['value'] = 0
-    value_label['text'] = 'Complete!'
+    total = len(misfits)
+    count = 0
+    for i in misfits:
+        added = folder_search(folder_structure, i, i['Folder_UUID'], added)
+        count += 1
+        progress(count, total, 'Adding missing files/folders')
+
     menubar.entryconfig("File", state="normal")
     menubar.entryconfig("Tools", state="normal")
     parent_child(folder_structure)
+    pb['value'] = 0
+    value_label['text'] = 'Complete!'
 
 
 def parent_child(d, parent_id=None):
