@@ -14,4 +14,5 @@ The GUI consists of two panes: the folder structure on the left and details on t
 ![](./Images/gui.png)
 
 # Todo
-- [ ] Add support for OneDrive personal
+- [x] Add support for OneDrive personal
+- [ ] GUI not populating correctly when opening different dat file
