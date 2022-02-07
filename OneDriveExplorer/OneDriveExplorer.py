@@ -60,7 +60,7 @@ def parse_onedrive(usercid, outfile, pretty):
         duuid = data.read(32).decode("utf-8")
         if duuid not in dir_list:
             dir_list.append(duuid)
-        progress(count, total, status='Building folder list. Pleas wait....')
+        progress(count, total, status='Building folder list. Please wait....')
 
     print('\n')
 
@@ -102,7 +102,7 @@ def parse_onedrive(usercid, outfile, pretty):
                 folder_structure['Children'].append(input)
             else:
                 folder_search(folder_structure, input, duuid)
-        progress(count, total, status='Recreating OneDrive folder. Pleas wait....')
+        progress(count, total, status='Recreating OneDrive folder. Please wait....')
 
     print('\n')
 
