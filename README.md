@@ -10,7 +10,7 @@ To use OneDriveExporer, simply provide the `.\<UserCid>.dat` file to the `-f` ar
 OneDriveExplorer will produce a JSON file called OneDrive.json containing the folder structure. The `--pretty` option can be used to output the JSON into a more human readable layout.
 ![](./Images/json.png)
 ## GUI
-The GUI consists of two panes: the folder structure on the left and details on the right. By cicking on one of the entries in the left pane, the details pane will populate with various data such as name, whether it is a file or folder, UUIDs and the number of children, if any.
+The GUI consists of two panes: the folder structure on the left and details on the right. By clicking on one of the entries in the left pane, the details pane will populate with various data such as name, whether it is a file or folder, UUIDs and the number of children, if any.
 ![](./Images/gui.png)
 
 # Todo
