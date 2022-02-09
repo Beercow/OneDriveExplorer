@@ -6,11 +6,9 @@ import json
 import argparse
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.08"
+__version__ = "2022.02.09"
 __email__ = "bmmaloney97@gmail.com"
 
-dir_list = []
-folder_structure = {}
 ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
 String = namedtuple("String", ["s", "offset"])
 
@@ -19,7 +17,8 @@ def unicode_strings(buf, n=2):
     reg = rb"((?:[%s]\x00){%d,})" % (ASCII_BYTE, n)
     uni_re = re.compile(reg)
     match = uni_re.search(buf)
-    return match.group().decode("utf-16")
+    if match:
+        return match.group().decode("utf-16")
 
 
 def folder_search(dict_list, input, duuid, added):
@@ -47,17 +46,14 @@ def progress(count, total, status=''):
 
 
 def parse_onedrive(usercid, outfile, pretty):
+    dir_list = []
     misfits = []
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
-    if data.read(11)[10] != 1:
-        print('Not a valid OneDrive file')
-        sys.exit()
-    data.seek(-7, 1)
-    if data.read(1) == b'\x01':
-        uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
-    else:
+    uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
+    personal = uuid4hex.search(b)
+    if not personal:
         uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
     total = len(b)
     for match in re.finditer(uuid4hex, b):
@@ -89,32 +85,22 @@ def parse_onedrive(usercid, outfile, pretty):
         duuid = data.read(32).decode("utf-8").strip('\u0000')
         data.seek(objoffset)
         ouuid = data.read(32).decode("utf-8").strip('\u0000')
+        type = 'File'
         name = unicode_strings(data.read())
         if ouuid in dir_list:
-            input = {'Folder_UUID': duuid,
-                     'Object_UUID': ouuid,
-                     'Type': 'Folder',
-                     'Name': name,
-                     'Children': []
-                     }
-            if duuid == folder_structure['Object_UUID']:
-                folder_structure['Children'].append(input)
-            else:
-                added = folder_search(folder_structure, input, duuid, added)
-                if not added:
-                    misfits.append(input)
+            type = 'Folder'
+        input = {'Folder_UUID': duuid,
+                 'Object_UUID': ouuid,
+                 'Type': type,
+                 'Name': name,
+                 'Children': []
+                 }
+        if duuid == folder_structure['Object_UUID']:
+            folder_structure['Children'].append(input)
         else:
-            input = {'Folder_UUID': duuid,
-                     'Object_UUID': ouuid,
-                     'Type': 'File',
-                     'Name': name
-                     }
-            if duuid == folder_structure['Object_UUID']:
-                folder_structure['Children'].append(input)
-            else:
-                added = folder_search(folder_structure, input, duuid, added)
-                if not added:
-                    misfits.append(input)
+            added = folder_search(folder_structure, input, duuid, added)
+            if not added:
+                misfits.append(input)
         progress(count, total, status='Recreating OneDrive folder. Please wait....')
 
     print('\n')
@@ -157,7 +143,7 @@ def main():
     print(banner)
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
-    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When present, overrides default name", default="OneDrive.json")
+    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name", default="OneDrive.json")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
 
     if len(sys.argv) == 1:

@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import io
 import json
@@ -10,7 +11,7 @@ from tkinter import filedialog
 import threading
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.08"
+__version__ = "2022.02.09"
 __email__ = "bmmaloney97@gmail.com"
 
 
@@ -82,9 +83,15 @@ class quit:
 ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
 String = namedtuple("String", ["s", "offset"])
 uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
-dir_list = []
-folder_structure = {}
+found = []
 
+if getattr(sys, 'frozen', False):
+    # If the application is run as a bundle, the PyInstaller bootloader
+    # extends the sys module by a flag frozen=True and sets the app 
+    # path into variable _MEIPASS'.
+    application_path = sys._MEIPASS
+else:
+    application_path = os.path.dirname(os.path.abspath(__file__))
 
 if os.path.isfile('ode.settings'):
     with open("ode.settings", "r") as jsonfile:
@@ -96,11 +103,34 @@ else:
         json.dump(menu_data, jsonfile)
 
 
+def search(item=''):
+    query = search_entry.get()
+    if len(query) == 0:
+        return
+    children = tv.get_children(item)
+    for child in children:
+        for x in tv.item(child)['values']:
+            if query.lower() in str(x).lower():
+                tv.see(child)
+                tv.item(child, tags="yellow")
+                found.append(child)
+        search(item=child)
+
+
+def clear_search():
+    for hit in found:
+        tv.item(hit, tags=())
+    found.clear()
+    if len(tv.selection()) > 0:
+        tv.selection_remove(tv.selection()[0])
+
+
 def unicode_strings(buf, n=4):
     reg = rb"((?:[%s]\x00){%d,})" % (ASCII_BYTE, n)
     uni_re = re.compile(reg)
     match = uni_re.search(buf)
-    return match.group().decode("utf-16")
+    if match:
+        return match.group().decode("utf-16")
 
 
 def folder_search(dict_list, input, duuid, added):
@@ -133,19 +163,14 @@ def parse_onederive(usercid):
     details.config(state='disable')
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Tools", state="disabled")
+    dir_list = []
     misfits = []
     with open(usercid, 'rb') as f:
         b = f.read()
     data = io.BytesIO(b)
-    if data.read(11)[10] != 1:
-        value_label['text'] = 'Not a valid OneDrive file'
-        menubar.entryconfig("File", state="normal")
-        menubar.entryconfig("Tools", state="normal")
-        return
-    data.seek(-7, 1)
-    if data.read(1) == b'\x01':
-        uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
-    else:
+    uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
+    personal = uuid4hex.search(b)
+    if not personal:
         uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
     total = len(b)
     for match in re.finditer(uuid4hex, b):
@@ -177,33 +202,22 @@ def parse_onederive(usercid):
         duuid = data.read(32).decode("utf-8").strip('\u0000')
         data.seek(objoffset)
         ouuid = data.read(32).decode("utf-8").strip('\u0000')
+        type = 'File'
         name = unicode_strings(data.read())
         if ouuid in dir_list:
-            input = {'Folder_UUID': duuid,
-                     'Object_UUID': ouuid,
-                     'Type': 'Folder',
-                     'Name': name,
-                     'Children': []
-                     }
-            if duuid == folder_structure['Object_UUID']:
-                folder_structure['Children'].append(input)
-            else:
-                added = folder_search(folder_structure, input, duuid, added)
-                if not added:
-                    misfits.append(input)
+            type = 'Folder'
+        input = {'Folder_UUID': duuid,
+                 'Object_UUID': ouuid,
+                 'Type': type,
+                 'Name': name,
+                 'Children': []
+                 }
+        if duuid == folder_structure['Object_UUID']:
+            folder_structure['Children'].append(input)
         else:
-            input = {'Folder_UUID': duuid,
-                     'Object_UUID': ouuid,
-                     'Type': 'File',
-                     'Name': name,
-                     'Children': []
-                     }
-            if duuid == folder_structure['Object_UUID']:
-                folder_structure['Children'].append(input)
-            else:
-                added = folder_search(folder_structure, input, duuid, added)
-                if not added:
-                    misfits.append(input)
+            added = folder_search(folder_structure, input, duuid, added)
+            if not added:
+                misfits.append(input)
         progress(total, count, 'Recreating OneDrive folder')
 
     total = len(misfits)
@@ -232,23 +246,25 @@ def parent_child(d, parent_id=None):
 
 
 def selectItem(a):
-    curItem = tv.focus()
-
+    curItem = tv.selection()
     values = tv.item(curItem, 'values')
     details.config(state='normal')
     details.delete('1.0', tk.END)
-    line = f'Name: {values[2]}\nType: {values[3]}\nFolder_UUID: {values[0]}\nObject_UUID: {values[1]}'
-    if values[3] == 'Folder':
-        line += f'\n\n# Children: {values[4]}'
-    details.insert(tk.END, line)
-    details.see(tk.END)
+    try:
+        line = f'Name: {values[2]}\nType: {values[3]}\nFolder_UUID: {values[0]}\nObject_UUID: {values[1]}'
+        if values[3] == 'Folder':
+            line += f'\n\n# Children: {values[4]}'
+        details.insert(tk.END, line)
+        details.see(tk.END)
+    except IndexError:
+        pass
     details.config(state='disable')
 
 
 def open_dat():
     filename = filedialog.askopenfilename(initialdir="/",
                                           title="Open",
-                                          filetypes=(("OneDrive dat file", "*.dat"),))
+                                          filetypes=(("OneDrive dat file", "*.dat *.dat.previous"),))
 
     if filename:
         threading.Thread(target=parse_onederive, args=(filename,), daemon=True).start()
@@ -260,11 +276,25 @@ def save_settings():
         json.dump(menu_data, jsonfile)
 
 
+def fixed_map(option):
+    # Returns the style map for 'option' with any styles starting with
+    # ("!disabled", "!selected", ...) filtered out
+
+    # style.map() returns an empty list for missing options, so this should
+    # be future-safe
+    return [elm for elm in style.map("Treeview", query_opt=option)
+            if elm[:2] != ("!disabled", "!selected")]
+
+
 root = ThemedTk()
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
-root.iconbitmap('Images/OneDrive.ico')
+root.iconbitmap(application_path + '/Images/OneDrive.ico')
 root.protocol("WM_DELETE_WINDOW", lambda: quit(root))
+style = ttk.Style()
+style.map("Treeview",
+          foreground=fixed_map("foreground"),
+          background=fixed_map("background"))
 
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
@@ -279,8 +309,10 @@ submenu = tk.Menu(tool_menu, tearoff=0)
 for theme_name in sorted(root.get_themes()):
     submenu.add_command(label=theme_name,
                         command=lambda t=theme_name: [submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background=''),
-                                                      root.set_theme(t),
-                                                      submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'), save_settings()])
+                                                      root.set_theme(t), style.map("Treeview", foreground=fixed_map("foreground"),
+                                                                                   background=fixed_map("background")),
+                                                      submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'),
+                                                      save_settings()])
 
 file_menu.add_command(label="Load <UsreCid>.dat", command=lambda: open_dat(), accelerator="Ctrl+O")
 file_menu.add_command(label="Exit", command=lambda: quit(root))
@@ -303,8 +335,11 @@ main_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
 outer_frame.grid_rowconfigure(0, weight=1)
 outer_frame.grid_columnconfigure(0, weight=1)
-main_frame.grid_rowconfigure(0, weight=1)
+main_frame.grid_rowconfigure(1, weight=1)
 main_frame.grid_columnconfigure(0, weight=1)
+
+search_entry = ttk.Entry(main_frame, width=30)
+btn = ttk.Button(main_frame, text="Find", command=lambda: [clear_search(), search()])
 
 pw = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
 
@@ -314,12 +349,13 @@ scrollb = ttk.Scrollbar(tv_frame, orient="vertical", command=tv.yview)
 tabControl = ttk.Notebook(main_frame)
 tab1 = ttk.Frame(tabControl)
 tabControl.add(tab1, text='Details')
-pb = ttk.Progressbar(main_frame, orient='horizontal', length=80, mode='determinate')
+pb = ttk.Progressbar(main_frame, orient='horizontal', length=160, mode='determinate')
 value_label = ttk.Label(main_frame, text='')
 sg = ttk.Sizegrip(main_frame)
 
 details = tk.Text(tab1, undo=False, width=50, cursor='arrow', state='disable')
 tv.configure(yscrollcommand=scrollb.set)
+tv.tag_configure('yellow', background="yellow", foreground="black")
 
 tabControl.grid_rowconfigure(0, weight=1)
 tabControl.grid_columnconfigure(0, weight=1)
@@ -332,13 +368,15 @@ tv_frame.grid_columnconfigure(0, weight=1)
 pw.add(tv_frame)
 pw.add(tabControl)
 
+search_entry.grid(row=0, column=1, sticky="e", padx=(0, 5))
+btn.grid(row=0, column=2, sticky="e", padx=(5, 5))
 tv.grid(row=0, column=0, sticky="nsew")
 scrollb.grid(row=0, column=1, sticky="nsew")
-sg.grid(row=1, column=2, sticky='se')
+sg.grid(row=2, column=2, sticky='se')
 details.grid(row=0, column=0, sticky="nsew")
-pb.grid(row=1, column=1, sticky='se')
-value_label.grid(row=1, column=0, sticky='se')
-pw.grid(row=0, column=0, columnspan=3, sticky="nsew")
+pb.grid(row=2, column=1, sticky='se', pady=(5, 3), padx=(0, 20), columnspan=2)
+value_label.grid(row=2, column=0, sticky='se', padx=(0, 110), columnspan=2)
+pw.grid(row=1, column=0, columnspan=3, sticky="nsew")
 
 tv.bind('<<TreeviewSelect>>', selectItem)
 root.bind('<Control-o>', lambda event=None: open_dat())
