@@ -11,7 +11,7 @@ from tkinter import filedialog
 import threading
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.09"
+__version__ = "2022.02.11"
 __email__ = "bmmaloney97@gmail.com"
 
 
@@ -84,6 +84,7 @@ ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUV
 String = namedtuple("String", ["s", "offset"])
 uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
 found = []
+folder_structure = []
 
 if getattr(sys, 'frozen', False):
     # If the application is run as a bundle, the PyInstaller bootloader
@@ -148,6 +149,7 @@ def folder_search(dict_list, input, duuid, added):
 
 def clear_all():
     tv.delete(*tv.get_children())
+    file_menu.entryconfig("Unload all folders", state='disable')
 
 
 def progress(total, count, ltext):
@@ -157,12 +159,14 @@ def progress(total, count, ltext):
 
 
 def parse_onederive(usercid):
-    clear_all()
+#    clear_all()
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Tools", state="disabled")
+    search_entry.configure(state="disabled")
+    btn.configure(state="disabled")
     dir_list = []
     misfits = []
     with open(usercid, 'rb') as f:
@@ -185,8 +189,8 @@ def parse_onederive(usercid):
 
     folder_structure = {'Folder_UUID': '',
                         'Object_UUID': dir_list[0],
-                        'Type': 'Folder',
-                        'Name': 'Root',
+                        'Type': 'Root',
+                        'Name': f.name,
                         'Children': []
                         }
 
@@ -227,11 +231,30 @@ def parse_onederive(usercid):
         count += 1
         progress(count, total, 'Adding missing files/folders')
 
+    pb.configure(mode='indeterminate')
+    value_label['text'] = "Building tree. Please wait..."
+    pb.start()
+    parent_child(folder_structure)
+    pb.stop()
+    pb.configure(mode='determinate')
+
     menubar.entryconfig("File", state="normal")
     menubar.entryconfig("Tools", state="normal")
-    parent_child(folder_structure)
+    search_entry.configure(state="normal")
+    btn.configure(state="normal")
+
+    json_object = json.dumps(folder_structure)
+    file_extension = os.path.splitext(f.name)[1][1:]
+    if file_extension == 'previous':
+        output = open(os.path.basename(f.name).split('.')[0]+"_"+file_extension+"_OneDrive.json", 'w')
+    else:
+        output = open(os.path.basename(f.name).split('.')[0]+"_OneDrive.json", 'w')
+    output.write(json_object)
+    output.close()
     pb['value'] = 0
     value_label['text'] = 'Complete!'
+    if len(tv.get_children()) > 0:
+        file_menu.entryconfig("Unload all folders", state='normal')
 
 
 def parent_child(d, parent_id=None):
@@ -242,7 +265,10 @@ def parent_child(d, parent_id=None):
     for c in d['Children']:
         # Here we create a new row object in the TreeView and pass its return value for recursion
         # The return value will be used as the argument for the first parameter of this same line of code after recursion
-        parent_child(c, tv.insert(parent_id, "end", text=c['Name'], values=(c['Folder_UUID'], c['Object_UUID'], c['Name'], c['Type'], len(c['Children']))))
+        if len(c['Children']) == 0:
+            parent_child(c, tv.insert(parent_id, "end", text=c['Name'], values=(c['Folder_UUID'], c['Object_UUID'], c['Name'], c['Type'], len(c['Children']))))
+        else:
+            parent_child(c, tv.insert(parent_id, 0, text=c['Name'], values=(c['Folder_UUID'], c['Object_UUID'], c['Name'], c['Type'], len(c['Children']))))
 
 
 def selectItem(a):
@@ -270,6 +296,22 @@ def open_dat():
         threading.Thread(target=parse_onederive, args=(filename,), daemon=True).start()
 
 
+def import_json():
+    filename = filedialog.askopenfile(initialdir="/",
+                                      title="Import JSON",
+                                      filetypes=(("OneDrive dat file", "*.json"),))
+
+    if filename:
+#        clear_all()
+        details.config(state='normal')
+        details.delete('1.0', tk.END)
+        details.config(state='disable')
+        parent_child(json.load(filename))
+        filename.close()
+        if len(tv.get_children()) > 0:
+            file_menu.entryconfig("Unload all folders", state='normal')
+
+
 def save_settings():
     menu_data['theme'] = ttk.Style().theme_use()
     with open("ode.settings", "w") as jsonfile:
@@ -284,6 +326,55 @@ def fixed_map(option):
     # be future-safe
     return [elm for elm in style.map("Treeview", query_opt=option)
             if elm[:2] != ("!disabled", "!selected")]
+
+
+def do_popup(event):
+    try:
+        curItem = tv.identify_row(event.y)
+        values = tv.item(curItem, 'values')
+        popup = tk.Menu(root, tearoff=0)
+#        popup.add_command(label="Remove OneDrive Folder" + (' '*10), command=lambda: del_folder(curItem))
+        if values[3] == 'Root':
+            popup.add_command(label="Remove OneDrive Folder", command=lambda: del_folder(curItem))
+            popup.add_separator()
+        else:
+            popup.add_command(label="Copy", command=lambda: copy_item(values))
+        if values[3] == 'Folder' or values[3] == 'Root':
+            if values[3] == 'Folder':
+                popup.add_separator()
+            popup.add_command(label="Expand folders", command=lambda: open_children(curItem), accelerator="Alt+Down")
+            popup.add_command(label="Collapse folders", command=lambda: close_children(curItem), accelerator="Alt+Up")
+        popup.tk_popup(event.x_root, event.y_root)
+    finally:
+        popup.grab_release()
+
+
+def del_folder(iid):
+    tv.delete(iid)
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    details.config(state='disable')
+    if len(tv.get_children()) == 0:
+        file_menu.entryconfig("Unload all folders", state='disable')
+
+
+def open_children(parent):
+    tv.item(parent, open=True)  # open parent
+    for child in tv.get_children(parent):
+        open_children(child)    # recursively open children
+
+
+def close_children(parent):
+    tv.item(parent, open=False)  # close parent
+    for child in tv.get_children(parent):
+        close_children(child)    # recursively close children
+
+
+def copy_item(values):
+    line = f'Name: {values[2]}\nType: {values[3]}\nFolder_UUID: {values[0]}\nObject_UUID: {values[1]}'
+    if values[3] == 'Folder':
+        line += f'\n\n# Children: {values[4]}'
+    root.clipboard_append(line)
 
 
 root = ThemedTk()
@@ -314,8 +405,12 @@ for theme_name in sorted(root.get_themes()):
                                                       submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'),
                                                       save_settings()])
 
-file_menu.add_command(label="Load <UsreCid>.dat", command=lambda: open_dat(), accelerator="Ctrl+O")
+file_menu.add_command(label="Load <UsreCid>.dat" + (' '*10), command=lambda: open_dat(), accelerator="Ctrl+O")
+file_menu.add_command(label="Import JSON", command=lambda: import_json())
+file_menu.add_command(label="Unload all folders", command=lambda: clear_all(), accelerator="Alt+0")
+file_menu.add_separator()
 file_menu.add_command(label="Exit", command=lambda: quit(root))
+file_menu.entryconfig("Unload all folders", state='disable')
 tool_menu.add_cascade(label="Skins",
                       menu=submenu)
 menubar.add_cascade(label="File",
@@ -379,7 +474,11 @@ value_label.grid(row=2, column=0, sticky='se', padx=(0, 110), columnspan=2)
 pw.grid(row=1, column=0, columnspan=3, sticky="nsew")
 
 tv.bind('<<TreeviewSelect>>', selectItem)
+tv.bind("<Button-3>", do_popup)
+tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
+tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
 root.bind('<Control-o>', lambda event=None: open_dat())
+root.bind('<Alt-0>', lambda event=None: clear_all())
 details.bind('<Key>', lambda a: "break")
 details.bind('<Button>', lambda a: "break")
 details.bind('<Motion>', lambda a: "break")

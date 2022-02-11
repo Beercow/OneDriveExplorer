@@ -1,3 +1,4 @@
+import os
 import sys
 import re
 import io
@@ -6,7 +7,7 @@ import json
 import argparse
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.09"
+__version__ = "2022.02.11"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
@@ -70,8 +71,8 @@ def parse_onedrive(usercid, outfile, pretty):
 
     folder_structure = {'Folder_UUID': '',
                         'Object_UUID': dir_list[0],
-                        'Type': 'Folder',
-                        'Name': 'Root',
+                        'Type': 'Root',
+                        'Name': f.name,
                         'Children': []
                         }
 
@@ -123,6 +124,11 @@ def parse_onedrive(usercid, outfile, pretty):
     else:
         json_object = json.dumps(folder_structure)
 
+    if not outfile:
+        outfile = os.path.basename(f.name).split('.')[0]+"_OneDrive.json"
+        file_extension = os.path.splitext(f.name)[1][1:]
+        if file_extension == 'previous':
+            outfile = os.path.basename(f.name).split('.')[0]+"_"+file_extension+"_OneDrive.json"
     output = open(outfile, 'w')
     output.write(json_object)
     sys.exit()
@@ -143,7 +149,7 @@ def main():
     print(banner)
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
-    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name", default="OneDrive.json")
+    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
 
     if len(sys.argv) == 1:
