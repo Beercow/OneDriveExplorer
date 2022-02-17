@@ -1,38 +1,28 @@
 import os
 import sys
 import re
-import io
 from collections import namedtuple
 import json
 import argparse
+import pandas as pd
+import time
+
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.11"
+__version__ = "2022.02.16"
 __email__ = "bmmaloney97@gmail.com"
 
-ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
+ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
 String = namedtuple("String", ["s", "offset"])
 
 
-def unicode_strings(buf, n=2):
-    reg = rb"((?:[%s]\x00){%d,})" % (ASCII_BYTE, n)
+def unicode_strings(buf, n=1):
+    reg = rb"((?:[%s]\x00){%d,}\x00\x00\xab)" % (ASCII_BYTE, n)
     uni_re = re.compile(reg)
     match = uni_re.search(buf)
     if match:
-        return match.group().decode("utf-16")
-
-
-def folder_search(dict_list, input, duuid, added):
-    for k, v in dict_list.items():
-        if(isinstance(v, list)):
-            for dic in v:
-                if duuid == dic['Object_UUID']:
-                    dic['Children'].append(input)
-                    added = True
-                else:
-                    r = folder_search(dic, input, duuid, added)
-                    added = r
-    return added
+        return match.group()[:-3].decode("utf-16")
+    return 'null'
 
 
 def progress(count, total, status=''):
@@ -46,83 +36,98 @@ def progress(count, total, status=''):
     sys.stdout.flush()
 
 
-def parse_onedrive(usercid, outfile, pretty):
-    dir_list = []
-    misfits = []
+def parse_onedrive(usercid, outfile, pretty, start):
     with open(usercid, 'rb') as f:
-        b = f.read()
-    data = io.BytesIO(b)
-    uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
-    personal = uuid4hex.search(b)
-    if not personal:
-        uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
-    total = len(b)
-    for match in re.finditer(uuid4hex, b):
-        s = match.start()
-        count = s
-        diroffset = s - 40
-        data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8").strip('\u0000')
-        if duuid not in dir_list:
-            dir_list.append(duuid)
-        progress(count, total, status='Building folder list. Please wait....')
+        total = len(f.read())
+        f.seek(0)
+        uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
+        personal = uuid4hex.search(f.read())
+        if not personal:
+            uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
+        f.seek(0)
+        df = pd.DataFrame(columns=['ParentId',
+                                   'DriveItemId',
+                                   'Type',
+                                   'Name',
+                                   'Children'])
+        dir_index = []
+        for match in re.finditer(uuid4hex, f.read()):
+            s = match.start()
+            count = s
+            diroffset = s - 40
+            objoffset = s - 79
+            f.seek(diroffset)
+            duuid = f.read(32).decode("utf-8").strip('\u0000')
+            f.seek(objoffset)
+            ouuid = f.read(32).decode("utf-8").strip('\u0000')
+            name = unicode_strings(f.read(400))
+            if not dir_index:
+                input = {'ParentId': '',
+                         'DriveItemId': duuid,
+                         'Type': 'Root',
+                         'Name': f.name,
+                         'Children': []
+                         }
+            else:
+                input = {'ParentId': duuid,
+                         'DriveItemId': ouuid,
+                         'Type': 'File',
+                         'Name': name,
+                         'Children': []
+                         }
+
+            dir_index.append(input)
+            progress(count, total, status='Building folder list. Please wait....')
 
     print('\n')
 
-    folder_structure = {'Folder_UUID': '',
-                        'Object_UUID': dir_list[0],
-                        'Type': 'Root',
-                        'Name': f.name,
-                        'Children': []
-                        }
+    df = pd.DataFrame.from_records(dir_index)
+    df.loc[df.DriveItemId.isin(df.ParentId), 'Type'] = 'Folder'
+    df.at[0, 'Type'] = 'Root'
+    id_name_dict = dict(zip(df.DriveItemId, df.Name))
+    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    for match in re.finditer(uuid4hex, b):
-        added = False
-        s = match.start()
-        count = s
-        diroffset = s - 40
-        objoffset = s - 79
-        data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8").strip('\u0000')
-        data.seek(objoffset)
-        ouuid = data.read(32).decode("utf-8").strip('\u0000')
-        type = 'File'
-        name = unicode_strings(data.read())
-        if ouuid in dir_list:
-            type = 'Folder'
-        input = {'Folder_UUID': duuid,
-                 'Object_UUID': ouuid,
-                 'Type': type,
-                 'Name': name,
-                 'Children': []
-                 }
-        if duuid == folder_structure['Object_UUID']:
-            folder_structure['Children'].append(input)
+    def find_parent(x):
+        value = parent_dict.get(x, None)
+        if value is None:
+            return ""
         else:
-            added = folder_search(folder_structure, input, duuid, added)
-            if not added:
-                misfits.append(input)
-        progress(count, total, status='Recreating OneDrive folder. Please wait....')
+            # Incase there is a id without name.
+            if id_name_dict.get(value, None) is None:
+                return "" + find_parent(value)
 
-    print('\n')
+            return str(id_name_dict.get(value)) +", "+ find_parent(value)
 
-    total = len(misfits)
-    count = 0
-    for i in misfits:
-        added = folder_search(folder_structure, i, i['Folder_UUID'], added)
-        count += 1
-        progress(count, total, status='Adding missing files/folders. Please wait....')
+    df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x).rstrip(', ').split()))
+    object_count = len(df.index)
+    depth = df.Level.max()
 
-    print('\n')
+    def subset(dict_, keys):
+        return {k: dict_[k] for k in keys}
+    cache = {}
+
+    for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'Type', 'Name', 'Children'))
+        if row['Type'] == 'File':
+            folder = cache.setdefault(row['ParentId'], {})
+            folder.setdefault('Children', []).append(file)
+        else:
+            folder = cache.get(row['DriveItemId'], {})
+            temp = {**file, **folder}
+            folder_merge = cache.setdefault(row['ParentId'], {})
+            if row['Type'] == 'Root':
+                cache = temp
+            else:
+                folder_merge.setdefault('Children', []).append(temp)
 
     if pretty:
-        json_object = json.dumps(folder_structure,
+        json_object = json.dumps(cache,
                                  sort_keys=False,
                                  indent=4,
                                  separators=(',', ': ')
                                  )
     else:
-        json_object = json.dumps(folder_structure)
+        json_object = json.dumps(cache)
 
     if not outfile:
         outfile = os.path.basename(f.name).split('.')[0]+"_OneDrive.json"
@@ -131,6 +136,7 @@ def parse_onedrive(usercid, outfile, pretty):
             outfile = os.path.basename(f.name).split('.')[0]+"_"+file_extension+"_OneDrive.json"
     output = open(outfile, 'w')
     output.write(json_object)
+    print(f'{object_count} entries(s), {depth} folders in {format((time.time() - start), ".4f")} seconds')
     sys.exit()
 
 
@@ -147,6 +153,7 @@ def main():
     '''.format(__version__)
 
     print(banner)
+    start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
     parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name")
@@ -159,7 +166,7 @@ def main():
     args = parser.parse_args()
 
     if args.file:
-        parse_onedrive(args.file, args.outfile, args.pretty)
+        parse_onedrive(args.file, args.outfile, args.pretty, start)
 
 
 if __name__ == '__main__':

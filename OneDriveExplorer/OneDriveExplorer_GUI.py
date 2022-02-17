@@ -1,7 +1,6 @@
 import os
 import sys
 import re
-import io
 import json
 from collections import namedtuple
 import tkinter as tk
@@ -9,9 +8,11 @@ from tkinter import ttk
 from ttkthemes import ThemedTk
 from tkinter import filedialog
 import threading
+import pandas as pd
+import time
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.11"
+__version__ = "2022.02.16"
 __email__ = "bmmaloney97@gmail.com"
 
 
@@ -126,25 +127,13 @@ def clear_search():
         tv.selection_remove(tv.selection()[0])
 
 
-def unicode_strings(buf, n=4):
-    reg = rb"((?:[%s]\x00){%d,})" % (ASCII_BYTE, n)
+def unicode_strings(buf, n=1):
+    reg = rb"((?:[%s]\x00){%d,}\x00\x00\xab)" % (ASCII_BYTE, n)
     uni_re = re.compile(reg)
     match = uni_re.search(buf)
     if match:
-        return match.group().decode("utf-16")
-
-
-def folder_search(dict_list, input, duuid, added):
-    for k, v in dict_list.items():
-        if(isinstance(v, list)):
-            for dic in v:
-                if duuid == dic['Object_UUID']:
-                    dic['Children'].append(input)
-                    added = True
-                else:
-                    r = folder_search(dic, input, duuid, added)
-                    added = r
-    return added
+        return match.group()[:-3].decode("utf-16")
+    return 'null'
 
 
 def clear_all():
@@ -158,8 +147,7 @@ def progress(total, count, ltext):
         value_label['text'] = f"{ltext}: {pb['value']}%"
 
 
-def parse_onederive(usercid):
-#    clear_all()
+def parse_onederive(usercid, start):
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
@@ -167,74 +155,91 @@ def parse_onederive(usercid):
     menubar.entryconfig("Tools", state="disabled")
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
-    dir_list = []
-    misfits = []
     with open(usercid, 'rb') as f:
-        b = f.read()
-    data = io.BytesIO(b)
-    uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
-    personal = uuid4hex.search(b)
-    if not personal:
-        uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
-    total = len(b)
-    for match in re.finditer(uuid4hex, b):
-        s = match.start()
-        count = s
-        diroffset = s - 40
-        data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8").strip('\u0000')
-        if duuid not in dir_list:
-            dir_list.append(duuid)
-        progress(total, count, 'Building folder list')
+        total = len(f.read())
+        f.seek(0)
+        uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
+        personal = uuid4hex.search(f.read())
+        if not personal:
+            uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
+        f.seek(0)
+        df = pd.DataFrame(columns=['ParentId',
+                                   'DriveItemId',
+                                   'Type',
+                                   'Name',
+                                   'Children'])
+        dir_index = []
+        for match in re.finditer(uuid4hex, f.read()):
+            s = match.start()
+            count = s
+            diroffset = s - 40
+            objoffset = s - 79
+            f.seek(diroffset)
+            duuid = f.read(32).decode("utf-8").strip('\u0000')
+            f.seek(objoffset)
+            ouuid = f.read(32).decode("utf-8").strip('\u0000')
+            name = unicode_strings(f.read(400))
+            if not dir_index:
+                input = {'ParentId': '',
+                         'DriveItemId': duuid,
+                         'Type': 'Root',
+                         'Name': f.name,
+                         'Children': []
+                         }
+            else:
+                input = {'ParentId': duuid,
+                         'DriveItemId': ouuid,
+                         'Type': 'File',
+                         'Name': name,
+                         'Children': []
+                         }
 
-    folder_structure = {'Folder_UUID': '',
-                        'Object_UUID': dir_list[0],
-                        'Type': 'Root',
-                        'Name': f.name,
-                        'Children': []
-                        }
+            dir_index.append(input)
+            progress(total, count, 'Building folder list. Please wait....')
 
-    pb['value'] = 0
+    df = pd.DataFrame.from_records(dir_index)
+    df.loc[df.DriveItemId.isin(df.ParentId), 'Type'] = 'Folder'
+    df.at[0, 'Type'] = 'Root'
+    id_name_dict = dict(zip(df.DriveItemId, df.Name))
+    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    for match in re.finditer(uuid4hex, b):
-        added = False
-        s = match.start()
-        count = s
-        diroffset = s - 40
-        objoffset = s - 79
-        data.seek(diroffset)
-        duuid = data.read(32).decode("utf-8").strip('\u0000')
-        data.seek(objoffset)
-        ouuid = data.read(32).decode("utf-8").strip('\u0000')
-        type = 'File'
-        name = unicode_strings(data.read())
-        if ouuid in dir_list:
-            type = 'Folder'
-        input = {'Folder_UUID': duuid,
-                 'Object_UUID': ouuid,
-                 'Type': type,
-                 'Name': name,
-                 'Children': []
-                 }
-        if duuid == folder_structure['Object_UUID']:
-            folder_structure['Children'].append(input)
+    def find_parent(x):
+        value = parent_dict.get(x, None)
+        if value is None:
+            return ""
         else:
-            added = folder_search(folder_structure, input, duuid, added)
-            if not added:
-                misfits.append(input)
-        progress(total, count, 'Recreating OneDrive folder')
+            # Incase there is a id without name.
+            if id_name_dict.get(value, None) is None:
+                return "" + find_parent(value)
 
-    total = len(misfits)
-    count = 0
-    for i in misfits:
-        added = folder_search(folder_structure, i, i['Folder_UUID'], added)
-        count += 1
-        progress(count, total, 'Adding missing files/folders')
+            return str(id_name_dict.get(value)) +", "+ find_parent(value)
+
+    df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x).rstrip(', ').split()))
+    object_count = len(df.index)
+    depth = df.Level.max()
+
+    def subset(dict_, keys):
+        return {k: dict_[k] for k in keys}
+    cache = {}
+
+    for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'Type', 'Name', 'Children'))
+        if row['Type'] == 'File':
+            folder = cache.setdefault(row['ParentId'], {})
+            folder.setdefault('Children', []).append(file)
+        else:
+            folder = cache.get(row['DriveItemId'], {})
+            temp = {**file, **folder}
+            folder_merge = cache.setdefault(row['ParentId'], {})
+            if row['Type'] == 'Root':
+                cache = temp
+            else:
+                folder_merge.setdefault('Children', []).append(temp)
 
     pb.configure(mode='indeterminate')
     value_label['text'] = "Building tree. Please wait..."
     pb.start()
-    parent_child(folder_structure)
+    parent_child(cache)
     pb.stop()
     pb.configure(mode='determinate')
 
@@ -243,7 +248,7 @@ def parse_onederive(usercid):
     search_entry.configure(state="normal")
     btn.configure(state="normal")
 
-    json_object = json.dumps(folder_structure)
+    json_object = json.dumps(cache)
     file_extension = os.path.splitext(f.name)[1][1:]
     if file_extension == 'previous':
         output = open(os.path.basename(f.name).split('.')[0]+"_"+file_extension+"_OneDrive.json", 'w')
@@ -252,7 +257,7 @@ def parse_onederive(usercid):
     output.write(json_object)
     output.close()
     pb['value'] = 0
-    value_label['text'] = 'Complete!'
+    value_label['text'] = f'{object_count} entries(s), {depth} folders in {format((time.time() - start), ".4f")} seconds'
     if len(tv.get_children()) > 0:
         file_menu.entryconfig("Unload all folders", state='normal')
 
@@ -260,15 +265,15 @@ def parse_onederive(usercid):
 def parent_child(d, parent_id=None):
     if parent_id is None:
         # This line is only for the first call of the function
-        parent_id = tv.insert("", "end", text=d['Name'], values=(d['Folder_UUID'], d['Object_UUID'], d['Name'], d['Type'], len(d['Children'])))
+        parent_id = tv.insert("", "end", text=d['Name'], values=(d['ParentId'], d['DriveItemId'], d['Name'], d['Type'], len(d['Children'])))
 
     for c in d['Children']:
         # Here we create a new row object in the TreeView and pass its return value for recursion
         # The return value will be used as the argument for the first parameter of this same line of code after recursion
         if len(c['Children']) == 0:
-            parent_child(c, tv.insert(parent_id, "end", text=c['Name'], values=(c['Folder_UUID'], c['Object_UUID'], c['Name'], c['Type'], len(c['Children']))))
+            parent_child(c, tv.insert(parent_id, "end", text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['Name'], c['Type'], len(c['Children']))))
         else:
-            parent_child(c, tv.insert(parent_id, 0, text=c['Name'], values=(c['Folder_UUID'], c['Object_UUID'], c['Name'], c['Type'], len(c['Children']))))
+            parent_child(c, tv.insert(parent_id, 0, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['Name'], c['Type'], len(c['Children']))))
 
 
 def selectItem(a):
@@ -277,7 +282,7 @@ def selectItem(a):
     details.config(state='normal')
     details.delete('1.0', tk.END)
     try:
-        line = f'Name: {values[2]}\nType: {values[3]}\nFolder_UUID: {values[0]}\nObject_UUID: {values[1]}'
+        line = f'Name: {values[2]}\nType: {values[3]}\nParentId: {values[0]}\nDriveItemId: {values[1]}'
         if values[3] == 'Folder':
             line += f'\n\n# Children: {values[4]}'
         details.insert(tk.END, line)
@@ -293,7 +298,8 @@ def open_dat():
                                           filetypes=(("OneDrive dat file", "*.dat *.dat.previous"),))
 
     if filename:
-        threading.Thread(target=parse_onederive, args=(filename,), daemon=True).start()
+        start = time.time()
+        threading.Thread(target=parse_onederive, args=(filename, start,), daemon=True).start()
 
 
 def import_json():
@@ -302,7 +308,7 @@ def import_json():
                                       filetypes=(("OneDrive dat file", "*.json"),))
 
     if filename:
-#        clear_all()
+        value_label['text'] = ''
         details.config(state='normal')
         details.delete('1.0', tk.END)
         details.config(state='disable')
@@ -371,7 +377,7 @@ def close_children(parent):
 
 
 def copy_item(values):
-    line = f'Name: {values[2]}\nType: {values[3]}\nFolder_UUID: {values[0]}\nObject_UUID: {values[1]}'
+    line = f'Name: {values[2]}\nType: {values[3]}\nParentId: {values[0]}\nDriveItemId: {values[1]}'
     if values[3] == 'Folder':
         line += f'\n\n# Children: {values[4]}'
     root.clipboard_append(line)
