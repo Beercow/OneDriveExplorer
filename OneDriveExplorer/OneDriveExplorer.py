@@ -156,7 +156,7 @@ def main():
     start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
-    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name")
+    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When present, overrides default name")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
 
     if len(sys.argv) == 1:
