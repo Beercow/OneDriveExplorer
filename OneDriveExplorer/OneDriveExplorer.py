@@ -9,7 +9,7 @@ import time
 
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.16"
+__version__ = "2022.02.18"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
@@ -36,7 +36,102 @@ def progress(count, total, status=''):
     sys.stdout.flush()
 
 
-def parse_onedrive(usercid, outfile, pretty, start):
+def print_json(df, name, pretty, json_path):
+    def subset(dict_, keys):
+        return {k: dict_[k] for k in keys}
+    cache = {}
+
+    for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'Type', 'Name', 'Children'))
+        if row['Type'] == 'File':
+            folder = cache.setdefault(row['ParentId'], {})
+            folder.setdefault('Children', []).append(file)
+        else:
+            folder = cache.get(row['DriveItemId'], {})
+            temp = {**file, **folder}
+            folder_merge = cache.setdefault(row['ParentId'], {})
+            if row['Type'] == 'Root':
+                cache = temp
+            else:
+                folder_merge.setdefault('Children', []).append(temp)
+
+    if pretty:
+        json_object = json.dumps(cache,
+                                 sort_keys=False,
+                                 indent=4,
+                                 separators=(',', ': ')
+                                 )
+    else:
+        json_object = json.dumps(cache)
+
+    json_file = os.path.basename(name).split('.')[0]+"_OneDrive.json"
+    file_extension = os.path.splitext(name)[1][1:]
+    if file_extension == 'previous':
+        json_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.json"
+    if json_path:
+        json_file = json_path + '/' + json_file
+
+    output = open(json_file, 'w')
+    output.write(json_object)
+    output.close()
+
+
+def print_csv(df, name, csv_path, csv_name):
+    df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
+    df = df.drop(['Children', 'Level'], axis=1)
+    id_name_dict = dict(zip(df.DriveItemId, df.Name))
+    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
+
+    def find_parent(x):
+        value = parent_dict.get(x, None)
+        if value is None:
+            return ""
+        else:
+            # Incase there is a id without name.
+            if id_name_dict.get(value, None) is None:
+                return find_parent(value) + ""
+
+        return find_parent(value) +"\\\\"+ str(id_name_dict.get(value))
+
+    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x).lstrip('\\\\'))
+    csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
+    if csv_name:
+        csv_file = csv_name
+    file_extension = os.path.splitext(name)[1][1:]
+    if file_extension == 'previous' and not csv_name:
+        csv_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv"
+    df.to_csv(csv_path + '/' + csv_file, index=False)
+
+
+def print_html(df, name, html_path):
+    df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
+    df = df.drop(['Children', 'Level'], axis=1)
+    id_name_dict = dict(zip(df.DriveItemId, df.Name))
+    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
+
+    def find_parent(x):
+        value = parent_dict.get(x, None)
+        if value is None:
+            return ""
+        else:
+            # Incase there is a id without name.
+            if id_name_dict.get(value, None) is None:
+                return find_parent(value) + ""
+
+        return find_parent(value) +"\\\\"+ str(id_name_dict.get(value))
+
+    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x).lstrip('\\\\'))
+    html_file = os.path.basename(name).split('.')[0]+"_OneDrive.html"
+    file_extension = os.path.splitext(name)[1][1:]
+    if file_extension == 'previous':
+        html_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.html"
+
+    output = open(html_path + '/' + html_file, 'w')
+    output.write(df.to_html(index=False))
+    output.close()
+
+
+def parse_onedrive(usercid, json_path, csv_path, csv_name, pretty, html_path, start):
     with open(usercid, 'rb') as f:
         total = len(f.read())
         f.seek(0)
@@ -68,13 +163,13 @@ def parse_onedrive(usercid, outfile, pretty, start):
                          'Name': f.name,
                          'Children': []
                          }
-            else:
-                input = {'ParentId': duuid,
-                         'DriveItemId': ouuid,
-                         'Type': 'File',
-                         'Name': name,
-                         'Children': []
-                         }
+                dir_index.append(input)
+            input = {'ParentId': duuid,
+                     'DriveItemId': ouuid,
+                     'Type': 'File',
+                     'Name': name,
+                     'Children': []
+                     }
 
             dir_index.append(input)
             progress(count, total, status='Building folder list. Please wait....')
@@ -99,44 +194,17 @@ def parse_onedrive(usercid, outfile, pretty, start):
             return str(id_name_dict.get(value)) +", "+ find_parent(value)
 
     df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x).rstrip(', ').split()))
-    object_count = len(df.index)
-    depth = df.Level.max()
 
-    def subset(dict_, keys):
-        return {k: dict_[k] for k in keys}
-    cache = {}
+    if csv_path:
+        print_csv(df, f.name, csv_path, csv_name)
+    if html_path:
+        print_html(df, f.name, html_path)
+    if ((csv_path or html_path) and json_path) or (not csv_path and not html_path):
+        print_json(df, f.name, pretty, json_path)
+    file_count = df.Type.value_counts()['File']
+    folder_count = df.Type.value_counts()['Folder']
 
-    for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
-        file = subset(row, keys=('ParentId', 'DriveItemId', 'Type', 'Name', 'Children'))
-        if row['Type'] == 'File':
-            folder = cache.setdefault(row['ParentId'], {})
-            folder.setdefault('Children', []).append(file)
-        else:
-            folder = cache.get(row['DriveItemId'], {})
-            temp = {**file, **folder}
-            folder_merge = cache.setdefault(row['ParentId'], {})
-            if row['Type'] == 'Root':
-                cache = temp
-            else:
-                folder_merge.setdefault('Children', []).append(temp)
-
-    if pretty:
-        json_object = json.dumps(cache,
-                                 sort_keys=False,
-                                 indent=4,
-                                 separators=(',', ': ')
-                                 )
-    else:
-        json_object = json.dumps(cache)
-
-    if not outfile:
-        outfile = os.path.basename(f.name).split('.')[0]+"_OneDrive.json"
-        file_extension = os.path.splitext(f.name)[1][1:]
-        if file_extension == 'previous':
-            outfile = os.path.basename(f.name).split('.')[0]+"_"+file_extension+"_OneDrive.json"
-    output = open(outfile, 'w')
-    output.write(json_object)
-    print(f'{object_count} entries(s), {depth} folders in {format((time.time() - start), ".4f")} seconds')
+    print(f'{file_count} files(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
     sys.exit()
 
 
@@ -156,7 +224,10 @@ def main():
     start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
-    parser.add_argument("-o", "--outfile", help="File name to save json representation to. When pressent, overrides default name")
+    parser.add_argument("--csv", help="Directory to save CSV formatted results to. Be sure to include the full path in double quotes")
+    parser.add_argument("--csvf", help="File name to save CSV formatted results to. When present, overrides default name")
+    parser.add_argument("--html", help="Directory to save xhtml formatted results to. Be sure to include the full path in double quotes")
+    parser.add_argument("--json", help="Directory to save json representation to. Use --pretty for a more human readable layout")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
 
     if len(sys.argv) == 1:
@@ -165,8 +236,32 @@ def main():
 
     args = parser.parse_args()
 
+    if args.json:
+        if not os.path.exists(args.json):
+            try:
+                os.makedirs(args.json)
+            except OSError:
+                print('Error: Remove trailing \ from directory.\nExample: --json "c:\\temp" ')
+                sys.exit()
+
+    if args.csv:
+        if not os.path.exists(args.csv):
+            try:
+                os.makedirs(args.csv)
+            except OSError:
+                print('Error: Remove trailing \ from directory.\nExample: --csv "c:\\temp" ')
+                sys.exit()
+
+    if args.html:
+        if not os.path.exists(args.html):
+            try:
+                os.makedirs(args.html)
+            except OSError:
+                print('Error: Remove trailing \ from directory.\nExample: --html "c:\\temp" ')
+                sys.exit()
+
     if args.file:
-        parse_onedrive(args.file, args.outfile, args.pretty, start)
+        parse_onedrive(args.file, args.json, args.csv, args.csvf, args.pretty, args.html, start)
 
 
 if __name__ == '__main__':

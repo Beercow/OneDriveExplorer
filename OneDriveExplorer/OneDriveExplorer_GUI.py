@@ -4,15 +4,19 @@ import re
 import json
 from collections import namedtuple
 import tkinter as tk
+import tkinter.font as tkFont
 from tkinter import ttk
 from ttkthemes import ThemedTk
 from tkinter import filedialog
 import threading
 import pandas as pd
+from PIL import ImageTk, Image
 import time
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.16"
+__version__ = "2022.02.18"
 __email__ = "bmmaloney97@gmail.com"
 
 
@@ -186,13 +190,13 @@ def parse_onederive(usercid, start):
                          'Name': f.name,
                          'Children': []
                          }
-            else:
-                input = {'ParentId': duuid,
-                         'DriveItemId': ouuid,
-                         'Type': 'File',
-                         'Name': name,
-                         'Children': []
-                         }
+                dir_index.append(input)
+            input = {'ParentId': duuid,
+                     'DriveItemId': ouuid,
+                     'Type': 'File',
+                     'Name': name,
+                     'Children': []
+                     }
 
             dir_index.append(input)
             progress(total, count, 'Building folder list. Please wait....')
@@ -215,8 +219,8 @@ def parse_onederive(usercid, start):
             return str(id_name_dict.get(value)) +", "+ find_parent(value)
 
     df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x).rstrip(', ').split()))
-    object_count = len(df.index)
-    depth = df.Level.max()
+    file_count = df.Type.value_counts()['File']
+    folder_count = df.Type.value_counts()['Folder']
 
     def subset(dict_, keys):
         return {k: dict_[k] for k in keys}
@@ -257,12 +261,15 @@ def parse_onederive(usercid, start):
     output.write(json_object)
     output.close()
     pb['value'] = 0
-    value_label['text'] = f'{object_count} entries(s), {depth} folders in {format((time.time() - start), ".4f")} seconds'
+    value_label['text'] = f'{file_count} file(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
     if len(tv.get_children()) > 0:
         file_menu.entryconfig("Unload all folders", state='normal')
 
 
 def parent_child(d, parent_id=None):
+#    root_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hdd.png'))
+#    folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/directory_closed.png'))
+#    file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow.png'))
     if parent_id is None:
         # This line is only for the first call of the function
         parent_id = tv.insert("", "end", text=d['Name'], values=(d['ParentId'], d['DriveItemId'], d['Name'], d['Type'], len(d['Children'])))
@@ -289,6 +296,16 @@ def selectItem(a):
         details.see(tk.END)
     except IndexError:
         pass
+    max_colum_widths = 0
+    for child in tv.get_children():
+        item = tv.item(child)
+        new_length = tkFont.nametofont('TkTextFont').measure(str(item))
+        if new_length > max_colum_widths:
+            max_colum_widths = new_length
+    if max_colum_widths < 50:
+        tv.column('#0', width=50)
+    else:
+        tv.column('#0', width=max_colum_widths)
     details.config(state='disable')
 
 
@@ -318,6 +335,74 @@ def import_json():
             file_menu.entryconfig("Unload all folders", state='normal')
 
 
+def import_csv():
+    filename = filedialog.askopenfile(initialdir="/",
+                                      title="Import CSV",
+                                      filetypes=(("OneDrive dat file", "*.csv"),))
+
+    if filename:
+        start = time.time()
+        details.config(state='normal')
+        details.delete('1.0', tk.END)
+        details.config(state='disable')
+        menubar.entryconfig("File", state="disabled")
+        menubar.entryconfig("Tools", state="disabled")
+        search_entry.configure(state="disabled")
+        btn.configure(state="disabled")
+        df = pd.read_csv(filename, usecols=['ParentId', 'DriveItemId', 'Type', 'Name'])
+        df['Children'] = pd.Series([[] for x in range(len(df.index))])
+        id_name_dict = dict(zip(df.DriveItemId, df.Name))
+        parent_dict = dict(zip(df.DriveItemId, df.ParentId))
+
+        def find_parent(x):
+            value = parent_dict.get(x, None)
+            if value is None:
+                return ""
+            else:
+                # Incase there is a id without name.
+                if id_name_dict.get(value, None) is None:
+                    return "" + find_parent(value)
+
+                return str(id_name_dict.get(value)) +", "+ find_parent(value)
+
+        df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x).rstrip(', ').split()))
+        file_count = df.Type.value_counts()['File']
+        folder_count = df.Type.value_counts()['Folder']
+
+        def subset(dict_, keys):
+            return {k: dict_[k] for k in keys}
+        cache = {}
+
+        for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
+            file = subset(row, keys=('ParentId', 'DriveItemId', 'Type', 'Name', 'Children'))
+            if row['Type'] == 'File':
+                folder = cache.setdefault(row['ParentId'], {})
+                folder.setdefault('Children', []).append(file)
+            else:
+                folder = cache.get(row['DriveItemId'], {})
+                temp = {**file, **folder}
+                folder_merge = cache.setdefault(row['ParentId'], {})
+                if row['Type'] == 'Root':
+                    cache = temp
+                else:
+                    folder_merge.setdefault('Children', []).append(temp)
+        pb.configure(mode='indeterminate')
+        value_label['text'] = "Building tree. Please wait..."
+        pb.start()
+        parent_child(cache)
+        pb.stop()
+        pb.configure(mode='determinate')
+
+        menubar.entryconfig("File", state="normal")
+        menubar.entryconfig("Tools", state="normal")
+        search_entry.configure(state="normal")
+        btn.configure(state="normal")
+        pb['value'] = 0
+        value_label['text'] = f'{file_count} file(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
+        if len(tv.get_children()) > 0:
+            file_menu.entryconfig("Unload all folders", state='normal')
+
+
 def save_settings():
     menu_data['theme'] = ttk.Style().theme_use()
     with open("ode.settings", "w") as jsonfile:
@@ -335,21 +420,25 @@ def fixed_map(option):
 
 
 def do_popup(event):
+    rof_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/Icon11.ico'))
+    copy_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/copy.png'))
+    exp_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hierarchy1_expanded.png'))
+    col_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hierarchy1.png'))
     try:
         curItem = tv.identify_row(event.y)
         values = tv.item(curItem, 'values')
         popup = tk.Menu(root, tearoff=0)
 #        popup.add_command(label="Remove OneDrive Folder" + (' '*10), command=lambda: del_folder(curItem))
         if values[3] == 'Root':
-            popup.add_command(label="Remove OneDrive Folder", command=lambda: del_folder(curItem))
+            popup.add_command(label="Remove OneDrive Folder", image=rof_img, compound='left', command=lambda: del_folder(curItem))
             popup.add_separator()
         else:
-            popup.add_command(label="Copy", command=lambda: copy_item(values))
+            popup.add_command(label="Copy", image=copy_img, compound='left', command=lambda: copy_item(values))
         if values[3] == 'Folder' or values[3] == 'Root':
             if values[3] == 'Folder':
                 popup.add_separator()
-            popup.add_command(label="Expand folders", command=lambda: open_children(curItem), accelerator="Alt+Down")
-            popup.add_command(label="Collapse folders", command=lambda: close_children(curItem), accelerator="Alt+Up")
+            popup.add_command(label="Expand folders", image=exp_img, compound='left', command=lambda: open_children(curItem), accelerator="Alt+Down")
+            popup.add_command(label="Collapse folders", image=col_img, compound='left', command=lambda: close_children(curItem), accelerator="Alt+Up")
         popup.tk_popup(event.x_root, event.y_root)
     finally:
         popup.grab_release()
@@ -393,6 +482,13 @@ style.map("Treeview",
           foreground=fixed_map("foreground"),
           background=fixed_map("background"))
 
+load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/repeat_green.png'))
+json_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded.png'))
+csv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table.png'))
+uaf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/delete_red.png'))
+search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/magnifier.png'))
+exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/no.png'))
+
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
 
@@ -411,11 +507,12 @@ for theme_name in sorted(root.get_themes()):
                                                       submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'),
                                                       save_settings()])
 
-file_menu.add_command(label="Load <UsreCid>.dat" + (' '*10), command=lambda: open_dat(), accelerator="Ctrl+O")
-file_menu.add_command(label="Import JSON", command=lambda: import_json())
-file_menu.add_command(label="Unload all folders", command=lambda: clear_all(), accelerator="Alt+0")
+file_menu.add_command(label="Load <UsreCid>.dat" + (' '*10), image=load_img, compound='left', command=lambda: open_dat(), accelerator="Ctrl+O")
+file_menu.add_command(label="Import JSON", image=json_img, compound='left', command=lambda: import_json())
+file_menu.add_command(label="Import CSV", image=csv_img, compound='left', command=lambda: import_csv())
+file_menu.add_command(label="Unload all folders", image=uaf_img, compound='left', command=lambda: clear_all(), accelerator="Alt+0")
 file_menu.add_separator()
-file_menu.add_command(label="Exit", command=lambda: quit(root))
+file_menu.add_command(label="Exit", image=exit_img, compound='left', command=lambda: quit(root))
 file_menu.entryconfig("Unload all folders", state='disable')
 tool_menu.add_cascade(label="Skins",
                       menu=submenu)
@@ -440,13 +537,14 @@ main_frame.grid_rowconfigure(1, weight=1)
 main_frame.grid_columnconfigure(0, weight=1)
 
 search_entry = ttk.Entry(main_frame, width=30)
-btn = ttk.Button(main_frame, text="Find", command=lambda: [clear_search(), search()])
+btn = ttk.Button(main_frame, text="Find", image=search_img, compound='right', command=lambda: [clear_search(), search()])
 
 pw = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
 
 tv_frame = ttk.Frame(main_frame)
 tv = ttk.Treeview(tv_frame, show='tree', selectmode='browse')
-scrollb = ttk.Scrollbar(tv_frame, orient="vertical", command=tv.yview)
+scrollbv = ttk.Scrollbar(tv_frame, orient="vertical", command=tv.yview)
+scrollbh = ttk.Scrollbar(tv_frame, orient="horizontal", command=tv.xview)
 tabControl = ttk.Notebook(main_frame)
 tab1 = ttk.Frame(tabControl)
 tabControl.add(tab1, text='Details')
@@ -455,7 +553,7 @@ value_label = ttk.Label(main_frame, text='')
 sg = ttk.Sizegrip(main_frame)
 
 details = tk.Text(tab1, undo=False, width=50, cursor='arrow', state='disable')
-tv.configure(yscrollcommand=scrollb.set)
+tv.configure(yscrollcommand=scrollbv.set, xscrollcommand=scrollbh.set)
 tv.tag_configure('yellow', background="yellow", foreground="black")
 
 tabControl.grid_rowconfigure(0, weight=1)
@@ -472,7 +570,8 @@ pw.add(tabControl)
 search_entry.grid(row=0, column=1, sticky="e", padx=(0, 5))
 btn.grid(row=0, column=2, sticky="e", padx=(5, 5))
 tv.grid(row=0, column=0, sticky="nsew")
-scrollb.grid(row=0, column=1, sticky="nsew")
+scrollbv.grid(row=0, column=1, sticky="nsew")
+scrollbh.grid(row=1, column=0, sticky="nsew")
 sg.grid(row=2, column=2, sticky='se')
 details.grid(row=0, column=0, sticky="nsew")
 pb.grid(row=2, column=1, sticky='se', pady=(5, 3), padx=(0, 20), columnspan=2)
