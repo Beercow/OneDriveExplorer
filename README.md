@@ -48,6 +48,10 @@ The GUI is capable of parsing dat files along with loading JSON or CSV from a pr
 
 ![file_menu](./Images/file_menu.png)
 
+Through the preferences menu, there are options avaiable for saving the parsed dat file to JSON, CSV, and HTML.
+
+![preferences](./Images/preference.png) 
+
 OneDriveExplorer GUI is also capable of performing a simple search.
 
 ![search](./Images/search.png)

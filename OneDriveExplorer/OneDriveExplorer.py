@@ -9,7 +9,7 @@ import time
 
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.18"
+__version__ = "2022.02.23"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
@@ -40,6 +40,7 @@ def print_json(df, name, pretty, json_path):
     def subset(dict_, keys):
         return {k: dict_[k] for k in keys}
     cache = {}
+    final = []
 
     for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
         file = subset(row, keys=('ParentId', 'DriveItemId', 'Type', 'Name', 'Children'))
@@ -51,9 +52,17 @@ def print_json(df, name, pretty, json_path):
             temp = {**file, **folder}
             folder_merge = cache.setdefault(row['ParentId'], {})
             if row['Type'] == 'Root':
-                cache = temp
+                final.append(temp)
             else:
                 folder_merge.setdefault('Children', []).append(temp)
+
+    cache = {'ParentId': '',
+             'DriveItemId': '',
+             'Type': 'Root Drive',
+             'Name': name,
+             'Children': ''
+             }
+    cache['Children'] = final
 
     if pretty:
         json_object = json.dumps(cache,
@@ -82,18 +91,7 @@ def print_csv(df, name, csv_path, csv_name):
     id_name_dict = dict(zip(df.DriveItemId, df.Name))
     parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    def find_parent(x):
-        value = parent_dict.get(x, None)
-        if value is None:
-            return ""
-        else:
-            # Incase there is a id without name.
-            if id_name_dict.get(value, None) is None:
-                return find_parent(value) + ""
-
-        return find_parent(value) +"\\\\"+ str(id_name_dict.get(value))
-
-    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x).lstrip('\\\\'))
+    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\'))
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
     if csv_name:
         csv_file = csv_name
@@ -109,18 +107,7 @@ def print_html(df, name, html_path):
     id_name_dict = dict(zip(df.DriveItemId, df.Name))
     parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    def find_parent(x):
-        value = parent_dict.get(x, None)
-        if value is None:
-            return ""
-        else:
-            # Incase there is a id without name.
-            if id_name_dict.get(value, None) is None:
-                return find_parent(value) + ""
-
-        return find_parent(value) +"\\\\"+ str(id_name_dict.get(value))
-
-    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x).lstrip('\\\\'))
+    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\'))
     html_file = os.path.basename(name).split('.')[0]+"_OneDrive.html"
     file_extension = os.path.splitext(name)[1][1:]
     if file_extension == 'previous':
@@ -129,6 +116,18 @@ def print_html(df, name, html_path):
     output = open(html_path + '/' + html_file, 'w')
     output.write(df.to_html(index=False))
     output.close()
+
+
+def find_parent(x, id_name_dict, parent_dict):
+    value = parent_dict.get(x, None)
+    if value is None:
+        return x
+    else:
+        # Incase there is a id without name.
+        if id_name_dict.get(value, None) is None:
+            return find_parent(value, id_name_dict, parent_dict) + x
+
+    return find_parent(value, id_name_dict, parent_dict) +"\\\\"+ str(id_name_dict.get(value))
 
 
 def parse_onedrive(usercid, json_path, csv_path, csv_name, pretty, html_path, start):
@@ -160,7 +159,7 @@ def parse_onedrive(usercid, json_path, csv_path, csv_name, pretty, html_path, st
                 input = {'ParentId': '',
                          'DriveItemId': duuid,
                          'Type': 'Root',
-                         'Name': f.name,
+                         'Name': 'User Folder',
                          'Children': []
                          }
                 dir_index.append(input)
@@ -182,18 +181,22 @@ def parse_onedrive(usercid, json_path, csv_path, csv_name, pretty, html_path, st
     id_name_dict = dict(zip(df.DriveItemId, df.Name))
     parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    def find_parent(x):
-        value = parent_dict.get(x, None)
-        if value is None:
-            return ""
-        else:
-            # Incase there is a id without name.
-            if id_name_dict.get(value, None) is None:
-                return "" + find_parent(value)
+    df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\')))
 
-            return str(id_name_dict.get(value)) +", "+ find_parent(value)
-
-    df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x).rstrip(', ').split()))
+    share_df = df.loc[(df.Level == 1) & (~df.ParentId.isin(df.DriveItemId)) & (df.Type != 'Root')]
+    share_list = list(set(share_df.ParentId))
+    share_root = []
+    for x in share_list:
+        input = {'ParentId': '',
+                 'DriveItemId': x,
+                 'Type': 'Root',
+                 'Name': 'Shared with user',
+                 'Children': [],
+                 'Level': 1
+                 }
+        share_root.append(input)
+    share_df = pd.DataFrame.from_records(share_root)
+    df = pd.concat([df, share_df], ignore_index=True, axis=0)
 
     if csv_path:
         print_csv(df, f.name, csv_path, csv_name)

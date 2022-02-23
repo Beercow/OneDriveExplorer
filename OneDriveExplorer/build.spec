@@ -55,13 +55,22 @@ OneDriveExplorer_GUI_a = Analysis(['OneDriveExplorer_GUI.py'],
 OneDriveExplorer_GUI_pyz = PYZ(OneDriveExplorer_GUI_a.pure, OneDriveExplorer_GUI_a.zipped_data,
              cipher=block_cipher)
 
+OneDriveExplorer_GUI_splash = Splash('Images\\splashv.png',
+                binaries=OneDriveExplorer_GUI_a.binaries,
+                datas=OneDriveExplorer_GUI_a.datas,
+                text_pos=None,
+                text_size=12,
+                minify_script=True)
+
 OneDriveExplorer_GUI_a.datas += Tree('./Images', prefix='Images')
 
 OneDriveExplorer_GUI_exe = EXE(OneDriveExplorer_GUI_pyz,
           OneDriveExplorer_GUI_a.scripts,
           OneDriveExplorer_GUI_a.binaries,
           OneDriveExplorer_GUI_a.zipfiles,
-          OneDriveExplorer_GUI_a.datas,  
+          OneDriveExplorer_GUI_a.datas,
+          OneDriveExplorer_GUI_splash,
+          OneDriveExplorer_GUI_splash.binaries,
           [],
           name='OneDriveExplorer_GUI',
           debug=False,
