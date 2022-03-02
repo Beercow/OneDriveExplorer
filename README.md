@@ -6,7 +6,7 @@ OneDriveExplorer is a command line and GUI based application for reconstructing 
 
 ## Requirements
 
-Pillow, pandas and ttktheme packages need to be installed. You can do this with the provided requirements.txt file as follows:
+This project requires several additiona modules. You can install them with the provided requirements.txt file as follows:
 
 ```bash
 pip3 install -r requirements.txt
@@ -23,6 +23,8 @@ OneDriveExplorer.py -f business1\d1a7c039-6175-4ddb-bcdb-a8de45cf1678.dat
 ```
 
 Depending on the options, OneDriveExplorer can produce JSON, CSV, or HTML files of the parsed data. The `--pretty` option can be used to output the JSON into a more human readable layout.
+
+Additionaly, a user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive.
 
 ### Example output:
 
@@ -44,11 +46,11 @@ The GUI consists of two panes: the folder structure on the left and details on t
 
 ![gui](./Images/gui.png)
 
-The GUI is capable of parsing dat files along with loading JSON or CSV from a previously parsed dat file. OneDriveExplorer GUI also supports loading multiple files.
+The GUI is capable of parsing dat files along with loading JSON or CSV from a previously parsed dat file. OneDriveExplorer GUI also supports loading multiple files. When loading a dat file, an additional dialog will appear to allow you to supply a registry file. This can be disabled by holding down `SHIFT` or disabling it in the preferences menu.
 
-![file_menu](./Images/file_menu.png)
+![file_menu](./Images/file_menu.png)  ![hive](./Images/hive.png)
 
-Through the preferences menu, there are options avaiable for saving the parsed dat file to JSON, CSV, and HTML.
+Through the preferences menu, there are options avaiable for saving the parsed dat file to JSON, CSV, and HTML. There is also an option to disable the hive dialoge.
 
 ![preferences](./Images/preference.png) 
 
@@ -76,3 +78,4 @@ The default file location of the `.dat` files are:
 - [x] GUI not populating correctly when opening different dat file
 - [x] Load multiple files in GUI
 - [x] Performance improvements
+- [ ] Set minimum width on slider left/right

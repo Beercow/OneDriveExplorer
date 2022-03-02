@@ -6,10 +6,11 @@ import json
 import argparse
 import pandas as pd
 import time
+from Registry import Registry
 
 
 __author__ = "Brian Maloney"
-__version__ = "2022.02.23"
+__version__ = "2022.03.02"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
@@ -21,7 +22,7 @@ def unicode_strings(buf, n=1):
     uni_re = re.compile(reg)
     match = uni_re.search(buf)
     if match:
-        return match.group()[:-3].decode("utf-16")
+        return match.group()[:-3].decode("utf-16"), match.start()
     return 'null'
 
 
@@ -43,7 +44,7 @@ def print_json(df, name, pretty, json_path):
     final = []
 
     for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
-        file = subset(row, keys=('ParentId', 'DriveItemId', 'Type', 'Name', 'Children'))
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Name', 'Size', 'Children'))
         if row['Type'] == 'File':
             folder = cache.setdefault(row['ParentId'], {})
             folder.setdefault('Children', []).append(file)
@@ -51,15 +52,17 @@ def print_json(df, name, pretty, json_path):
             folder = cache.get(row['DriveItemId'], {})
             temp = {**file, **folder}
             folder_merge = cache.setdefault(row['ParentId'], {})
-            if row['Type'] == 'Root':
-                final.append(temp)
+            if 'Root' in row['Type']:
+                final.insert(0, temp)
             else:
                 folder_merge.setdefault('Children', []).append(temp)
 
     cache = {'ParentId': '',
              'DriveItemId': '',
+             'eTag': '',
              'Type': 'Root Drive',
              'Name': name,
+             'Size': '',
              'Children': ''
              }
     cache['Children'] = final
@@ -130,43 +133,64 @@ def find_parent(x, id_name_dict, parent_dict):
     return find_parent(value, id_name_dict, parent_dict) +"\\\\"+ str(id_name_dict.get(value))
 
 
-def parse_onedrive(usercid, json_path, csv_path, csv_name, pretty, html_path, start):
+def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html_path, start):
     with open(usercid, 'rb') as f:
         total = len(f.read())
         f.seek(0)
-        uuid4hex = re.compile(b'[A-F0-9]{16}![0-9]*\.')
+        uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
         personal = uuid4hex.search(f.read())
         if not personal:
-            uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
+            uuid4hex = re.compile(b'"({[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}},[0-9]*)"', re.I)
         f.seek(0)
         df = pd.DataFrame(columns=['ParentId',
                                    'DriveItemId',
+                                   'eTag',
                                    'Type',
                                    'Name',
+                                   'Size',
                                    'Children'])
         dir_index = []
         for match in re.finditer(uuid4hex, f.read()):
             s = match.start()
+            eTag = match.group(1).decode("utf-8")
             count = s
-            diroffset = s - 40
-            objoffset = s - 79
-            f.seek(diroffset)
-            duuid = f.read(32).decode("utf-8").strip('\u0000')
+            diroffset = s - 39
+            objoffset = s - 78
             f.seek(objoffset)
             ouuid = f.read(32).decode("utf-8").strip('\u0000')
-            name = unicode_strings(f.read(400))
+            f.seek(diroffset)
+            duuid = f.read(32).decode("utf-8").strip('\u0000')
+            name, name_s = unicode_strings(f.read(400))
+            sizeoffset = diroffset + 24 + name_s
+            f.seek(sizeoffset)
+            size = int.from_bytes(f.read(8), "little")
             if not dir_index:
+                if reghive and personal:
+                    try:
+                        reg_handle = Registry.Registry(reghive)
+                        int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive\Personal')
+                        for providers in int_keys.values():
+                            if providers.name() == 'MountPoint':
+                                mountpoint = providers.value()
+                    except:
+                        mountpoint = 'User Folder'
+                else:
+                    mountpoint = 'User Folder'
                 input = {'ParentId': '',
                          'DriveItemId': duuid,
-                         'Type': 'Root',
-                         'Name': 'User Folder',
+                         'eTag': eTag,
+                         'Type': 'Root Default',
+                         'Name': mountpoint,
+                         'Size': '',
                          'Children': []
                          }
                 dir_index.append(input)
             input = {'ParentId': duuid,
                      'DriveItemId': ouuid,
+                     'eTag': eTag,
                      'Type': 'File',
                      'Name': name,
+                     'Size': size,
                      'Children': []
                      }
 
@@ -176,21 +200,24 @@ def parse_onedrive(usercid, json_path, csv_path, csv_name, pretty, html_path, st
     print('\n')
 
     df = pd.DataFrame.from_records(dir_index)
-    df.loc[df.DriveItemId.isin(df.ParentId), 'Type'] = 'Folder'
-    df.at[0, 'Type'] = 'Root'
+    df.loc[(df.DriveItemId.isin(df.ParentId)) | (df.Size == 2880154368), ['Type', 'Size']] = ['Folder', '']
+    df.at[0, 'Type'] = 'Root Default'
     id_name_dict = dict(zip(df.DriveItemId, df.Name))
     parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
     df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\')))
 
-    share_df = df.loc[(df.Level == 1) & (~df.ParentId.isin(df.DriveItemId)) & (df.Type != 'Root')]
+    share_df = df.loc[(df.Level == 1) & (~df.ParentId.isin(df.DriveItemId)) & (df.Type != 'Root Default')]
     share_list = list(set(share_df.ParentId))
     share_root = []
+
     for x in share_list:
         input = {'ParentId': '',
                  'DriveItemId': x,
-                 'Type': 'Root',
+                 'eTag': '',
+                 'Type': 'Root Shared',
                  'Name': 'Shared with user',
+                 'Size': '',
                  'Children': [],
                  'Level': 1
                  }
@@ -198,14 +225,29 @@ def parse_onedrive(usercid, json_path, csv_path, csv_name, pretty, html_path, st
     share_df = pd.DataFrame.from_records(share_root)
     df = pd.concat([df, share_df], ignore_index=True, axis=0)
 
+    if reghive:
+        try:
+            reg_handle = Registry.Registry(reghive)
+            int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
+            for providers in int_keys.subkeys():
+                df.loc[(df.DriveItemId == providers.name().split('+')[0]), ['Name']] = [x.value() for x in list(providers.values()) if x.name() =='MountPoint'][0]
+        except:
+            pass
+
     if csv_path:
         print_csv(df, f.name, csv_path, csv_name)
     if html_path:
         print_html(df, f.name, html_path)
     if ((csv_path or html_path) and json_path) or (not csv_path and not html_path):
         print_json(df, f.name, pretty, json_path)
-    file_count = df.Type.value_counts()['File']
-    folder_count = df.Type.value_counts()['Folder']
+    try:
+        file_count = df.Type.value_counts()['File']
+    except KeyError:
+        file_count = 0
+    try:
+        folder_count = df.Type.value_counts()['Folder']
+    except KeyError:
+        folder_count = 0
 
     print(f'{file_count} files(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
     sys.exit()
@@ -227,6 +269,7 @@ def main():
     start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
+    parser.add_argument("-r", "--REG_HIVE", dest="reghive", help="If a registry hive is provided then the mount points of the SyncEngines will be resolved.")
     parser.add_argument("--csv", help="Directory to save CSV formatted results to. Be sure to include the full path in double quotes")
     parser.add_argument("--csvf", help="File name to save CSV formatted results to. When present, overrides default name")
     parser.add_argument("--html", help="Directory to save xhtml formatted results to. Be sure to include the full path in double quotes")
@@ -264,7 +307,7 @@ def main():
                 sys.exit()
 
     if args.file:
-        parse_onedrive(args.file, args.json, args.csv, args.csvf, args.pretty, args.html, start)
+        parse_onedrive(args.file, args.reghive, args.json, args.csv, args.csvf, args.pretty, args.html, start)
 
 
 if __name__ == '__main__':

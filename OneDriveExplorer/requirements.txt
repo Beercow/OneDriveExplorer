@@ -3,3 +3,5 @@ Pillow
 pandas
 numpy
 pytz
+python-registry
+keyboard
