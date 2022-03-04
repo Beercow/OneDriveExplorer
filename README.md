@@ -67,6 +67,11 @@ There are right click menus to help perform various tasks and sin options.
 
 ![skins](./Images/skins.png)
 
+The messages dialoge can be accessed by double clicking on the number in the lower right corner. From this dialoge, you can view, clear and export debug messages. 
+
+![indicator](./Images/message_indicator.png)
+![messages](./Images/message.png)
+
 ## File location
 
 The default file location of the `.dat` files are:
@@ -81,3 +86,4 @@ The default file location of the `.dat` files are:
 - [x] Load multiple files in GUI
 - [x] Performance improvements
 - [ ] Set minimum width on slider left/right
+- [ ] Get file/folder count when parsing json

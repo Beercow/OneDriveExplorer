@@ -6,11 +6,16 @@ import json
 import argparse
 import pandas as pd
 import time
+import logging
 from Registry import Registry
 
+logging.basicConfig(level=logging.INFO,
+                    format='\n\n%(asctime)s, %(levelname)s, %(message)s\n',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                    )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.03.02"
+__version__ = "2022.03.04"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
@@ -22,8 +27,12 @@ def unicode_strings(buf, n=1):
     uni_re = re.compile(reg)
     match = uni_re.search(buf)
     if match:
-        return match.group()[:-3].decode("utf-16"), match.start()
-    return 'null'
+        try:
+            return match.group()[:-3].decode("utf-16"), match.start()
+        except Exception as e:
+            logging.warning(e)
+    logging.warning('Name was not found!')
+    return '??????????', '??????????'
 
 
 def progress(count, total, status=''):
@@ -134,6 +143,7 @@ def find_parent(x, id_name_dict, parent_dict):
 
 
 def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html_path, start):
+    logging.info(f'Start pasrsing {usercid}. Registry hive: {reghive}')
     with open(usercid, 'rb') as f:
         total = len(f.read())
         f.seek(0)
@@ -161,9 +171,14 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
             f.seek(diroffset)
             duuid = f.read(32).decode("utf-8").strip('\u0000')
             name, name_s = unicode_strings(f.read(400))
-            sizeoffset = diroffset + 24 + name_s
-            f.seek(sizeoffset)
-            size = int.from_bytes(f.read(8), "little")
+            try:
+                sizeoffset = diroffset + 24 + name_s
+                f.seek(sizeoffset)
+                size = int.from_bytes(f.read(8), "little")
+            except:
+                size = name_s
+                f.seek(diroffset + 32)
+                logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{f.read(400)}')
             if not dir_index:
                 if reghive and personal:
                     try:
@@ -172,7 +187,8 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
                         for providers in int_keys.values():
                             if providers.name() == 'MountPoint':
                                 mountpoint = providers.value()
-                    except:
+                    except Exception as e:
+                        logging.warning(f'Unable to read registry hive! {e}')
                         mountpoint = 'User Folder'
                 else:
                     mountpoint = 'User Folder'
@@ -231,7 +247,8 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
             int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
             for providers in int_keys.subkeys():
                 df.loc[(df.DriveItemId == providers.name().split('+')[0]), ['Name']] = [x.value() for x in list(providers.values()) if x.name() =='MountPoint'][0]
-        except:
+        except Exception as e:
+            logging.warning(f'Unable to read registry hive! {e}')
             pass
 
     if csv_path:
@@ -243,10 +260,12 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
     try:
         file_count = df.Type.value_counts()['File']
     except KeyError:
+        logging.warning("KeyError: 'File'")
         file_count = 0
     try:
         folder_count = df.Type.value_counts()['Folder']
     except KeyError:
+        logging.warning("KeyError: 'Folder'")
         folder_count = 0
 
     print(f'{file_count} files(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
@@ -275,12 +294,16 @@ def main():
     parser.add_argument("--html", help="Directory to save xhtml formatted results to. Be sure to include the full path in double quotes")
     parser.add_argument("--json", help="Directory to save json representation to. Use --pretty for a more human readable layout")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
+    parser.add_argument("--debug", help="Show debug information during processing", action='store_true')
 
     if len(sys.argv) == 1:
         parser.print_help()
         parser.exit()
 
     args = parser.parse_args()
+
+    if not args.debug:
+        logging.getLogger().setLevel(logging.CRITICAL)
 
     if args.json:
         if not os.path.exists(args.json):

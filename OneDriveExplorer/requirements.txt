@@ -5,3 +5,4 @@ numpy
 pytz
 python-registry
 keyboard
+openpyxl
