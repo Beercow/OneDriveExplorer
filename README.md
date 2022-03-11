@@ -52,7 +52,7 @@ The GUI is capable of parsing dat files along with loading JSON or CSV from a pr
 
 ![file_menu](./Images/file_menu.png)  ![hive](./Images/hive.png)
 
-Through the preferences menu, there are options avaiable for saving the parsed dat file to JSON, CSV, and HTML. There is also an option to disable the hive dialog.
+Through the preferences menu, there are options avaiable for saving the parsed dat file to JSON, CSV, and HTML. There is also an option to disable the hive dialoge.
 
 ![preferences](./Images/preference.png) 
 
@@ -67,7 +67,7 @@ There are right click menus to help perform various tasks and sin options.
 
 ![skins](./Images/skins.png)
 
-The messages dialog can be accessed by double clicking on the number in the lower right corner. From this dialog, you can view, clear and export debug messages. 
+The messages dialoge can be accessed by double clicking on the number in the lower right corner. From this dialoge, you can view, clear and export debug messages. 
 
 ![indicator](./Images/message_indicator.png)
 ![messages](./Images/message.png)
@@ -81,9 +81,5 @@ The default file location of the `.dat` files are:
 
 ## Todo
 
-- [x] Add support for OneDrive personal
-- [x] GUI not populating correctly when opening different dat file
-- [x] Load multiple files in GUI
-- [x] Performance improvements
 - [ ] Set minimum width on slider left/right
-- [ ] Get file/folder count when parsing json
+- [ ] Support for unicode characters

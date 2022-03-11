@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.03.04"
+__version__ = "2022.03.11"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
@@ -52,8 +52,11 @@ def print_json(df, name, pretty, json_path):
     cache = {}
     final = []
 
-    for row in df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[False, False, False]).to_dict('records'):
-        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Name', 'Size', 'Children'))
+    df.loc[df.Type == 'File', ['FileSort']] = df['Name'].str.lower()
+    df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
+
+    for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Children'))
         if row['Type'] == 'File':
             folder = cache.setdefault(row['ParentId'], {})
             folder.setdefault('Children', []).append(file)
@@ -70,10 +73,12 @@ def print_json(df, name, pretty, json_path):
              'DriveItemId': '',
              'eTag': '',
              'Type': 'Root Drive',
+             'Path': '',
              'Name': name,
              'Size': '',
              'Children': ''
              }
+
     cache['Children'] = final
 
     if pretty:
@@ -100,10 +105,7 @@ def print_json(df, name, pretty, json_path):
 def print_csv(df, name, csv_path, csv_name):
     df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
     df = df.drop(['Children', 'Level'], axis=1)
-    id_name_dict = dict(zip(df.DriveItemId, df.Name))
-    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\'))
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
     if csv_name:
         csv_file = csv_name
@@ -116,10 +118,7 @@ def print_csv(df, name, csv_path, csv_name):
 def print_html(df, name, html_path):
     df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
     df = df.drop(['Children', 'Level'], axis=1)
-    id_name_dict = dict(zip(df.DriveItemId, df.Name))
-    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\'))
     html_file = os.path.basename(name).split('.')[0]+"_OneDrive.html"
     file_extension = os.path.splitext(name)[1][1:]
     if file_extension == 'previous':
@@ -160,9 +159,11 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
                                    'Size',
                                    'Children'])
         dir_index = []
-        for match in re.finditer(uuid4hex, f.read()):
-            s = match.start()
-            eTag = match.group(1).decode("utf-8")
+        entries = re.finditer(uuid4hex, f.read())
+        current = next(entries, total)
+        while isinstance(current, re.Match):
+            s = current.start()
+            eTag = current.group(1).decode("utf-8")
             count = s
             diroffset = s - 39
             objoffset = s - 78
@@ -170,7 +171,12 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
             ouuid = f.read(32).decode("utf-8").strip('\u0000')
             f.seek(diroffset)
             duuid = f.read(32).decode("utf-8").strip('\u0000')
-            name, name_s = unicode_strings(f.read(400))
+            n_current = next(entries, total)
+            try:
+                buffer = n_current.start() - f.tell()
+            except AttributeError:
+                buffer = n_current - f.tell()
+            name, name_s = unicode_strings(f.read(buffer))
             try:
                 sizeoffset = diroffset + 24 + name_s
                 f.seek(sizeoffset)
@@ -178,7 +184,7 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
             except:
                 size = name_s
                 f.seek(diroffset + 32)
-                logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{f.read(400)}')
+                logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{f.read(buffer)}')
             if not dir_index:
                 if reghive and personal:
                     try:
@@ -212,18 +218,15 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
 
             dir_index.append(input)
             progress(count, total, status='Building folder list. Please wait....')
+            current = n_current
 
     print('\n')
 
     df = pd.DataFrame.from_records(dir_index)
     df.loc[(df.DriveItemId.isin(df.ParentId)) | (df.Size == 2880154368), ['Type', 'Size']] = ['Folder', '']
     df.at[0, 'Type'] = 'Root Default'
-    id_name_dict = dict(zip(df.DriveItemId, df.Name))
-    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
-    df['Level'] = df.DriveItemId.apply(lambda x: len(find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\')))
-
-    share_df = df.loc[(df.Level == 1) & (~df.ParentId.isin(df.DriveItemId)) & (df.Type != 'Root Default')]
+    share_df = df.loc[(~df.ParentId.isin(df.DriveItemId)) & (df.Type != 'Root Default')]
     share_list = list(set(share_df.ParentId))
     share_root = []
 
@@ -250,6 +253,12 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
         except Exception as e:
             logging.warning(f'Unable to read registry hive! {e}')
             pass
+
+    id_name_dict = dict(zip(df.DriveItemId, df.Name))
+    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
+    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
+    df['Level'] = df['Path'].str.len()
+    df['Path'] = df['Path'].str.join('\\')
 
     if csv_path:
         print_csv(df, f.name, csv_path, csv_name)

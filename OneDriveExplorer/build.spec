@@ -58,8 +58,9 @@ OneDriveExplorer_GUI_pyz = PYZ(OneDriveExplorer_GUI_a.pure, OneDriveExplorer_GUI
 OneDriveExplorer_GUI_splash = Splash('Images\\splashv.png',
                 binaries=OneDriveExplorer_GUI_a.binaries,
                 datas=OneDriveExplorer_GUI_a.datas,
-                text_pos=None,
+                text_pos=(15, 260),
                 text_size=12,
+                text_color='#0364b8',
                 minify_script=True)
 
 OneDriveExplorer_GUI_a.datas += Tree('./Images', prefix='Images')
