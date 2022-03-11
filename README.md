@@ -4,11 +4,11 @@ OneDriveExplorer is a command line and GUI based application for reconstructing 
 
 ## Usage
 
-**Note:** ode.settings file will need to be deleted when running new builds
+**Note:** 'ode.settings' file will need to be deleted when running new builds
 
 ## Requirements
 
-This project requires several additiona modules. You can install them with the provided requirements.txt file as follows:
+This project requires several additional modules. You can install them with the provided requirements.txt file as follows:
 
 ```bash
 pip3 install -r requirements.txt
@@ -18,7 +18,7 @@ pip3 install -r requirements.txt
 
 ![cmd_help](./Images/cmd_help.png)
 
-To use OneDriveExporer, simply provide the `.\<UserCid>.dat` file to the `-f` argument
+To use OneDriveExplorer, simply provide the `.\<UserCid>.dat` file to the `-f` argument
 
 ```bash
 OneDriveExplorer.py -f business1\d1a7c039-6175-4ddb-bcdb-a8de45cf1678.dat
@@ -26,9 +26,9 @@ OneDriveExplorer.py -f business1\d1a7c039-6175-4ddb-bcdb-a8de45cf1678.dat
 
 Depending on the options, OneDriveExplorer can produce JSON, CSV, or HTML files of the parsed data. The `--pretty` option can be used to output the JSON into a more human readable layout.
 
-Additionaly, a user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive.
+Additionally, a user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive.
 
-### Example output:
+### Example output
 
 #### JSON
 
@@ -52,9 +52,9 @@ The GUI is capable of parsing dat files along with loading JSON or CSV from a pr
 
 ![file_menu](./Images/file_menu.png)  ![hive](./Images/hive.png)
 
-Through the preferences menu, there are options avaiable for saving the parsed dat file to JSON, CSV, and HTML. There is also an option to disable the hive dialoge.
+Through the preferences menu, there are options available for saving the parsed dat file to JSON, CSV, and HTML. There is also an option to disable the hive dialogue.
 
-![preferences](./Images/preference.png) 
+![preferences](./Images/preference.png)
 
 OneDriveExplorer GUI is also capable of performing a simple search.
 
@@ -67,7 +67,7 @@ There are right click menus to help perform various tasks and sin options.
 
 ![skins](./Images/skins.png)
 
-The messages dialoge can be accessed by double clicking on the number in the lower right corner. From this dialoge, you can view, clear and export debug messages. 
+The messages dialogue can be accessed by double clicking on the number in the lower right corner. From this dialogue, you can view, clear and export debug messages.
 
 ![indicator](./Images/message_indicator.png)
 ![messages](./Images/message.png)
