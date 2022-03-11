@@ -4,7 +4,7 @@ OneDriveExplorer is a command line and GUI based application for reconstructing 
 
 ## Usage
 
-**Note:** 'ode.settings' file will need to be deleted when running new builds
+**Note:** `ode.settings` file will need to be deleted when running new builds
 
 ## Requirements
 
