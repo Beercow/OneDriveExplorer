@@ -11,7 +11,7 @@ OneDriveExplorer is a command line and GUI based application for reconstructing 
 This project requires several additional modules. You can install them with the provided requirements.txt file as follows:
 
 ```bash
-pip3 install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 ## Command line
