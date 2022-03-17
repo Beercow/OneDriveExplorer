@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.03.11"
+__version__ = "2022.03.11 r1"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
@@ -44,6 +44,12 @@ def progress(count, total, status=''):
 
     sys.stdout.write(f'[{bar}] {percents}% ...{status}\r')
     sys.stdout.flush()
+
+
+def spinning_cursor():
+    while True:
+        for cursor in '|/-\\':
+            yield cursor
 
 
 def print_json(df, name, pretty, json_path):
@@ -278,7 +284,6 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
         folder_count = 0
 
     print(f'{file_count} files(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
-    sys.exit()
 
 
 def main():
@@ -297,6 +302,7 @@ def main():
     start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
+    parser.add_argument("-d", "--dir", help="Directory to recursively process, looking for <UserCid>.dat and NTUSER hive. This mode is primarily used with KAPE so both <UserCid>.dat and NTUSER hive can be located")
     parser.add_argument("-r", "--REG_HIVE", dest="reghive", help="If a registry hive is provided then the mount points of the SyncEngines will be resolved.")
     parser.add_argument("--csv", help="Directory to save CSV formatted results to. Be sure to include the full path in double quotes")
     parser.add_argument("--csvf", help="File name to save CSV formatted results to. When present, overrides default name")
@@ -310,6 +316,11 @@ def main():
         parser.exit()
 
     args = parser.parse_args()
+
+    if not args.file and not args.dir:
+        parser.print_help()
+        print('\nEither -f or -d is required. Exiting')
+        parser.exit()
 
     if not args.debug:
         logging.getLogger().setLevel(logging.CRITICAL)
@@ -340,6 +351,53 @@ def main():
 
     if args.file:
         parse_onedrive(args.file, args.reghive, args.json, args.csv, args.csvf, args.pretty, args.html, start)
+        sys.exit()
+
+    if args.dir:
+        logging.info(f'Searching for OneDrive data in {args.dir}')
+        d = {}
+        hive = re.compile(r'\\Users\\(?P<user>.*)?')
+        dat = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\settings')
+        rootDir = args.dir
+        spinner = spinning_cursor()
+        delay = time.time()
+        for path, subdirs, files in os.walk(rootDir):
+            if (time.time() - delay) > 0.1:
+                sys.stdout.write(f'Searching for OneDrive data {next(spinner)}\r')
+                sys.stdout.flush()
+                delay = time.time()
+            hive_find = re.findall(hive, path)
+            dat_find = re.findall(dat, path)
+
+            if hive_find:
+                for name in files:
+                    if name == 'NTUSER.DAT':
+                        logging.info(f'Found {name} for {hive_find[0]}')
+                        d.setdefault(hive_find[0], {})
+                        d[hive_find[0]].setdefault('hive', os.path.join(path, name))
+                        args.reghive = os.path.join(path, name)
+
+            if dat_find:
+                for name in files:
+                    if '.dat' in name:
+                        logging.info(f'Found {name} for {dat_find[0]}')
+                        d.setdefault(dat_find[0], {})
+                        d[dat_find[0]].setdefault('files', []).append(os.path.join(path, name))
+
+        for key, value in d.items():
+            filenames = []
+            for k, v in value.items():
+                if k == 'hive':
+                    args.reghive = v
+                if k == 'files':
+                    filenames = v
+
+                if len(filenames) != 0:
+                    logging.info(f'Parsing OneDrive data for {key}')
+                    print(f'\n\nParsing {key} OneDrive\n')
+                    for filename in filenames:
+                        parse_onedrive(filename, args.reghive, args.json, args.csv, args.csvf, args.pretty, args.html, start)
+        sys.exit()
 
 
 if __name__ == '__main__':
