@@ -589,7 +589,7 @@ def progress(total, count, ltext):
 def parse_dat(usercid, reghive, start):
     dat = usercid.replace('/', '\\')
     hive = reghive.replace('/', '\\')
-    logging.info(f'Start pasrsing {dat}. Registry hive: {hive}')
+    logging.info(f'Start parsing {dat}. Registry hive: {hive}')
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
