@@ -148,7 +148,7 @@ def find_parent(x, id_name_dict, parent_dict):
 
 
 def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html_path, start):
-    logging.info(f'Start pasrsing {usercid}. Registry hive: {reghive}')
+    logging.info(f'Start parsing {usercid}. Registry hive: {reghive}')
     with open(usercid, 'rb') as f:
         total = len(f.read())
         f.seek(0)
