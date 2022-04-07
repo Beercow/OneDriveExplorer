@@ -81,5 +81,5 @@ The default file location of the `.dat` files are:
 
 ## Todo
 
+- [x] Support for unicode characters
 - [ ] Set minimum width on slider left/right
-- [ ] Support for unicode characters
