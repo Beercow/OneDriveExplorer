@@ -1,7 +1,7 @@
 import os
 import sys
 import re
-from collections import namedtuple
+import codecs
 import json
 import argparse
 import pandas as pd
@@ -15,24 +15,42 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.03.11 r1"
+__version__ = "2022.04.06"
 __email__ = "bmmaloney97@gmail.com"
 
-ASCII_BYTE = rb" !#\$%&\'\(\)\+,-\.0123456789;=@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\}\~\t"
-String = namedtuple("String", ["s", "offset"])
 
-
-def unicode_strings(buf, n=1):
-    reg = rb"((?:[%s]\x00){%d,}\x00\x00\xab)" % (ASCII_BYTE, n)
-    uni_re = re.compile(reg)
-    match = uni_re.search(buf)
+def unicode_strings(buf, ouuid):
+    uni_re = re.compile("(?:["
+                        "\w"
+                        "\s"
+                        u"\u0020-\u007f"
+                        u"\U0001F600-\U0001F64F"  # emoticons
+                        u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                        u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                        u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                        u"\U00002500-\U00002BEF"  # chinese char
+                        u"\U00002702-\U000027B0"
+                        u"\U00002702-\U000027B0"
+                        u"\U000024C2-\U0001F251"
+                        u"\U0001f926-\U0001f937"
+                        u"\U00010000-\U0010ffff"
+                        u"\u2640-\u2642"
+                        u"\u2600-\u2B55"
+                        u"\u200d"
+                        u"\u23cf"
+                        u"\u23e9"
+                        u"\u231a"
+                        u"\ufe0f"  # dingbats
+                        u"\u3030"
+                        "]{1,}\x00\uabab)", flags=re.UNICODE)
+    match = uni_re.search(buf.decode("utf-16", errors='ignore'))
     if match:
         try:
-            return match.group()[:-3].decode("utf-16"), match.start()
+            return match.group()[:-2]
         except Exception as e:
             logging.warning(e)
-    logging.warning('Name was not found!')
-    return '??????????', '??????????'
+    logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{buf}')
+    return '??????????'
 
 
 def progress(count, total, status=''):
@@ -62,7 +80,7 @@ def print_json(df, name, pretty, json_path):
     df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
 
     for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
-        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Children'))
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Children'))
         if row['Type'] == 'File':
             folder = cache.setdefault(row['ParentId'], {})
             folder.setdefault('Children', []).append(file)
@@ -82,6 +100,7 @@ def print_json(df, name, pretty, json_path):
              'Path': '',
              'Name': name,
              'Size': '',
+             'Hash': '',
              'Children': ''
              }
 
@@ -130,7 +149,7 @@ def print_html(df, name, html_path):
     if file_extension == 'previous':
         html_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.html"
 
-    output = open(html_path + '/' + html_file, 'w')
+    output = open(html_path + '/' + html_file, 'w', encoding='utf-8')
     output.write(df.to_html(index=False))
     output.close()
 
@@ -144,18 +163,18 @@ def find_parent(x, id_name_dict, parent_dict):
         if id_name_dict.get(value, None) is None:
             return find_parent(value, id_name_dict, parent_dict) + x
 
-    return find_parent(value, id_name_dict, parent_dict) +"\\\\"+ str(id_name_dict.get(value))
+    return find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
 
 def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html_path, start):
     logging.info(f'Start parsing {usercid}. Registry hive: {reghive}')
+    ff = re.compile(b'([\x01|\x02|\x09]\xab\xab\xab\xab\xab\xab\xab)') # \x01 = file, \x02 = folder, \x09 = share
+
     with open(usercid, 'rb') as f:
         total = len(f.read())
         f.seek(0)
         uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
         personal = uuid4hex.search(f.read())
-        if not personal:
-            uuid4hex = re.compile(b'"({[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}},[0-9]*)"', re.I)
         f.seek(0)
         df = pd.DataFrame(columns=['ParentId',
                                    'DriveItemId',
@@ -163,34 +182,55 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
                                    'Type',
                                    'Name',
                                    'Size',
+                                   'Hash',
                                    'Children'])
         dir_index = []
-        entries = re.finditer(uuid4hex, f.read())
+        entries = re.finditer(ff, f.read())
         current = next(entries, total)
         while isinstance(current, re.Match):
             s = current.start()
-            eTag = current.group(1).decode("utf-8")
             count = s
-            diroffset = s - 39
-            objoffset = s - 78
-            f.seek(objoffset)
-            ouuid = f.read(32).decode("utf-8").strip('\u0000')
-            f.seek(diroffset)
-            duuid = f.read(32).decode("utf-8").strip('\u0000')
             n_current = next(entries, total)
-            try:
-                buffer = n_current.start() - f.tell()
-            except AttributeError:
-                buffer = n_current - f.tell()
-            name, name_s = unicode_strings(f.read(buffer))
-            try:
-                sizeoffset = diroffset + 24 + name_s
-                f.seek(sizeoffset)
-                size = int.from_bytes(f.read(8), "little")
-            except:
-                size = name_s
-                f.seek(diroffset + 32)
-                logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{f.read(buffer)}')
+            hash = ''
+            size = ''
+            f.seek(s)
+            if b'\x09' in current[0]:
+                f.seek(s + 16)
+                check = f.read(8)
+                if check == b'\x01\x00\x00\x00\x00\x00\x00\x00':
+                    duuid = f.read(39).decode("utf-8")
+                    ouuid = ''
+                    eTag = ''
+                else:
+                    current = n_current
+                    continue
+            else:
+                if b'\x01' in current[0]:
+                    type = 'File'
+                else:
+                    type = 'Folder'
+                f.seek(s + 16)
+                check = f.read(8)
+                if check == b'\x01\x00\x00\x00\x00\x00\x00\x00':
+                    ouuid = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
+                    duuid = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
+                    eTag = f.read(56).decode("utf-8").split('\u0000\u0000', 1)[0]
+                    f.seek(26, 1)
+                    if type == 'File':
+                        if personal:
+                            hash = f'SHA1({f.read(20).hex()})'
+                        else:
+                            hash = f'quickXor({codecs.encode(f.read(20), "base64").decode("utf-8").rstrip()})'
+                        f.seek(12, 1)
+                        size = int.from_bytes(f.read(8), "little")
+                    try:
+                        buffer = n_current.start() - f.tell()
+                    except AttributeError:
+                        buffer = n_current - f.tell()
+                    name = unicode_strings(f.read(buffer), ouuid)
+                else:
+                    current = n_current
+                    continue
             if not dir_index:
                 if reghive and personal:
                     try:
@@ -210,15 +250,17 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
                          'Type': 'Root Default',
                          'Name': mountpoint,
                          'Size': '',
+                         'Hash': '',
                          'Children': []
                          }
                 dir_index.append(input)
             input = {'ParentId': duuid,
                      'DriveItemId': ouuid,
                      'eTag': eTag,
-                     'Type': 'File',
+                     'Type': type,
                      'Name': name,
                      'Size': size,
+                     'Hash': hash,
                      'Children': []
                      }
 
@@ -229,8 +271,6 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
     print('\n')
 
     df = pd.DataFrame.from_records(dir_index)
-    df.loc[(df.DriveItemId.isin(df.ParentId)) | (df.Size == 2880154368), ['Type', 'Size']] = ['Folder', '']
-    df.at[0, 'Type'] = 'Root Default'
 
     share_df = df.loc[(~df.ParentId.isin(df.DriveItemId)) & (df.Type != 'Root Default')]
     share_list = list(set(share_df.ParentId))
@@ -243,6 +283,7 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
                  'Type': 'Root Shared',
                  'Name': 'Shared with user',
                  'Size': '',
+                 'Hash': '',
                  'Children': [],
                  'Level': 1
                  }

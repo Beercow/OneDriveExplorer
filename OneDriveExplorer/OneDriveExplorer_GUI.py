@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import codecs
 import json
 from collections import namedtuple
 import tkinter as tk
@@ -28,7 +29,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.03.11"
+__version__ = "2022.04.06"
 __email__ = "bmmaloney97@gmail.com"
 
 ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
@@ -551,23 +552,47 @@ def search(item=''):
 
 def clear_search():
     for hit in found:
-        tv.item(hit, tags=())
+        try:
+            tv.item(hit, tags=())
+        except:
+            pass
     found.clear()
     if len(tv.selection()) > 0:
         tv.selection_remove(tv.selection()[0])
 
 
-def unicode_strings(buf, n=1):
-    reg = rb"((?:[%s]\x00){%d,}\x00\x00\xab)" % (ASCII_BYTE, n)
-    uni_re = re.compile(reg)
-    match = uni_re.search(buf)
+def unicode_strings(buf, ouuid):
+    uni_re = re.compile("(?:["
+                        "\w"
+                        "\s"
+                        u"\u0020-\u007f"
+                        u"\U0001F600-\U0001F64F"  # emoticons
+                        u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                        u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                        u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                        u"\U00002500-\U00002BEF"  # chinese char
+                        u"\U00002702-\U000027B0"
+                        u"\U00002702-\U000027B0"
+                        u"\U000024C2-\U0001F251"
+                        u"\U0001f926-\U0001f937"
+                        u"\U00010000-\U0010ffff"
+                        u"\u2640-\u2642"
+                        u"\u2600-\u2B55"
+                        u"\u200d"
+                        u"\u23cf"
+                        u"\u23e9"
+                        u"\u231a"
+                        u"\ufe0f"  # dingbats
+                        u"\u3030"
+                        "]{1,}\x00\uabab)", flags=re.UNICODE)
+    match = uni_re.search(buf.decode("utf-16", errors='ignore'))
     if match:
         try:
-            return match.group()[:-3].decode("utf-16"), match.start()
+            return match.group()[:-2]
         except Exception as e:
             logging.warning(e)
-    logging.warning('Name was not found!')
-    return '??????????', '??????????'
+    logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{buf}')
+    return '??????????'
 
 
 def clear_all():
@@ -590,6 +615,7 @@ def parse_dat(usercid, reghive, start):
     dat = usercid.replace('/', '\\')
     hive = reghive.replace('/', '\\')
     logging.info(f'Start parsing {dat}. Registry hive: {hive}')
+    ff = re.compile(b'([\x01|\x02|\x09]\xab\xab\xab\xab\xab\xab\xab)') # \x01 = file, \x02 = folder, \x09 = share
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
@@ -602,8 +628,6 @@ def parse_dat(usercid, reghive, start):
         f.seek(0)
         uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
         personal = uuid4hex.search(f.read())
-        if not personal:
-            uuid4hex = re.compile(b'"({[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}},[0-9]*)"', re.I)
         f.seek(0)
         df = pd.DataFrame(columns=['ParentId',
                                    'DriveItemId',
@@ -611,34 +635,55 @@ def parse_dat(usercid, reghive, start):
                                    'Type',
                                    'Name',
                                    'Size',
+                                   'Hash',
                                    'Children'])
         dir_index = []
-        entries = re.finditer(uuid4hex, f.read())
+        entries = re.finditer(ff, f.read())
         current = next(entries, total)
         while isinstance(current, re.Match):
             s = current.start()
-            eTag = current.group(1).decode("utf-8")
             count = s
-            diroffset = s - 39
-            objoffset = s - 78
-            f.seek(objoffset)
-            ouuid = f.read(32).decode("utf-8").strip('\u0000')
-            f.seek(diroffset)
-            duuid = f.read(32).decode("utf-8").strip('\u0000')
             n_current = next(entries, total)
-            try:
-                buffer = n_current.start() - f.tell()
-            except AttributeError:
-                buffer = n_current - f.tell()
-            name, name_s = unicode_strings(f.read(buffer))
-            try:
-                sizeoffset = diroffset + 24 + name_s
-                f.seek(sizeoffset)
-                size = int.from_bytes(f.read(8), "little")
-            except:
-                size = name_s
-                f.seek(diroffset + 32)
-                logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{f.read(buffer)}')
+            hash = ''
+            size = ''
+            f.seek(s)
+            if b'\x09' in current[0]:
+                f.seek(s + 16)
+                check = f.read(8)
+                if check == b'\x01\x00\x00\x00\x00\x00\x00\x00':
+                    duuid = f.read(39).decode("utf-8")
+                    ouuid = ''
+                    eTag = ''
+                else:
+                    current = n_current
+                    continue
+            else:
+                if b'\x01' in current[0]:
+                    type = 'File'
+                else:
+                    type = 'Folder'
+                f.seek(s + 16)
+                check = f.read(8)
+                if check == b'\x01\x00\x00\x00\x00\x00\x00\x00':
+                    ouuid = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
+                    duuid = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
+                    eTag = f.read(56).decode("utf-8").split('\u0000\u0000', 1)[0]
+                    f.seek(26, 1)
+                    if type == 'File':
+                        if personal:
+                            hash = f'SHA1({f.read(20).hex()})'
+                        else:
+                            hash = f'quickXor({codecs.encode(f.read(20), "base64").decode("utf-8").rstrip()})'
+                        f.seek(12, 1)
+                        size = int.from_bytes(f.read(8), "little")
+                    try:
+                        buffer = n_current.start() - f.tell()
+                    except AttributeError:
+                        buffer = n_current - f.tell()
+                    name = unicode_strings(f.read(buffer), ouuid)
+                else:
+                    current = n_current
+                    continue
             if not dir_index:
                 if reghive and personal:
                     try:
@@ -658,15 +703,17 @@ def parse_dat(usercid, reghive, start):
                          'Type': 'Root Default',
                          'Name': mountpoint,
                          'Size': '',
+                         'Hash': '',
                          'Children': []
                          }
                 dir_index.append(input)
             input = {'ParentId': duuid,
                      'DriveItemId': ouuid,
                      'eTag': eTag,
-                     'Type': 'File',
+                     'Type': type,
                      'Name': name,
                      'Size': size,
+                     'Hash': hash,
                      'Children': []
                      }
 
@@ -675,8 +722,7 @@ def parse_dat(usercid, reghive, start):
             current = n_current
 
     df = pd.DataFrame.from_records(dir_index)
-    df.loc[(df.DriveItemId.isin(df.ParentId)) | (df.Size == 2880154368), ['Type', 'Size']] = ['Folder', '']
-    df.at[0, 'Type'] = 'Root Default'
+
     parse_onedrive(f.name, df, start, dat=True, reghive=reghive)
 
 
@@ -739,9 +785,10 @@ def parse_csv(filename, start):
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
     df = pd.read_csv(filename,
-                     usecols=['ParentId', 'DriveItemId', 'eTag', 'Type', 'Name', 'Size'], dtype=str)
+                     usecols=['ParentId', 'DriveItemId', 'eTag', 'Type', 'Name', 'Size', 'Hash'], dtype=str)
     df['Children'] = pd.Series([[] for x in range(len(df.index))])
     df = df.fillna('')
+    df['Name'] = df.apply(lambda row: row['Name'].encode('cp1252').decode('utf-8'), axis=1)
     parse_onedrive(filename.name, df, start)
 
 
@@ -768,6 +815,7 @@ def parse_onedrive(name, df, start, dat=False, reghive=False):
                  'Type': 'Root Shared',
                  'Name': 'Shared with user',
                  'Size': '',
+                 'Hash': '',
                  'Children': [],
                  'Level': 1
                  }
@@ -812,7 +860,7 @@ def parse_onedrive(name, df, start, dat=False, reghive=False):
     df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
 
     for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
-        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Children'))
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Children'))
         if row['Type'] == 'File':
             folder = cache.setdefault(row['ParentId'], {})
             folder.setdefault('Children', []).append(file)
@@ -832,6 +880,7 @@ def parse_onedrive(name, df, start, dat=False, reghive=False):
              'Path': '',
              'Name': name.replace('/', '\\'),
              'Size': '',
+             'Hash': '',
              'Children': ''
              }
 
@@ -879,19 +928,19 @@ def parse_onedrive(name, df, start, dat=False, reghive=False):
 def parent_child(d, parent_id=None):
     if parent_id is None:
         # This line is only for the first call of the function
-        parent_id = tv.insert("", "end", image=root_drive_img, text=d['Name'], values=(d['ParentId'], d['DriveItemId'], d['eTag'], d['Name'], d['Type'], d['Size'], len(d['Children']), d['Path']))
+        parent_id = tv.insert("", "end", image=root_drive_img, text=d['Name'], values=(d['ParentId'], d['DriveItemId'], d['eTag'], d['Name'], d['Type'], d['Size'], d['Hash'], len(d['Children']), d['Path']))
 
     for c in d['Children']:
         # Here we create a new row object in the TreeView and pass its return value for recursion
         # The return value will be used as the argument for the first parameter of this same line of code after recursion
         if c['Type'] == 'Folder':
-            parent_child(c, tv.insert(parent_id, 0, image=folder_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], len(c['Children']), c['Path'])))
+            parent_child(c, tv.insert(parent_id, 0, image=folder_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
         elif c['Type'] == 'Root Default':
-            parent_child(c, tv.insert(parent_id, 0, image=default_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], len(c['Children']), c['Path'])))
+            parent_child(c, tv.insert(parent_id, 0, image=default_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
         elif c['Type'] == 'Root Shared':
-            parent_child(c, tv.insert(parent_id, "end", image=shared_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], len(c['Children']), c['Path'])))
+            parent_child(c, tv.insert(parent_id, "end", image=shared_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
         else:
-            parent_child(c, tv.insert(parent_id, "end", image=file_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], len(c['Children']), c['Path'])))
+            parent_child(c, tv.insert(parent_id, "end", image=file_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
         root.update_idletasks()
 
 
@@ -915,26 +964,26 @@ def print_json(cache, name):
 
 def print_csv(df, name):
     df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
-    df = df.drop(['Children', 'Level', 'Sort'], axis=1)
+    df = df.drop(['Children', 'Level', 'FileSort', 'FolderSort'], axis=1)
 
     file_extension = os.path.splitext(name)[1][1:]
     if file_extension == 'previous':
-        output = open(menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv", 'w')
+        csv_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv"
     else:
-        output = open(menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive.csv", 'w')
-    df.to_csv(output, index=False)
+        csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
+    df.to_csv(menu_data['path'] + '\\' + csv_file, index=False)
 
 
 def print_html(df, name):
     df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
-    df = df.drop(['Children', 'Level', 'Sort'], axis=1)
+    df = df.drop(['Children', 'Level', 'FileSort', 'FolderSort'], axis=1)
 
     output = menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive.html"
     file_extension = os.path.splitext(name)[1][1:]
     if file_extension == 'previous':
         output = menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.html"
 
-    output = open(output, 'w')
+    output = open(output, 'w', encoding='utf-8')
     output.write(df.to_html(index=False))
     output.close()
 
@@ -945,9 +994,9 @@ def selectItem(a):
     details.config(state='normal')
     details.delete('1.0', tk.END)
     try:
-        line = f'Name: {values[3]}\nPath: {values[7]}\nSize: {values[5]}\nType: {values[4]}\nParentId: {values[0]}\nDriveItemId: {values[1]}\neTag:{values[2]}'
+        line = f'Name: {values[3]}\nType: {values[4]}\nPath: {values[8]}\nSize: {values[5]}\nHash: {values[6]}\nParentId: {values[0]}\nDriveItemId: {values[1]}\neTag:{values[2]}'
         if values[4] == 'Folder' or 'Root' in values[4]:
-            line += f'\n\n# Children: {values[6]}'
+            line += f'\n\n# Children: {values[7]}'
         details.insert(tk.END, line)
         details.see(tk.END)
     except IndexError:
@@ -1105,9 +1154,9 @@ def close_children(parent):
 
 
 def copy_details(values):
-    line = f'Name: {values[3]}\nPath: {values[7]}\nSize: {values[5]}\nType: {values[4]}\nParentId: {values[0]}\nDriveItemId: {values[1]}\neTag: {values[2]}'
+    line = f'Name: {values[3]}\nType: {values[4]}\nPath: {values[8]}\nSize: {values[5]}\nHash: {values[6]}\nParentId: {values[0]}\nDriveItemId: {values[1]}\neTag: {values[2]}'
     if values[4] == 'Folder' or 'Root' in values[4]:
-        line += f'\n\n# Children: {values[6]}'
+        line += f'\n\n# Children: {values[7]}'
     root.clipboard_clear()
     root.clipboard_append(line)
 
@@ -1119,7 +1168,7 @@ def copy_path(values, curItem):
         file_name = tv.item(parentiid, 'text')
         parentiid = tv.parent(parentiid)
 
-    line = f'{file_name}: {values[7]}\\{values[3]}'
+    line = f'{file_name}: {values[8]}\\{values[3]}'
     root.clipboard_clear()
     root.clipboard_append(line)
 
