@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.04.06"
+__version__ = "2022.05.18"
 __email__ = "bmmaloney97@gmail.com"
 
 
@@ -42,11 +42,11 @@ def unicode_strings(buf, ouuid):
                         u"\u231a"
                         u"\ufe0f"  # dingbats
                         u"\u3030"
-                        "]{1,}\x00\uabab)", flags=re.UNICODE)
+                        "]{1,}\x00[\uabab|\x00\x00]?)", flags=re.UNICODE)
     match = uni_re.search(buf.decode("utf-16", errors='ignore'))
     if match:
         try:
-            return match.group()[:-2]
+            return match.group()
         except Exception as e:
             logging.warning(e)
     logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{buf}')
@@ -173,6 +173,9 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
     with open(usercid, 'rb') as f:
         total = len(f.read())
         f.seek(0)
+        version = int(f.read(1).hex(), 16)
+        if version >= 0x35:
+            ff = re.compile(b'([\x01|\x02]\x00\x27\xec\xb1\x01\x00\x00|\x09\xab\xab\xab\xab\xab\xab\xab)')  # \x01 = file, \x02 = folder, \x09 = share
         uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
         personal = uuid4hex.search(f.read())
         f.seek(0)
@@ -205,7 +208,7 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
                     current = n_current
                     continue
             else:
-                if b'\x01' in current[0]:
+                if current[0].startswith(b'\x01'):
                     type = 'File'
                 else:
                     type = 'Folder'
@@ -258,7 +261,7 @@ def parse_onedrive(usercid, reghive, json_path, csv_path, csv_name, pretty, html
                      'DriveItemId': ouuid,
                      'eTag': eTag,
                      'Type': type,
-                     'Name': name,
+                     'Name': name.split('\u0000', 1)[0],
                      'Size': size,
                      'Hash': hash,
                      'Children': []
