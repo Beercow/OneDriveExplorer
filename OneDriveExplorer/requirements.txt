@@ -6,3 +6,8 @@ pytz
 python-registry
 keyboard
 openpyxl
+pandastable
+dissect.cstruct
+psutil
+pytsk3
+quickxorhash

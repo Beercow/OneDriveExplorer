@@ -1,25 +1,37 @@
 import os
 import sys
 import re
-import codecs
 import json
-from collections import namedtuple
+import ctypes
 import tkinter as tk
-import tkinter.font as tkFont
 from tkinter import ttk
 from ttkthemes import ThemedTk
 from tkinter import filedialog
 import threading
+from queue import Queue
 import pandas as pd
+from pandastable import Table
 from PIL import ImageTk, Image
 import time
-from Registry import Registry
 import keyboard
 import logging
 from io import StringIO as StringBuffer
 from datetime import datetime
 import warnings
+from ode.renderers.json import print_json_gui
+from ode.renderers.csv_file import print_csv
+from ode.renderers.html import print_html
+from ode.renderers.project import save_project
+from ode.renderers.project import load_project
+from ode.parsers.dat_new import parse_dat
+from ode.parsers.csv_file import parse_csv
+from ode.parsers.onedrive import parse_onedrive
+from ode.parsers.odl import parse_odl
+from ode.helpers.mft import live_hive
+import ode.helpers.ScrollableNotebook as ScrollableNotebook
 warnings.filterwarnings("ignore", category=UserWarning)
+
+ctypes.windll.shcore.SetProcessDpiAwareness(2)
 
 log_capture_string = StringBuffer()
 logging.basicConfig(level=logging.INFO,
@@ -29,15 +41,15 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.05.18"
+__version__ = "2022.06.17"
 __email__ = "bmmaloney97@gmail.com"
-
-ASCII_BYTE = rb" !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
-String = namedtuple("String", ["s", "offset"])
-uuid4hex = re.compile(b'{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}}', re.I)
+rbin = []
 found = []
-folder_structure = []
+detached_items = []
+user_logs = {}
 reghive = ''
+recbin = ''
+proj_name = None
 
 if getattr(sys, 'frozen', False):
     # If the application is run as a bundle, the PyInstaller bootloader
@@ -72,7 +84,17 @@ if os.path.isfile('ode.settings'):
         menu_data = json.load(jsonfile)
         jsonfile.close()
 else:
-    menu_data = json.loads('{"theme": "vista", "json": false, "pretty": false, "csv": false, "html": false, "path": ".", "hive": false}')
+    menu_data = json.loads('{"theme": "vista",\
+                             "json": false,\
+                             "pretty": false,\
+                             "csv": false,\
+                             "html": false,\
+                             "path": ".",\
+                             "hive": false,\
+                             "odl": false,\
+                             "odl_save": false}'
+                           )
+
     with open("ode.settings", "w") as jsonfile:
         json.dump(menu_data, jsonfile)
 
@@ -81,6 +103,7 @@ class quit:
     def __init__(self, root):
         self.root = root
         self.win = tk.Toplevel(self.root)
+        self.win.wm_transient(self.root)
         self.win.attributes("-toolwindow", 1)
         self.win.title("Please confirm")
         self.win.grab_set()
@@ -132,16 +155,19 @@ class quit:
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
+        qw = self.win.winfo_width()
         y = self.root.winfo_y()
+        qh = self.win.winfo_height()
         w = self.root.winfo_width()
         h = self.root.winfo_height()
-        self.win.geometry("+%d+%d" % (x + w/2, y + h/2))
+        self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
 
 
 class preferences:
     def __init__(self, root):
         self.root = root
         self.win = tk.Toplevel(self.root)
+        self.win.wm_transient(self.root)
         self.win.title("Preferences")
         self.win.iconbitmap(application_path + '/Images/controls.ico')
         self.win.grab_set()
@@ -149,12 +175,18 @@ class preferences:
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.close_pref)
 
+        s = ttk.Style()
+        s.map('Red.TCheckbutton',
+              foreground=[("!disabled", "red"), ("disabled", "pink")])
+
         self.json_save = tk.BooleanVar(value=menu_data['json'])
         self.json_pretty = tk.BooleanVar(value=menu_data['pretty'])
         self.csv_save = tk.BooleanVar(value=menu_data['csv'])
         self.html_save = tk.BooleanVar(value=menu_data['html'])
         self.auto_path = tk.StringVar(value=menu_data['path'])
         self.skip_hive = tk.BooleanVar(value=menu_data['hive'])
+        self.odl = tk.BooleanVar(value=menu_data['odl'])
+        self.odl_save = tk.BooleanVar(value=menu_data['odl_save'])
 
         self.frame = ttk.Frame(self.win)
 
@@ -162,9 +194,16 @@ class preferences:
                                      relief='groove',
                                      padding=5)
 
+        self.exp_label = ttk.Label(self.inner_frame,
+                                   text='Experimental',
+                                   foreground='red'
+                                   )
+
         self.select_frame = ttk.Frame(self.inner_frame)
         self.path_frame = ttk.Frame(self.inner_frame)
         self.hive_frame = ttk.Frame(self.inner_frame)
+        self.exp_frame = ttk.LabelFrame(self.inner_frame,
+                                        labelwidget=self.exp_label)
         self.exit_frame = ttk.Frame(self.inner_frame)
 
         self.exit_frame.grid_rowconfigure(0, weight=1)
@@ -175,7 +214,8 @@ class preferences:
         self.select_frame.grid(row=0, column=0, sticky="nsew")
         self.path_frame.grid(row=1, column=0, pady=25, sticky="nsew")
         self.hive_frame.grid(row=2, column=0, pady=(0, 25), sticky="nsew")
-        self.exit_frame.grid(row=3, column=0, sticky="nsew")
+        self.exp_frame.grid(row=3, column=0, pady=(0, 25), sticky="nsew")
+        self.exit_frame.grid(row=4, column=0, sticky="nsew")
 
         self.auto_json = ttk.Checkbutton(self.select_frame,
                                          text="Auto Save to JSON",
@@ -209,7 +249,8 @@ class preferences:
 
         self.label = ttk.Label(self.path_frame, text="Auto Save Path")
         self.save_path = ttk.Entry(self.path_frame, width=30,
-                                   textvariable=self.auto_path)
+                                   textvariable=self.auto_path,
+                                   exportselection=0)
         self.btn = ttk.Button(self.path_frame, text='...', width=3,
                               takefocus=False, command=self.select_dir)
 
@@ -220,6 +261,25 @@ class preferences:
                                        onvalue=True,
                                        takefocus=False
                                        )
+
+        self.exp = ttk.Checkbutton(self.exp_frame,
+                                   text="Enable ODL log parsing",
+                                   var=self.odl,
+                                   offvalue=False,
+                                   onvalue=True,
+                                   takefocus=False,
+                                   command=self.odl_config,
+                                   style='Red.TCheckbutton'
+                                   )
+
+        self.exp_save = ttk.Checkbutton(self.exp_frame,
+                                        text="Auto Save ODL",
+                                        var=self.odl_save,
+                                        offvalue=False,
+                                        onvalue=True,
+                                        takefocus=False,
+                                        style='Red.TCheckbutton'
+                                        )
 
         self.save = ttk.Button(self.exit_frame, text="Save",
                                takefocus=False, command=self.save_pref)
@@ -234,6 +294,8 @@ class preferences:
         self.save_path.grid(row=0, column=1)
         self.btn.grid(row=0, column=2, padx=5)
         self.reghive.grid(row=0, column=2, padx=5)
+        self.exp.grid(row=0, column=0, padx=5, sticky="w")
+        self.exp_save.grid(row=1, column=0, padx=5, sticky="w")
         self.save.grid(row=0, column=0, pady=5, sticky="e")
         self.cancel.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 
@@ -241,14 +303,24 @@ class preferences:
             self.pretty.configure(state="disabled")
             self.json_pretty.set(False)
 
+        if self.odl.get() is False:
+            self.exp_save.configure(state="disabled")
+            self.odl_save.set(False)
+
         self.sync_windows()
+
+        self.root.bind('<Configure>', self.sync_windows)
+        self.win.bind('<Configure>', self.sync_windows)
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
         y = self.root.winfo_y()
         w = self.root.winfo_width()
         h = self.root.winfo_height()
-        self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
+        try:
+            self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
+        except:
+            pass
 
     def pretty_config(self):
         if self.json_save.get() is True:
@@ -256,6 +328,13 @@ class preferences:
         else:
             self.pretty.configure(state="disabled")
             self.json_pretty.set(False)
+
+    def odl_config(self):
+        if self.odl.get() is True:
+            self.exp_save.configure(state="normal")
+        else:
+            self.exp_save.configure(state="disabled")
+            self.odl_save.set(False)
 
     def select_dir(self):
         dir_path = filedialog.askdirectory(initialdir="\\",
@@ -272,6 +351,12 @@ class preferences:
         menu_data['html'] = self.html_save.get()
         menu_data['path'] = self.auto_path.get()
         menu_data['hive'] = self.skip_hive.get()
+        menu_data['odl'] = self.odl.get()
+        menu_data['odl_save'] = self.odl_save.get()
+        if menu_data['odl'] is True:
+            file_menu.entryconfig("OneDrive logs", state='normal')
+        else:
+            file_menu.entryconfig("OneDrive logs", state='disable')
         if not os.path.exists(menu_data['path']):
             os.makedirs(menu_data['path'])
         with open("ode.settings", "w") as jsonfile:
@@ -286,7 +371,90 @@ class hive:
     def __init__(self, root):
         self.root = root
         self.win = tk.Toplevel(self.root)
+        self.win.wm_transient(self.root)
         self.win.title("Load User Hive")
+        self.win.iconbitmap(application_path + '/Images/OneDrive.ico')
+        self.win.grab_set()
+        self.win.focus_force()
+        self.win.resizable(False, False)
+        self.win.protocol("WM_DELETE_WINDOW", self.close_hive)
+
+        self.frame = ttk.Frame(self.win)
+
+        self.inner_frame = ttk.Frame(self.frame,
+                                     relief='groove',
+                                     padding=5)
+
+        self.button_frame = ttk.Frame(self.inner_frame)
+
+        self.frame.grid(row=0, column=0)
+        self.inner_frame.grid(row=0, column=0, padx=5, pady=5)
+        self.button_frame.grid(row=2, column=0, columnspan=3)
+
+        self.label_i = ttk.Label(self.inner_frame, image=question_img)
+        self.label = ttk.Label(self.inner_frame,
+                               text="User's registry hive allows the mount points of the SyncEngines to be resolved.\n\nDo you want to provide a registry hive?\n")
+
+        self.label_l = ttk.Label(self.inner_frame, text="Note:")
+
+        self.label_r = ttk.Label(self.inner_frame,
+                                 text="To bypass this dialog and skip loading hive, hold SHIFT when loading <UserCid>.dat\nThis dialog can also be bypassed in the Preferences settings.\n")
+
+        self.yes = ttk.Button(self.button_frame,
+                              text="Yes",
+                              takefocus=False,
+                              command=self.get_hive)
+
+        self.no = ttk.Button(self.button_frame,
+                             text="No",
+                             takefocus=False,
+                             command=self.close_hive)
+
+        self.label_i.grid(row=0, column=0, rowspan=2, sticky='n')
+        self.label.grid(row=0, column=1, columnspan=2, pady=(5, 0), sticky='w')
+        self.label_l.grid(row=1, column=1, sticky='nw')
+        self.label_r.grid(row=1, column=2, padx=5, sticky='w')
+        self.yes.grid(row=0, column=0, padx=(0, 5), pady=5, sticky='e')
+        self.no.grid(row=0, column=1, pady=5, sticky='w')
+
+        self.sync_windows()
+
+        self.root.bind('<Configure>', self.sync_windows)
+        self.win.bind('<Configure>', self.sync_windows)
+
+    def __callback(self):
+        return
+
+    def close_hive(self):
+        self.win.destroy()
+
+    def get_hive(self):
+        global reghive
+        reghive = filedialog.askopenfilename(initialdir="/",
+                                             title="Open",
+                                             filetypes=(("Load user hive",
+                                                         "*.dat"),))
+        if reghive:
+            self.win.destroy()
+            root.wait_window(rec_bin(root).win)
+
+    def sync_windows(self, event=None):
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        w = self.root.winfo_width()
+        h = self.root.winfo_height()
+        try:
+            self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
+        except:
+            pass
+
+
+class rec_bin:
+    def __init__(self, root):
+        self.root = root
+        self.win = tk.Toplevel(self.root)
+        self.win.wm_transient(self.root)
+        self.win.title("$Recycle.Bin")
         self.win.iconbitmap(application_path + '/Images/OneDrive.ico')
         self.win.grab_set()
         self.win.focus_force()
@@ -305,45 +473,41 @@ class hive:
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5)
         self.button_frame.grid(row=2, column=0, columnspan=3)
 
-        self.label_i = ttk.Label(self.inner_frame, image=warning_img)
+        self.label_i = ttk.Label(self.inner_frame, image=trash_img)
         self.label = ttk.Label(self.inner_frame,
-                               text="User's registry hive allows the mount points of the SyncEngines to be resolved.\n\nDo you want to provide a registry hive?\n")
-
-        self.label_l = ttk.Label(self.inner_frame, text="Note:")
-
-        self.label_r = ttk.Label(self.inner_frame, text="To bypass this dialog and skip loading hive, hold SHIFT when loading <UserCid>.dat\nThis dialog can also be bypassed in the Preferences settings.\n")
+                               text="Providing the path to $Recycle.Bin allows retrieval of deleted files.\n\nDo you want to provide the location of $Recycle.Bin?\n")
 
         self.yes = ttk.Button(self.button_frame,
                               text="Yes",
                               takefocus=False,
-                              command=self.get_hive)
+                              command=self.get_rec_bin)
 
         self.no = ttk.Button(self.button_frame,
                              text="No",
                              takefocus=False,
-                             command=self.close_hive)
+                             command=self.close_rec_bin)
 
-        self.label_i.grid(row=0, column=0, rowspan=2)
+        self.label_i.grid(row=0, column=0, rowspan=2, sticky='n')
         self.label.grid(row=0, column=1, columnspan=2, pady=(5, 0), sticky='w')
-        self.label_l.grid(row=1, column=1, sticky='nw')
-        self.label_r.grid(row=1, column=2, padx=5, sticky='w')
         self.yes.grid(row=0, column=0, padx=(0, 5), pady=5, sticky='e')
         self.no.grid(row=0, column=1, pady=5, sticky='w')
 
         self.sync_windows()
 
+        self.root.bind('<Configure>', self.sync_windows)
+        self.win.bind('<Configure>', self.sync_windows)
+
     def __callback(self):
         return
 
-    def close_hive(self):
+    def close_rec_bin(self):
         self.win.destroy()
 
-    def get_hive(self):
-        global reghive
-        reghive = filedialog.askopenfilename(initialdir="/",
-                                             title="Open",
-                                             filetypes=(("Load user hive", "*.dat"),))
-        if reghive:
+    def get_rec_bin(self):
+        global recbin
+        recbin = filedialog.askdirectory(initialdir="/", title="Open")
+
+        if recbin:
             self.win.destroy()
 
     def sync_windows(self, event=None):
@@ -351,7 +515,10 @@ class hive:
         y = self.root.winfo_y()
         w = self.root.winfo_width()
         h = self.root.winfo_height()
-        self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
+        try:
+            self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
+        except:
+            pass
 
 
 class messages:
@@ -384,17 +551,30 @@ class messages:
         self.inner_frame.grid_columnconfigure(0, weight=1)
 
         self.tree_scroll = ttk.Scrollbar(self.inner_frame)
-        self.tree = ttk.Treeview(self.inner_frame, columns=self.columns, show='headings', yscrollcommand=self.tree_scroll.set)
+        self.tree = ttk.Treeview(self.inner_frame,
+                                 columns=self.columns,
+                                 yscrollcommand=self.tree_scroll.set)
         self.tb_scroll = ttk.Scrollbar(self.inner_frame)
-        self.tb = tk.Text(self.inner_frame, undo=False, height=10, width=87, yscrollcommand=self.tb_scroll.set)
+        self.tb = tk.Text(self.inner_frame,
+                          undo=False,
+                          height=10,
+                          width=87,
+                          yscrollcommand=self.tb_scroll.set)
         self.total = ttk.Label(self.inner_frame, text='Total messages:')
-        self.clear = ttk.Button(self.inner_frame, text='Clear messages', takefocus=False, command=self.clear)
-        self.export = ttk.Button(self.inner_frame, text='Export messages', takefocus=False, command=self.export)
+        self.clear = ttk.Button(self.inner_frame, text='Clear messages',
+                                takefocus=False, command=self.clear)
+        self.export = ttk.Button(self.inner_frame, text='Export messages',
+                                 takefocus=False, command=self.export)
         self.sg = ttk.Sizegrip(self.inner_frame)
 
         self.tree.heading('Message Date', text='Message Date', anchor='w')
         self.tree.heading('Message Type', text='Message Type', anchor='w')
         self.tree.heading('Message', text='Message', anchor='w')
+        self.tree.column('#0', minwidth=0, width=50, stretch=False, anchor='w')
+        self.tree.column('Message Date', minwidth=0, width=150,
+                         stretch=False, anchor='w')
+        self.tree.column('Message Type', minwidth=0, width=100,
+                         stretch=False, anchor='w')
 
         self.tree_scroll.config(command=self.tree.yview)
         self.tb_scroll.config(command=self.tb.yview)
@@ -402,12 +582,26 @@ class messages:
 
         data = log_capture_string.getvalue().split('\n')
         for m in data:
-            self.tree.insert("", "end", values=m.split(', '))
+            m = m.split(', ', 2)
+            try:
+                if m[1] == 'INFO':
+                    image = minfo_img
+                if m[1] == 'WARNING':
+                    image = warning_img
+                if m[1] == 'ERROR':
+                    image = merror_img
+            except IndexError:
+                image = ''
+            self.tree.insert("", "end", values=m, image=image)
 
-        self.tree.grid(row=0, column=0, columnspan=3, padx=(10, 0), pady=(10, 0), sticky='nsew')
-        self.tree_scroll.grid(row=0, column=3, padx=(0, 10), pady=(10, 0), sticky="nsew")
-        self.tb.grid(row=1, column=0, columnspan=3, padx=(10, 0), pady=(5, 10), sticky='nsew')
-        self.tb_scroll.grid(row=1, column=3, padx=(0, 10), pady=(5, 10), sticky="nsew")
+        self.tree.grid(row=0, column=0, columnspan=3, padx=(10, 0),
+                       pady=(10, 0), sticky='nsew')
+        self.tree_scroll.grid(row=0, column=3, padx=(0, 10),
+                              pady=(10, 0), sticky="nsew")
+        self.tb.grid(row=1, column=0, columnspan=3, padx=(10, 0),
+                     pady=(5, 10), sticky='nsew')
+        self.tb_scroll.grid(row=1, column=3, padx=(0, 10),
+                            pady=(5, 10), sticky="nsew")
         self.total.grid(row=2, column=0, padx=(10, 0), pady=(0, 5), stick='w')
         self.clear.grid(row=2, column=1, padx=5, pady=(0, 5), stick='e')
         self.export.grid(row=2, column=2, pady=(0, 5), stick='e')
@@ -422,7 +616,8 @@ class messages:
         self.tb.delete('1.0', tk.END)
         curItem = self.tree.selection()
         values = self.tree.item(curItem, 'values')
-        self.tb.insert(tk.END, re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
+        self.tb.insert(tk.END,
+                       re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
         self.tb.config(state='disable')
 
     def clear(self):
@@ -476,9 +671,10 @@ class messages:
 class export_result:
     def __init__(self, root, excel_name, failed=False):
         self.root = root
-        self.excel_name = excel_name
+        self.excel_name = excel_name.replace('/', '\\')
         self.failed = failed
         self.win = tk.Toplevel(self.root)
+        self.win.wm_transient(self.root)
         if self.failed:
             self.win.title("Export failed!")
         else:
@@ -505,17 +701,21 @@ class export_result:
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5)
 
         self.label_i = ttk.Label(self.inner_frame, image=info_img)
-        self.label = ttk.Label(self.inner_frame, text=f'Messages exported to:\n\n{self.excel_name}')
+        self.label = ttk.Label(self.inner_frame,
+                               text=f'Messages exported to:\n\n{self.excel_name}')
         if self.failed:
             self.label_i['image'] = error_img
             self.label['text'] = f'Messages failed to export.\n\n{self.excel_name}'
-        self.btn = ttk.Button(self.inner_frame, text='OK', takefocus=False, command=self.ok)
+        self.btn = ttk.Button(self.inner_frame, text='OK',
+                              takefocus=False, command=self.ok)
 
         self.label_i.grid(row=0, column=0)
         self.label.grid(row=0, column=1, padx=(0, 5))
         self.btn.grid(row=1, column=0, columnspan=2, pady=5)
 
         self.sync_windows()
+        self.root.bind('<Configure>', self.sync_windows)
+        self.win.bind('<Configure>', self.sync_windows)
 
     def ok(self):
         self.win.destroy()
@@ -525,548 +725,121 @@ class export_result:
         y = self.root.winfo_y()
         w = self.root.winfo_width()
         h = self.root.winfo_height()
-        self.win.geometry("+%d+%d" % (x + w/2, y + h/2))
-
-
-def search(item=''):
-    query = search_entry.get()
-    if len(query) == 0:
-        find_label['text'] = ''
-        find_label['foreground'] = ''
-        return
-    children = tv.get_children(item)
-    for child in children:
-        for x in tv.item(child)['values']:
-            if query.lower() in str(x).lower():
-                tv.see(child)
-                tv.item(child, tags="yellow")
-                found.append(child)
-        search(item=child)
-    if len(found) == 0:
-        find_label['text'] = f'{query} not found!'
-        find_label['foreground'] = 'red'
-    else:
-        find_label['text'] = ''
-        find_label['foreground'] = ''
-
-
-def clear_search():
-    for hit in found:
         try:
-            tv.item(hit, tags=())
+            self.win.geometry("+%d+%d" % (x + w/2, y + h/2))
         except:
             pass
-    found.clear()
-    if len(tv.selection()) > 0:
-        tv.selection_remove(tv.selection()[0])
 
 
-def unicode_strings(buf, ouuid):
-    uni_re = re.compile("(?:["
-                        "\w"
-                        "\s"
-                        u"\u0020-\u007f"
-                        u"\U0001F600-\U0001F64F"  # emoticons
-                        u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-                        u"\U0001F680-\U0001F6FF"  # transport & map symbols
-                        u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
-                        u"\U00002500-\U00002BEF"  # chinese char
-                        u"\U00002702-\U000027B0"
-                        u"\U00002702-\U000027B0"
-                        u"\U000024C2-\U0001F251"
-                        u"\U0001f926-\U0001f937"
-                        u"\U00010000-\U0010ffff"
-                        u"\u2640-\u2642"
-                        u"\u2600-\u2B55"
-                        u"\u200d"
-                        u"\u23cf"
-                        u"\u23e9"
-                        u"\u231a"
-                        u"\ufe0f"  # dingbats
-                        u"\u3030"
-                        "]{1,}\x00[\uabab|\x00\x00]?)", flags=re.UNICODE)
-    match = uni_re.search(buf.decode("utf-16", errors='ignore'))
-    if match:
+def ButtonNotebook():
+
+    style.element_create("close", "image", "img_close",
+                         ("active", "pressed", "!disabled", "img_closepressed"),
+                         ("active", "!disabled", "img_closeactive"),
+                         border=8, sticky='')
+    style.layout("CustomNotebook", [("CustomNotebook.client",
+                                     {"sticky": "nswe"})])
+    style.layout("CustomNotebook.Tab", [
+        ("CustomNotebook.tab", {
+            "sticky": "nswe",
+            "children": [
+                ("CustomNotebook.padding", {
+                    "side": "top",
+                    "sticky": "nswe",
+                    "children": [
+                        ("CustomNotebook.focus", {
+                            "side": "top",
+                            "sticky": "nswe",
+                            "children": [
+                                ("CustomNotebook.label",
+                                 {"side": "left", "sticky": ''}),
+                                ("CustomNotebook.close",
+                                 {"side": "left", "sticky": ''}),
+                            ]
+                        })
+                    ]
+                })
+            ]
+        })
+    ])
+
+    def on_close_press(event):
+        """Called when the button is pressed over the close button"""
+
+        if event.widget.winfo_class() != 'TNotebook':
+            return
+        x, y, widget = event.x, event.y, event.widget
+        elem = widget.identify(x, y)
         try:
-            return match.group()
-        except Exception as e:
-            logging.warning(e)
-    logging.error(f'An error occured trying to find the name of {ouuid}. Raw Data:{buf}')
-    return '??????????'
+            index = widget.index("@%d,%d" % (x, y))
+            if index == 0:
+                return
+        except:
+            return
+
+        if "close" in elem:
+            widget.state(['pressed'])
+            widget.pressed_index = index
+
+    def on_close_release(event):
+        """Called when the button is released"""
+        global proj_name
+
+        if event.widget.winfo_class() != 'TNotebook':
+            return
+
+        x, y, widget = event.x, event.y, event.widget
+
+        if not widget.instate(['pressed']):
+            return
+
+        elem = widget.identify(x, y)
+        if "close" not in elem:
+            # user moved the mouse off of the close button
+            return
+
+        index = widget.index("@%d,%d" % (x, y))
+
+        if index == 0:
+            return
+
+        for item in root.winfo_children():
+            try:
+                if item.winfo_ismapped():
+                    if str(item) == '.!frame':
+                        pass
+                    else:
+                        item.destroy()
+            except:
+                pass
+
+        if "close" in elem and widget.pressed_index == index:
+            try:
+                del user_logs[f'{widget.tab(index, "text").replace(" L", "_l")}.csv']
+            except:
+                pass
+
+            widget.winfo_children()[index].destroy()
+            widget.event_generate("<<NotebookClosedTab>>")
+            if len(tv_frame.tabs()) == 1:
+                odlmenu.entryconfig("Unload all ODL logs", state='disable')
+                if len(tv.get_children()) == 0:
+                    projmenu.entryconfig("Save", state='disable')
+                    projmenu.entryconfig("SaveAs", state='disable')
+                    projmenu.entryconfig("Unload", state='disable')
+                    proj_name = None
+
+        widget.state(["!pressed"])
+        widget.pressed_index = None
+
+    root.bind("<ButtonPress-1>", on_close_press, True)
+    root.bind("<ButtonRelease-1>", on_close_release)
 
 
-def clear_all():
-    tv.delete(*tv.get_children())
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    details.config(state='disable')
-    file_menu.entryconfig("Unload all files", state='disable')
-    search_entry.configure(state="disabled")
-    btn.configure(state="disabled")
-
-
-def progress(total, count, ltext):
-    if pb['value'] != 100:
-        pb['value'] = round(100.0 * count / float(total))
-        value_label['text'] = f"{ltext} {pb['value']}%"
-
-
-def parse_dat(usercid, reghive, start):
-    dat = usercid.replace('/', '\\')
-    hive = reghive.replace('/', '\\')
-    logging.info(f'Start parsing {dat}. Registry hive: {hive}')
-    ff = re.compile(b'([\x01|\x02|\x09]\xab\xab\xab\xab\xab\xab\xab)') # \x01 = file, \x02 = folder, \x09 = share
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    details.config(state='disable')
-    menubar.entryconfig("File", state="disabled")
-    menubar.entryconfig("Options", state="disabled")
-    search_entry.configure(state="disabled")
-    btn.configure(state="disabled")
-    with open(usercid, 'rb') as f:
-        total = len(f.read())
-        f.seek(0)
-        version = int(f.read(1).hex(), 16)
-        if version >= 0x35:
-            ff = re.compile(b'([\x01|\x02]\x00\x27\xec\xb1\x01\x00\x00|\x09\xab\xab\xab\xab\xab\xab\xab)')  # \x01 = file, \x02 = folder, \x09 = share
-        uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
-        personal = uuid4hex.search(f.read())
-        f.seek(0)
-        df = pd.DataFrame(columns=['ParentId',
-                                   'DriveItemId',
-                                   'eTag',
-                                   'Type',
-                                   'Name',
-                                   'Size',
-                                   'Hash',
-                                   'Children'])
-        dir_index = []
-        entries = re.finditer(ff, f.read())
-        current = next(entries, total)
-        while isinstance(current, re.Match):
-            s = current.start()
-            count = s
-            n_current = next(entries, total)
-            hash = ''
-            size = ''
-            f.seek(s)
-            if b'\x09' in current[0]:
-                f.seek(s + 16)
-                check = f.read(8)
-                if check == b'\x01\x00\x00\x00\x00\x00\x00\x00':
-                    duuid = f.read(39).decode("utf-8")
-                    ouuid = ''
-                    eTag = ''
-                else:
-                    current = n_current
-                    continue
-            else:
-                if current[0].startswith(b'\x01'):
-                    type = 'File'
-                else:
-                    type = 'Folder'
-                f.seek(s + 16)
-                check = f.read(8)
-                if check == b'\x01\x00\x00\x00\x00\x00\x00\x00':
-                    ouuid = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
-                    duuid = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
-                    eTag = f.read(56).decode("utf-8").split('\u0000\u0000', 1)[0]
-                    f.seek(26, 1)
-                    if type == 'File':
-                        if personal:
-                            hash = f'SHA1({f.read(20).hex()})'
-                        else:
-                            hash = f'quickXor({codecs.encode(f.read(20), "base64").decode("utf-8").rstrip()})'
-                        f.seek(12, 1)
-                        size = int.from_bytes(f.read(8), "little")
-                    try:
-                        buffer = n_current.start() - f.tell()
-                    except AttributeError:
-                        buffer = n_current - f.tell()
-                    name = unicode_strings(f.read(buffer), ouuid)
-                else:
-                    current = n_current
-                    continue
-            if not dir_index:
-                if reghive and personal:
-                    try:
-                        reg_handle = Registry.Registry(reghive)
-                        int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive\\Personal')
-                        for providers in int_keys.values():
-                            if providers.name() == 'MountPoint':
-                                mountpoint = providers.value()
-                    except Exception as e:
-                        logging.warning(f'Unable to read registry hive! {e}')
-                        mountpoint = 'User Folder'
-                else:
-                    mountpoint = 'User Folder'
-                input = {'ParentId': '',
-                         'DriveItemId': duuid,
-                         'eTag': eTag,
-                         'Type': 'Root Default',
-                         'Name': mountpoint,
-                         'Size': '',
-                         'Hash': '',
-                         'Children': []
-                         }
-                dir_index.append(input)
-            input = {'ParentId': duuid,
-                     'DriveItemId': ouuid,
-                     'eTag': eTag,
-                     'Type': type,
-                     'Name': name.split('\u0000', 1)[0],
-                     'Size': size,
-                     'Hash': hash,
-                     'Children': []
-                     }
-
-            dir_index.append(input)
-            progress(total, count, 'Building folder list. Please wait....')
-            current = n_current
-
-    df = pd.DataFrame.from_records(dir_index)
-
-    parse_onedrive(f.name, df, start, dat=True, reghive=reghive)
-
-
-def json_count(item='', file_count=0, folder_count=0):
-    children = tv.get_children(item)
-    for child in children:
-        values = tv.item(child, 'values')
-        if values[4] == 'Folder':
-            folder_count += 1
-        if values[4] == 'File':
-            file_count += 1
-        file_count, folder_count = json_count(item=child, file_count=file_count, folder_count=folder_count)
-    return file_count, folder_count
-
-
-def parse_json(filename):
-    start = time.time()
-    json_name = (filename.name).replace('/', '\\')
-    logging.info(f'Started parsing {json_name}')
-    menubar.entryconfig("File", state="disabled")
-    menubar.entryconfig("Options", state="disabled")
-    search_entry.configure(state="disabled")
-    btn.configure(state="disabled")
-    pb.configure(mode='indeterminate')
-    value_label['text'] = "Building tree. Please wait..."
-    pb.start()
-    parent_child(json.load(filename))
-    pb.stop()
-    pb.configure(mode='determinate')
-    curItem = tv.get_children()[-1]
-    file_count, folder_count = json_count(item=curItem)
-    value_label['text'] = f'{file_count} file(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
-    filename.close()
-    mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
-    message['text'] = mcount
-    if "INFO," in log_capture_string.getvalue():
-        message['background'] = ''
-        message['foreground'] = ''
-    if "WARNING," in log_capture_string.getvalue():
-        message['background'] = 'yellow'
-        message['foreground'] = 'black'
-    if "ERROR," in log_capture_string.getvalue():
-        message['background'] = 'red'
-        message['foreground'] = ''
-    menubar.entryconfig("File", state="normal")
-    menubar.entryconfig("Options", state="normal")
-    search_entry.configure(state="normal")
-    btn.configure(state="normal")
-    rebind()
-
-
-def parse_csv(filename, start):
-    csv_name = (filename.name).replace('/', '\\')
-    logging.info(f'Started parsing {csv_name}')
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    details.config(state='disable')
-    menubar.entryconfig("File", state="disabled")
-    menubar.entryconfig("Options", state="disabled")
-    search_entry.configure(state="disabled")
-    btn.configure(state="disabled")
-    df = pd.read_csv(filename,
-                     usecols=['ParentId', 'DriveItemId', 'eTag', 'Type', 'Name', 'Size', 'Hash'], dtype=str)
-    df['Children'] = pd.Series([[] for x in range(len(df.index))])
-    df = df.fillna('')
-    df['Name'] = df.apply(lambda row: row['Name'].encode('cp1252').decode('utf-8'), axis=1)
-    parse_onedrive(filename.name, df, start)
-
-
-def find_parent(x, id_name_dict, parent_dict):
-    value = parent_dict.get(x, None)
-    if value is None:
-        return x
-    else:
-        # Incase there is a id without name.
-        if id_name_dict.get(value, None) is None:
-            return find_parent(value, id_name_dict, parent_dict) + x
-
-    return find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
-
-
-def parse_onedrive(name, df, start, dat=False, reghive=False):
-    share_df = df.loc[(~df.ParentId.isin(df.DriveItemId)) & (~df.Type.str.contains('Root'))]
-    share_list = list(set(share_df.ParentId))
-    share_root = []
-    for x in share_list:
-        input = {'ParentId': '',
-                 'DriveItemId': x,
-                 'eTag': '',
-                 'Type': 'Root Shared',
-                 'Name': 'Shared with user',
-                 'Size': '',
-                 'Hash': '',
-                 'Children': [],
-                 'Level': 1
-                 }
-        share_root.append(input)
-    share_df = pd.DataFrame.from_records(share_root)
-    df = pd.concat([df, share_df], ignore_index=True, axis=0)
-
-    if reghive:
-        try:
-            reg_handle = Registry.Registry(reghive)
-            int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
-            for providers in int_keys.subkeys():
-                df.loc[(df.DriveItemId == providers.name().split('+')[0]), ['Name']] = [x.value() for x in list(providers.values()) if x.name() =='MountPoint'][0]
-        except Exception as e:
-            logging.warning(f'Unable to read registry hive! {e}')
-            pass
-
-    id_name_dict = dict(zip(df.DriveItemId, df.Name))
-    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
-    df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
-    df['Level'] = df['Path'].str.len()
-    df['Path'] = df['Path'].str.join('\\')
-
-    try:
-        file_count = df.Type.value_counts()['File']
-    except KeyError:
-        logging.warning("KeyError: 'File'")
-        file_count = 0
-    try:
-        folder_count = df.Type.value_counts()['Folder']
-    except KeyError:
-        logging.warning("KeyError: 'Folder'")
-        folder_count = 0
-
-    def subset(dict_, keys):
-        return {k: dict_[k] for k in keys}
-
-    cache = {}
-    final = []
-
-    df.loc[df.Type == 'File', ['FileSort']] = df['Name'].str.lower()
-    df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
-
-    for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
-        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Children'))
-        if row['Type'] == 'File':
-            folder = cache.setdefault(row['ParentId'], {})
-            folder.setdefault('Children', []).append(file)
-        else:
-            folder = cache.get(row['DriveItemId'], {})
-            temp = {**file, **folder}
-            folder_merge = cache.setdefault(row['ParentId'], {})
-            if 'Root' in row['Type']:
-                final.insert(0, temp)
-            else:
-                folder_merge.setdefault('Children', []).append(temp)
-
-    cache = {'ParentId': '',
-             'DriveItemId': '',
-             'eTag': '',
-             'Type': 'Root Drive',
-             'Path': '',
-             'Name': name.replace('/', '\\'),
-             'Size': '',
-             'Hash': '',
-             'Children': ''
-             }
-
-    cache['Children'] = final
-
-    pb.configure(mode='indeterminate')
-    value_label['text'] = "Building tree. Please wait..."
-    pb.start()
-    parent_child(cache)
-    pb.stop()
-    pb.configure(mode='determinate')
-
-    menubar.entryconfig("File", state="normal")
-    menubar.entryconfig("Options", state="normal")
-    search_entry.configure(state="normal")
-    btn.configure(state="normal")
-
-    if menu_data['json'] and dat:
-        print_json(cache, name)
-
-    if menu_data['csv'] and dat:
-        print_csv(df, name)
-
-    if menu_data['html'] and dat:
-        print_html(df, name)
-
-    pb['value'] = 0
-    value_label['text'] = f'{file_count} file(s), {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
-    if len(tv.get_children()) > 0:
-        file_menu.entryconfig("Unload all files", state='normal')
-    mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
-    message['text'] = mcount
-    if "INFO," in log_capture_string.getvalue():
-        message['background'] = ''
-        message['foreground'] = ''
-    if "WARNING," in log_capture_string.getvalue():
-        message['background'] = 'yellow'
-        message['foreground'] = 'black'
-    if "ERROR," in log_capture_string.getvalue():
-        message['background'] = 'red'
-        message['foreground'] = ''
-    rebind()
-
-
-def parent_child(d, parent_id=None):
-    if parent_id is None:
-        # This line is only for the first call of the function
-        parent_id = tv.insert("", "end", image=root_drive_img, text=d['Name'], values=(d['ParentId'], d['DriveItemId'], d['eTag'], d['Name'], d['Type'], d['Size'], d['Hash'], len(d['Children']), d['Path']))
-
-    for c in d['Children']:
-        # Here we create a new row object in the TreeView and pass its return value for recursion
-        # The return value will be used as the argument for the first parameter of this same line of code after recursion
-        if c['Type'] == 'Folder':
-            parent_child(c, tv.insert(parent_id, 0, image=folder_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
-        elif c['Type'] == 'Root Default':
-            parent_child(c, tv.insert(parent_id, 0, image=default_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
-        elif c['Type'] == 'Root Shared':
-            parent_child(c, tv.insert(parent_id, "end", image=shared_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
-        else:
-            parent_child(c, tv.insert(parent_id, "end", image=file_img, text=c['Name'], values=(c['ParentId'], c['DriveItemId'], c['eTag'], c['Name'], c['Type'], c['Size'], c['Hash'], len(c['Children']), c['Path'])))
-        root.update_idletasks()
-
-
-def print_json(cache, name):
-    if menu_data['pretty']:
-        json_object = json.dumps(cache,
-                                 sort_keys=False,
-                                 indent=4,
-                                 separators=(',', ': ')
-                                 )
-    else:
-        json_object = json.dumps(cache)
-    file_extension = os.path.splitext(name)[1][1:]
-    if file_extension == 'previous':
-        output = open(menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.json", 'w')
-    else:
-        output = open(menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive.json", 'w')
-    output.write(json_object)
-    output.close()
-
-
-def print_csv(df, name):
-    df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
-    df = df.drop(['Children', 'Level', 'FileSort', 'FolderSort'], axis=1)
-
-    file_extension = os.path.splitext(name)[1][1:]
-    if file_extension == 'previous':
-        csv_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv"
-    else:
-        csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
-    df.to_csv(menu_data['path'] + '\\' + csv_file, index=False)
-
-
-def print_html(df, name):
-    df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
-    df = df.drop(['Children', 'Level', 'FileSort', 'FolderSort'], axis=1)
-
-    output = menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive.html"
-    file_extension = os.path.splitext(name)[1][1:]
-    if file_extension == 'previous':
-        output = menu_data['path'] + '\\' + os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.html"
-
-    output = open(output, 'w', encoding='utf-8')
-    output.write(df.to_html(index=False))
-    output.close()
-
-
-def selectItem(a):
-    curItem = tv.selection()
-    values = tv.item(curItem, 'values')
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    try:
-        line = f'Name: {values[3]}\nType: {values[4]}\nPath: {values[8]}\nSize: {values[5]}\nHash: {values[6]}\nParentId: {values[0]}\nDriveItemId: {values[1]}\neTag:{values[2]}'
-        if values[4] == 'Folder' or 'Root' in values[4]:
-            line += f'\n\n# Children: {values[7]}'
-        details.insert(tk.END, line)
-        details.see(tk.END)
-    except IndexError:
-        pass
-    max_colum_widths = 0
-    for child in tv.get_children():
-        item = tv.item(child)
-        new_length = tkFont.nametofont('TkTextFont').measure(str(item))
-        if new_length > max_colum_widths:
-            max_colum_widths = new_length
-    if max_colum_widths < 50:
-        tv.column('#0', width=50)
-    else:
-        tv.column('#0', width=max_colum_widths)
-    details.config(state='disable')
-
-
-def open_dat():
-    global reghive
-    filename = filedialog.askopenfilename(initialdir="/",
-                                          title="Open",
-                                          filetypes=(("OneDrive dat file", "*.dat *.dat.previous"),))
-
-    if filename:
-        message.unbind('<Double-Button-1>', bind_id)
-        if keyboard.is_pressed('shift') or menu_data['hive']:
-            pass
-        else:
-            root.wait_window(hive(root).win)
-        start = time.time()
-        threading.Thread(target=parse_dat, args=(filename, reghive, start,), daemon=True).start()
-    reghive = ''
-
-
-def import_json():
-    filename = filedialog.askopenfile(initialdir="/",
-                                      title="Import JSON",
-                                      filetypes=(("OneDrive dat file", "*.json"),))
-
-    if filename:
-        message.unbind('<Double-Button-1>', bind_id)
-        value_label['text'] = ''
-        details.config(state='normal')
-        details.delete('1.0', tk.END)
-        details.config(state='disable')
-        threading.Thread(target=parse_json, args=(filename,), daemon=True).start()
-        if len(tv.get_children()) > 0:
-            file_menu.entryconfig("Unload all files", state='normal')
-            search_entry.configure(state="normal")
-            btn.configure(state="normal")
-
-
-def import_csv():
-    filename = filedialog.askopenfile(initialdir="/",
-                                      title="Import CSV",
-                                      filetypes=(("OneDrive dat file", "*.csv"),))
-
-    if filename:
-        message.unbind('<Double-Button-1>', bind_id)
-        start = time.time()
-        threading.Thread(target=parse_csv, args=(filename, start,), daemon=True).start()
-
-
-def save_settings():
-    menu_data['theme'] = ttk.Style().theme_use()
-    with open("ode.settings", "w") as jsonfile:
-        json.dump(menu_data, jsonfile)
+def pane_config():
+    bg = style.lookup('TFrame', 'background')
+    pw.config(background=bg, sashwidth=6)
+    ttk.Style().theme_use()
 
 
 def fixed_map(option):
@@ -1085,8 +858,646 @@ def fixed_map(option):
                    ],
                  })]
                  )
+
     return [elm for elm in style.map("Treeview", query_opt=option)
             if elm[:2] != ("!disabled", "!selected")]
+
+
+def search(item=''):
+    query = search_entry.get()
+    if len(query) == 0:
+        found.append('0')
+        return
+    children = tv.get_children(item)
+    for child in children:
+        for x in tv.item(child)['values']:
+            if query.lower() in str(x).lower():
+                tv.see(child)
+                tags = list(tv.item(child, 'tags'))
+                tags.append('yellow')
+                tv.item(child, tags=tags)
+                found.append(child)
+        search(item=child)
+
+
+def search_result():
+    if len(found) == 0:
+        d = tv.get_children()
+        for i in d:
+            detached_items.append(i)
+            tv.detach(i)
+
+
+def clear_search():
+    for i in detached_items:
+        tv.reattach(i, '', "end")
+        close_children(i)
+    detached_items.clear()
+
+    for hit in found:
+        try:
+            tags = list(tv.item(hit, 'tags'))
+            tags = [x for x in tags if x == 'red']
+            tv.item(hit, tags=tags)
+        except:
+            pass
+    found.clear()
+    if len(tv.selection()) > 0:
+        tv.selection_remove(tv.selection()[0])
+
+
+def clear_all():
+    global proj_name
+    tv.delete(*tv.get_children())
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    details.config(state='disable')
+    odsmenu.entryconfig("Unload all files", state='disable')
+    search_entry.configure(state="disabled")
+    btn.configure(state="disabled")
+    if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
+        projmenu.entryconfig("Save", state='disable')
+        projmenu.entryconfig("SaveAs", state='disable')
+        projmenu.entryconfig("Unload", state='disable')
+        proj_name = None
+
+
+def json_count(item='', file_count=0, del_count=0, folder_count=0):
+    children = tv.get_children(item)
+    for child in children:
+        values = tv.item(child, 'values')
+        if values[6] == 'Folder':
+            folder_count += 1
+        if values[6] == 'File':
+            file_count += 1
+        if values[6] == 'File - deleted':
+            del_count += 1
+        file_count, del_count, folder_count = json_count(item=child,
+                                                         file_count=file_count,
+                                                         del_count=del_count,
+                                                         folder_count=folder_count)
+    return file_count, del_count, folder_count
+
+
+def ff_count(f, folder_count=0, file_count=0):
+    for c in f:
+        if c['Type'] == 'Folder':
+            folder_count += 1
+        if c['Type'] == 'File':
+            file_count += 1
+    return folder_count, file_count
+
+
+def parent_child(d, parent_id=None):
+    if parent_id is None:
+        # This line is only for the first call of the function
+        parent_id = tv.insert("",
+                              "end",
+                              image=root_drive_img,
+                              text=d['Name'],
+                              values=('',
+                                      '',
+                                      d['ParentId'],
+                                      d['DriveItemId'],
+                                      d['eTag'],
+                                      d['Name'],
+                                      d['Type'],
+                                      d['Size'],
+                                      d['Hash'],
+                                      len(d['Children']),
+                                      d['Path']))
+
+    for c in d['Children']:
+        # Here we create a new row object in the TreeView and pass its return value for recursion
+        # The return value will be used as the argument for the first parameter of this same line of code after recursion
+        if c['Type'] == 'Folder':
+            folder_count, file_count = ff_count(c['Children'])
+            parent_child(c, tv.insert(parent_id,
+                                      0,
+                                      image=folder_img,
+                                      text=c['Name'],
+                                      values=(folder_count,
+                                              file_count,
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path'])))
+        elif c['Type'] == 'Root Default':
+            parent_child(c, tv.insert(parent_id,
+                                      0,
+                                      image=default_img,
+                                      text=c['Name'],
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path'])))
+        elif c['Type'] == 'Root Shared':
+            parent_child(c, tv.insert(parent_id,
+                                      "end",
+                                      image=shared_img,
+                                      text=c['Name'],
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path'])))
+        elif c['Type'] == 'Root Deleted':
+            parent_child(c, tv.insert(parent_id,
+                                      "end",
+                                      image=del_img,
+                                      text=c['Name'],
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path']),
+                                      tags='red'))
+        elif c['Type'] == 'File - deleted':
+            parent_child(c, tv.insert(parent_id,
+                                      "end",
+                                      image=file_img,
+                                      text=c['Name'],
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path'],
+                                              c['DeleteTimeStamp']),
+                                      tags='red'))
+        else:
+            parent_child(c, tv.insert(parent_id,
+                                      "end",
+                                      image=file_img,
+                                      text=c['Name'],
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path'])))
+        root.update_idletasks()
+
+
+def selectItem(a):
+    curItem = tv.selection()
+    values = tv.item(curItem, 'values')
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    try:
+        if values[6] == 'Root Drive':
+            line = f'Name: {values[5]}\nType: {values[6]}'
+        elif values[6] == 'Root Shared' or values[6] == 'Root Default':
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nDriveItemId: {values[3]}'
+        elif values[6] == 'Folder':
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
+        elif values[6] == 'Root Deleted':
+            line = f'Name: {values[5]}\nType: {values[6]}'
+        elif values[6] == 'File - deleted':
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nDeleteTimeStamp: {values[11]} UTC'
+        else:
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
+        if values[6] == 'Folder' or 'Root' in values[6]:
+            line += f'\n\n# Children: {values[9]}'
+        if 'deleted' in values[6].lower():
+            details.insert(tk.END, line, 'red')
+        else:
+            details.insert(tk.END, line)
+        details.see(tk.END)
+    except IndexError:
+        pass
+
+    details.config(state='disable')
+
+
+def live_system(menu):
+    global reghive
+    global recbin
+    message.unbind('<Double-Button-1>', bind_id)
+    menubar.entryconfig("File", state="disabled")
+    menubar.entryconfig("Options", state="disabled")
+    search_entry.configure(state="disabled")
+    btn.configure(state="disabled")
+    d = {}
+    dat = re.compile(r'/Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\settings')
+    log_dir = re.compile(r'/Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\logs$')
+    rootDir = r'/'
+    pb.configure(mode='indeterminate')
+    value_label['text'] = "Searching for OneDrive. Please wait..."
+    pb.start()
+    for path, subdirs, files in os.walk(rootDir):
+        dat_find = re.findall(dat, path)
+        log_find = re.findall(log_dir, path)
+        if path == '/$Recycle.Bin':
+            recbin = path
+        if dat_find:
+            for name in files:
+                if '.dat' in name:
+                    d.setdefault(dat_find[0], {})
+                    d[dat_find[0]].setdefault('files', []).append(os.path.join(path, name))
+        if log_find:
+            d.setdefault(log_find[0], {})
+            d[log_find[0]].setdefault('logs', []).append(path)
+
+    for key, value in d.items():
+        filenames = []
+        for k, v in value.items():
+            if k == 'files':
+                filenames = v
+
+            if len(filenames) != 0:
+                logging.info(f'Parsing OneDrive data for {key}')
+                menubar.entryconfig("File", state="disabled")
+                menubar.entryconfig("Options", state="disabled")
+                search_entry.configure(state="disabled")
+                btn.configure(state="disabled")
+                value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
+                pb.configure(mode='indeterminate')
+                pb.start()
+                reghive = live_hive(key)
+                pb.configure(mode='determinate')
+
+                for filename in filenames:
+                    x = menu.entrycget(0, "label")
+                    start_parsing(x, filename, reghive, recbin)
+
+    if menu_data['odl'] is True:
+        for key, value in d.items():
+            for k, v in value.items():
+                if k == 'logs':
+                    logs = v
+                    pb.stop()
+                    odl = parse_odl(logs[0], key, pb, value_label, gui=True)
+                    tb = ttk.Frame()
+                    pt = Table(tb, dataframe=odl, showtoolbar=False, showstatusbar=False)
+                    tv_frame.add(tb, text=f'{key} Logs')
+                    pt.show()
+                    user_logs.setdefault(f'{key}_logs.csv', pt)
+                    if menu_data['odl_save'] is True:
+                        log_output = f'{key}_logs.csv'
+                        odl.to_csv(log_output, index=False)
+
+    reghive = ''
+    recbin = ''
+    pb.stop()
+    pb.configure(mode='determinate')
+    mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
+    message['text'] = mcount
+    if "INFO," in log_capture_string.getvalue():
+        message['background'] = ''
+        message['foreground'] = ''
+    if "WARNING," in log_capture_string.getvalue():
+        message['background'] = 'yellow'
+        message['foreground'] = 'black'
+    if "ERROR," in log_capture_string.getvalue():
+        message['background'] = 'red'
+        message['foreground'] = ''
+    rebind()
+    value_label['text'] = "All jobs complete"
+    if len(tv_frame.tabs()) > 1:
+        odlmenu.entryconfig("Unload all ODL logs", state='normal')
+        projmenu.entryconfig("Save", state='normal')
+        projmenu.entryconfig("SaveAs", state='normal')
+
+
+def open_dat(menu):
+    global reghive
+    global recbin
+    filename = filedialog.askopenfilename(initialdir="/",
+                                          title="Open",
+                                          filetypes=(("OneDrive dat file",
+                                                      "*.dat *.dat.previous"),
+                                                     ))
+
+    if filename:
+        if keyboard.is_pressed('shift') or menu_data['hive']:
+            pass
+        else:
+            root.wait_window(hive(root).win)
+
+        x = menu.entrycget(0, "label")
+        threading.Thread(target=start_parsing,
+                         args=(x, filename, reghive, recbin,),
+                         daemon=True).start()
+
+    reghive = ''
+    recbin = ''
+
+
+def import_json(menu):
+    filename = filedialog.askopenfile(initialdir="/",
+                                      title="Import JSON",
+                                      filetypes=(("OneDrive dat file",
+                                                  "*.json"),))
+
+    if filename:
+        x = menu.entrycget(1, "label")
+        threading.Thread(target=start_parsing,
+                         args=(x, filename,),
+                         daemon=True).start()
+
+
+def import_csv(menu):
+    filename = filedialog.askopenfile(initialdir="/",
+                                      title="Import CSV",
+                                      filetypes=(("OneDrive dat file",
+                                                  "*.csv"),))
+
+    if filename:
+        x = menu.entrycget(2, "label")
+        threading.Thread(target=start_parsing,
+                         args=(x, filename,),
+                         daemon=True).start()
+
+
+def open_odl():
+#    pass
+    folder_name = filedialog.askdirectory(initialdir="/", title="Open")
+
+    if folder_name:
+        threading.Thread(target=odl,
+                         args=(folder_name,),
+                         daemon=True).start()
+
+
+def odl(folder_name):
+    message.unbind('<Double-Button-1>', bind_id)
+    menubar.entryconfig("File", state="disabled")
+    menubar.entryconfig("Options", state="disabled")
+    search_entry.configure(state="disabled")
+    btn.configure(state="disabled")
+    key_find = re.compile(r'Users/(?P<user>.*)?/AppData')
+    key = re.findall(key_find, folder_name)
+    if len(key) == 0:
+        key = 'ODL'
+    else:
+        key = key[0]
+    pb.stop()
+    odl = parse_odl(folder_name, key, pb, value_label, gui=True)
+    tb = ttk.Frame()
+    pt = Table(tb, dataframe=odl, showtoolbar=False, showstatusbar=False)
+    tv_frame.add(tb, text=f'{key} Logs')
+    pt.show()
+    user_logs.setdefault(f'{key}_logs.csv', pt)
+    pb.stop()
+    value_label['text'] = "Parsing complete"
+
+    if menu_data['odl_save'] is True:
+        log_output = f'{key}_logs.csv'
+        try:
+            odl.to_csv(log_output, index=False)
+        except Exception as e:
+            logging.error(e)
+
+    mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
+    message['text'] = mcount
+    if "INFO," in log_capture_string.getvalue():
+        message['background'] = ''
+        message['foreground'] = ''
+    if "WARNING," in log_capture_string.getvalue():
+        message['background'] = 'yellow'
+        message['foreground'] = 'black'
+    if "ERROR," in log_capture_string.getvalue():
+        message['background'] = 'red'
+        message['foreground'] = ''
+
+    menubar.entryconfig("File", state="normal")
+    menubar.entryconfig("Options", state="normal")
+    search_entry.configure(state="normal")
+    btn.configure(state="normal")
+    rebind()
+
+    if len(tv_frame.tabs()) > 1:
+        odlmenu.entryconfig("Unload all ODL logs", state='normal')
+        projmenu.entryconfig("Save", state='normal')
+        projmenu.entryconfig("SaveAs", state='normal')
+
+
+def save_settings():
+    menu_data['theme'] = ttk.Style().theme_use()
+    with open("ode.settings", "w") as jsonfile:
+        json.dump(menu_data, jsonfile)
+
+
+def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
+    try:
+        message.unbind('<Double-Button-1>', bind_id)
+    except:
+        pass
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    details.config(state='disable')
+    menubar.entryconfig("File", state="disabled")
+    menubar.entryconfig("Options", state="disabled")
+    search_entry.configure(state="disabled")
+    btn.configure(state="disabled")
+
+    start = time.time()
+    dat = False
+
+    if x == 'Live system':
+        df, name, personal = parse_dat(filename, reghive, recbin, start,
+                                       gui=True, pb=pb, value_label=value_label)
+        df, rbin_df = parse_onedrive(df, reghive, recbin, personal)
+        dat = True
+
+    if x == 'Load <UserCid>.dat' + (' '*10):
+        df, name, personal = parse_dat(filename, reghive, recbin, start,
+                                       gui=True, pb=pb, value_label=value_label)
+        df, rbin_df = parse_onedrive(df, reghive, recbin, personal)
+        dat = True
+
+    if x == 'Import JSON':
+        cache = json.load(filename)
+        df = pd.DataFrame()
+
+    if x == 'Import CSV':
+        df, name = parse_csv(filename)
+        df, rbin_df = parse_onedrive(df)
+
+    if x == 'Project':
+        name = filename
+        pass
+
+    if not df.empty:
+        try:
+            file_count = df.Type.value_counts()['File']
+
+        except KeyError:
+            logging.warning("KeyError: 'File'")
+            file_count = 0
+
+        try:
+            del_count = df.Type.value_counts()['File - deleted']
+
+        except KeyError:
+            logging.warning("KeyError: 'File - deleted'")
+            del_count = 0
+
+        try:
+            folder_count = df.Type.value_counts()['Folder']
+
+        except KeyError:
+            logging.warning("KeyError: 'Folder'")
+            folder_count = 0
+
+        def subset(dict_, keys):
+            return {k: dict_[k] for k in keys}
+
+        cache = {}
+        final = []
+        is_del = []
+
+        df.loc[df.Type == 'File', ['FileSort']] = df['Name'].str.lower()
+        df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
+
+        for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
+            if 'DeleteTimeStamp' in df.columns:
+                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'DeleteTimeStamp', 'Children'))
+            else:
+                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Children'))
+            if row['Type'] == 'File':
+                folder = cache.setdefault(row['ParentId'], {})
+                folder.setdefault('Children', []).append(file)
+            elif row['Type'] == 'File - deleted':
+                is_del.append(file)
+            else:
+                folder = cache.get(row['DriveItemId'], {})
+                temp = {**file, **folder}
+                folder_merge = cache.setdefault(row['ParentId'], {})
+                if 'Root' in row['Type']:
+                    final.insert(0, temp)
+                else:
+                    folder_merge.setdefault('Children', []).append(temp)
+
+        if dat:
+            for row in rbin_df.to_dict('records'):
+                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'DeleteTimeStamp', 'Children'))
+                is_del.append(file)
+            try:
+                del_count = rbin_df.Type.value_counts()['File - deleted']
+
+            except (KeyError, AttributeError):
+                logging.warning("KeyError: 'File - deleted'")
+                del_count = 0
+
+        cache = {'ParentId': '',
+                 'DriveItemId': '',
+                 'eTag': '',
+                 'Type': 'Root Drive',
+                 'Path': '',
+                 'Name': name.replace('/', '\\'),
+                 'Size': '',
+                 'Hash': '',
+                 'Children': ''
+                 }
+
+        deleted = {'ParentId': '',
+                   'DriveItemId': '',
+                   'eTag': '',
+                   'Type': 'Root Deleted',
+                   'Path': '',
+                   'Name': 'Deleted Files',
+                   'Size': '',
+                   'Hash': '',
+                   'Children': ''
+                   }
+
+        if is_del:
+            deleted['Children'] = is_del
+            final.append(deleted)
+        cache['Children'] = final
+
+    if not df.empty or x == 'Import JSON':
+
+        pb.configure(mode='indeterminate')
+        value_label['text'] = "Building tree. Please wait..."
+        pb.start()
+        parent_child(cache)
+        if x == 'Import JSON':
+            curItem = tv.get_children()[-1]
+            file_count, del_count, folder_count = json_count(item=curItem)
+        if x != 'Live system':
+            pb.stop()
+            pb.configure(mode='determinate')
+
+        if menu_data['json'] and dat:
+            print_json_gui(cache, name, menu_data['pretty'], menu_data['path'])
+
+        if menu_data['csv'] and dat:
+            print_csv(df, rbin_df, name, menu_data['path'])
+
+        if menu_data['html'] and dat:
+            print_html(df, rbin_df, name, menu_data['path'])
+
+        if x != 'Live system':
+            pb['value'] = 0
+        value_label['text'] = f'{file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
+
+    else:
+        try:
+            filename = filename.replace('/', '\\')
+        except:
+            pass
+        logging.warning(f'Unable to parse {filename}.')
+        value_label['text'] = f'Unable to parse {filename}.'
+
+    menubar.entryconfig("File", state="normal")
+    menubar.entryconfig("Options", state="normal")
+    search_entry.configure(state="normal")
+    btn.configure(state="normal")
+
+    if len(tv.get_children()) > 0:
+        odsmenu.entryconfig("Unload all files", state='normal')
+        projmenu.entryconfig("Save", state='normal')
+        projmenu.entryconfig("SaveAs", state='normal')
+    mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
+    message['text'] = mcount
+    if "INFO," in log_capture_string.getvalue():
+        message['background'] = ''
+        message['foreground'] = ''
+    if "WARNING," in log_capture_string.getvalue():
+        message['background'] = 'yellow'
+        message['foreground'] = 'black'
+    if "ERROR," in log_capture_string.getvalue():
+        message['background'] = 'red'
+        message['foreground'] = ''
+    if x != 'Live system':
+        rebind()
 
 
 def do_popup(event):
@@ -1099,29 +1510,51 @@ def do_popup(event):
     col_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hierarchy1.png'))
     try:
         curItem = tv.identify_row(event.y)
+        tv.selection_set(curItem)
         opened = tv.item(curItem, 'open')
         values = tv.item(curItem, 'values')
         popup = tk.Menu(root, tearoff=0)
         copymenu = tk.Menu(root, tearoff=0)
 
-        if values[4] == 'Root Drive':
-            popup.add_command(label="Remove OneDrive Folder", image=rof_img, compound='left', command=lambda: del_folder(curItem))
+        if values[6] == 'Root Drive':
+            popup.add_command(label="Remove OneDrive Folder",
+                              image=rof_img,
+                              compound='left',
+                              command=lambda: del_folder(curItem))
             popup.add_separator()
 
-        popup.add_cascade(label="Copy", image=copy_img, compound='left', menu=copymenu)
-        copymenu.add_command(label="Name", image=name_img, compound='left', command=lambda: copy_name(values))
-        copymenu.add_command(label="Path", image=path_img, compound='left', command=lambda: copy_path(values, curItem))
-        copymenu.add_command(label="Details", image=details_img, compound='left', command=lambda: copy_details(values))
+        popup.add_cascade(label="Copy",
+                          image=copy_img,
+                          compound='left',
+                          menu=copymenu)
+        copymenu.add_command(label="Name",
+                             image=name_img,
+                             compound='left',
+                             command=lambda: copy_name(values))
+        copymenu.add_command(label="Path",
+                             image=path_img,
+                             compound='left',
+                             command=lambda: copy_path(values, curItem))
+        copymenu.add_command(label="Details",
+                             image=details_img,
+                             compound='left', command=lambda: copy_details())
 
-        if values[4] == 'Root Drive':
+        if values[6] == 'Root Drive':
             popup.entryconfig("Copy", state='disable')
         else:
             popup.entryconfig("Copy", state='normal')
 
-        if values[4] == 'Folder' or 'Root' in values[4]:
+        if values[6] == 'Folder' or 'Root' in values[6]:
             popup.add_separator()
-            popup.add_command(label="Expand folders", image=exp_img, compound='left', command=lambda: open_children(curItem), accelerator="Alt+Down")
-            popup.add_command(label="Collapse folders", image=col_img, compound='left', command=lambda: close_children(curItem), accelerator="Alt+Up")
+            popup.add_command(label="Expand folders",
+                              image=exp_img, compound='left',
+                              command=lambda: open_children(curItem),
+                              accelerator="Alt+Down")
+            popup.add_command(label="Collapse folders",
+                              image=col_img,
+                              compound='left',
+                              command=lambda: close_children(curItem),
+                              accelerator="Alt+Up")
             if opened:
                 popup.entryconfig("Collapse folders", state='normal')
             else:
@@ -1134,14 +1567,44 @@ def do_popup(event):
 
 
 def del_folder(iid):
+    global proj_name
     tv.delete(iid)
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
     if len(tv.get_children()) == 0:
-        file_menu.entryconfig("Unload all files", state='disable')
+        odsmenu.entryconfig("Unload all files", state='disable')
         search_entry.configure(state="disabled")
         btn.configure(state="disabled")
+        if len(tv_frame.tabs()) == 1:
+            projmenu.entryconfig("Save", state='disable')
+            projmenu.entryconfig("SaveAs", state='disable')
+            projmenu.entryconfig("Unload", state='disable')
+            proj_name = None
+
+
+def del_logs():
+    global proj_name
+    for item in tv_frame.winfo_children():
+        for i in item.winfo_children():
+            if '.!frame.!frame.!scrollablenotebook.!notebook2.' in str(i):
+                if str(i) == '.!frame.!frame.!scrollablenotebook.!notebook2.!frame':
+                    continue
+                i.destroy()
+
+    for item in root.winfo_children():
+        if '.!frame' in str(item):
+            if str(item) == '.!frame':
+                continue
+            item.destroy()
+
+    user_logs.clear()
+    odlmenu.entryconfig("Unload all ODL logs", state='disable')
+    if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
+        projmenu.entryconfig("Save", state='disable')
+        projmenu.entryconfig("SaveAs", state='disable')
+        projmenu.entryconfig("Unload", state='disable')
+        proj_name = None
 
 
 def open_children(parent):
@@ -1156,12 +1619,9 @@ def close_children(parent):
         close_children(child)    # recursively close children
 
 
-def copy_details(values):
-    line = f'Name: {values[3]}\nType: {values[4]}\nPath: {values[8]}\nSize: {values[5]}\nHash: {values[6]}\nParentId: {values[0]}\nDriveItemId: {values[1]}\neTag: {values[2]}'
-    if values[4] == 'Folder' or 'Root' in values[4]:
-        line += f'\n\n# Children: {values[7]}'
+def copy_details():
     root.clipboard_clear()
-    root.clipboard_append(line)
+    root.clipboard_append(details.get("1.0", tk.END))
 
 
 def copy_path(values, curItem):
@@ -1171,48 +1631,226 @@ def copy_path(values, curItem):
         file_name = tv.item(parentiid, 'text')
         parentiid = tv.parent(parentiid)
 
-    line = f'{file_name}: {values[8]}\\{values[3]}'
+    line = f'{file_name}: {values[10]}\\{values[5]}'
     root.clipboard_clear()
     root.clipboard_append(line)
 
 
 def copy_name(values):
     root.clipboard_clear()
-    root.clipboard_append(values[3])
+    root.clipboard_append(values[5])
 
 
 def rebind():
     global bind_id
-    bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
+    bind_id = message.bind('<Double-Button-1>',
+                           lambda event=None: messages(root))
+
+
+def log_tab():
+    if tv_frame.index("current") != 0:
+        pw.remove(tabControl)
+    else:
+        pw.add(tabControl, width=400)
+
+
+def load_proj():
+    global proj_name
+    filename = filedialog.askopenfilename(initialdir="/",
+                                          title="Open",
+                                          filetypes=(("OneDriveExplorer project file",
+                                                      "*.ode_proj"),
+                                                     ))
+
+    if filename:
+        proj_name = filename
+        q = Queue()
+        stop_event = threading.Event()
+        threading.Thread(target=load_project,
+                         args=(filename, q, stop_event,),
+                         daemon=True,).start()
+        threading.Thread(target=proj_parse,
+                         args=(q, proj_name,),
+                         daemon=True,).start()
+
+        projmenu.entryconfig("Unload", state='normal')
+
+
+def proj_parse(q, proj_name):
+    while True:
+        data = q.get()
+
+        if '_OneDrive.csv' in data[0]:
+            x = 'Project'
+            start_parsing(x, filename=data[0], df=data[1])
+            q.task_done()
+
+        if '_logs.csv' in data[0]:
+            key = data[0].split('_')[0]
+            tb = ttk.Frame()
+            pt = Table(tb, dataframe=data[1], showtoolbar=False, showstatusbar=False)
+            tv_frame.add(tb, text=f'{key} Logs')
+            pt.show()
+            user_logs.setdefault(f'{key}_logs.csv', pt)
+            q.task_done()
+            pb.stop()
+
+        if data[0] == 'wait':
+            try:
+                message.unbind('<Double-Button-1>', bind_id)
+            except:
+                pass
+            details.config(state='normal')
+            details.delete('1.0', tk.END)
+            details.config(state='disable')
+            menubar.entryconfig("File", state="disabled")
+            menubar.entryconfig("Options", state="disabled")
+            search_entry.configure(state="disabled")
+            btn.configure(state="disabled")
+            pb.configure(mode='indeterminate')
+            value_label['text'] = f'Loading {data[1]}. Please wait....'
+            pb.start()
+            q.task_done()
+
+        if data[0] == 'done':
+            print(q.empty())
+            break
+
+    menubar.entryconfig("File", state="normal")
+    menubar.entryconfig("Options", state="normal")
+    search_entry.configure(state="normal")
+    btn.configure(state="normal")
+    mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
+    message['text'] = mcount
+    if "INFO," in log_capture_string.getvalue():
+        message['background'] = ''
+        message['foreground'] = ''
+    if "WARNING," in log_capture_string.getvalue():
+        message['background'] = 'yellow'
+        message['foreground'] = 'black'
+    if "ERROR," in log_capture_string.getvalue():
+        message['background'] = 'red'
+        message['foreground'] = ''
+    rebind()
+    proj_name = proj_name.split('/')[-1]
+    value_label['text'] = f"{proj_name} import complete"
+    pb.configure(mode='determinate')
+    if len(tv_frame.tabs()) > 1:
+        odlmenu.entryconfig("Unload all ODL logs", state='normal')
+
+
+def save_proj():
+    global proj_name
+    saveAs_proj(filename=proj_name)
+
+
+def saveAs_proj(filename=None):
+    global proj_name
+    if filename is None:
+        filename = filedialog.asksaveasfilename(defaultextension=".ode_proj")
+
+    if filename:
+        proj_name = filename
+        threading.Thread(target=save_project,
+                         args=(tv, filename, user_logs, pb, value_label,),
+                         daemon=True).start()
+
+        projmenu.entryconfig("Unload", state='normal')
 
 
 root = ThemedTk()
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
 root.iconbitmap(application_path + '/Images/OneDrive.ico')
-root.minsize(400, 300)
+root.geometry('835x500')
+root.minsize(835, 500)
 root.protocol("WM_DELETE_WINDOW", lambda: quit(root))
+
 style = ttk.Style()
+
 style.map("Treeview",
           foreground=fixed_map("foreground"),
           background=fixed_map("background"))
-style.layout("Treeview.Item",
-             [('Treeitem.padding', {'sticky': 'nswe', 'children':
-              [('Treeitem.indicator', {'side': 'left', 'sticky': ''}),
-               ('Treeitem.image', {'side': 'left', 'sticky': ''}),
-               # ('Treeitem.focus', {'side': 'left', 'sticky': '', 'children': [
-               ('Treeitem.text', {'side': 'left', 'sticky': ''}),
-               # ]})
-               ],
-             })]
-             )
+
+bg = style.lookup('TFrame', 'background')
+
+images = (
+    tk.PhotoImage("img_close", data='''
+        R0lGODlhCwALAPcAAAAAAAAAMwAAZgAAmQAAzAAA/wArAAArMwArZgArmQArzAAr
+        /wBVAABVMwBVZgBVmQBVzABV/wCAAACAMwCAZgCAmQCAzACA/wCqAACqMwCqZgCq
+        mQCqzACq/wDVAADVMwDVZgDVmQDVzADV/wD/AAD/MwD/ZgD/mQD/zAD//zMAADMA
+        MzMAZjMAmTMAzDMA/zMrADMrMzMrZjMrmTMrzDMr/zNVADNVMzNVZjNVmTNVzDNV
+        /zOAADOAMzOAZjOAmTOAzDOA/zOqADOqMzOqZjOqmTOqzDOq/zPVADPVMzPVZjPV
+        mTPVzDPV/zP/ADP/MzP/ZjP/mTP/zDP//2YAAGYAM2YAZmYAmWYAzGYA/2YrAGYr
+        M2YrZmYrmWYrzGYr/2ZVAGZVM2ZVZmZVmWZVzGZV/2aAAGaAM2aAZmaAmWaAzGaA
+        /2aqAGaqM2aqZmaqmWaqzGaq/2bVAGbVM2bVZmbVmWbVzGbV/2b/AGb/M2b/Zmb/
+        mWb/zGb//5kAAJkAM5kAZpkAmZkAzJkA/5krAJkrM5krZpkrmZkrzJkr/5lVAJlV
+        M5lVZplVmZlVzJlV/5mAAJmAM5mAZpmAmZmAzJmA/5mqAJmqM5mqZpmqmZmqzJmq
+        /5nVAJnVM5nVZpnVmZnVzJnV/5n/AJn/M5n/Zpn/mZn/zJn//8wAAMwAM8wAZswA
+        mcwAzMwA/8wrAMwrM8wrZswrmcwrzMwr/8xVAMxVM8xVZsxVmcxVzMxV/8yAAMyA
+        M8yAZsyAmcyAzMyA/8yqAMyqM8yqZsyqmcyqzMyq/8zVAMzVM8zVZszVmczVzMzV
+        /8z/AMz/M8z/Zsz/mcz/zMz///8AAP8AM/8AZv8Amf8AzP8A//8rAP8rM/8rZv8r
+        mf8rzP8r//9VAP9VM/9VZv9Vmf9VzP9V//+AAP+AM/+AZv+Amf+AzP+A//+qAP+q
+        M/+qZv+qmf+qzP+q///VAP/VM//VZv/Vmf/VzP/V////AP//M///Zv//mf//zP//
+        /wAAAAAAAAAAAAAAACH5BAEAAPwALAAAAAALAAsAAAhTAIlN6jVwYCNJtyZNEkiw
+        YK9GjHxN2rfPIMVJjAZS3Ndooy2FBDdSlASRYEiKjG6RbHRyI6NeGXttlInyJSOK
+        DyXhZBQzIy+VtngS44nxoNFJAQEAOw
+        '''),
+    tk.PhotoImage("img_closeactive", data='''
+        R0lGODlhCwALAPcAAAAAAAAAMwAAZgAAmQAAzAAA/wArAAArMwArZgArmQArzAAr
+        /wBVAABVMwBVZgBVmQBVzABV/wCAAACAMwCAZgCAmQCAzACA/wCqAACqMwCqZgCq
+        mQCqzACq/wDVAADVMwDVZgDVmQDVzADV/wD/AAD/MwD/ZgD/mQD/zAD//zMAADMA
+        MzMAZjMAmTMAzDMA/zMrADMrMzMrZjMrmTMrzDMr/zNVADNVMzNVZjNVmTNVzDNV
+        /zOAADOAMzOAZjOAmTOAzDOA/zOqADOqMzOqZjOqmTOqzDOq/zPVADPVMzPVZjPV
+        mTPVzDPV/zP/ADP/MzP/ZjP/mTP/zDP//2YAAGYAM2YAZmYAmWYAzGYA/2YrAGYr
+        M2YrZmYrmWYrzGYr/2ZVAGZVM2ZVZmZVmWZVzGZV/2aAAGaAM2aAZmaAmWaAzGaA
+        /2aqAGaqM2aqZmaqmWaqzGaq/2bVAGbVM2bVZmbVmWbVzGbV/2b/AGb/M2b/Zmb/
+        mWb/zGb//5kAAJkAM5kAZpkAmZkAzJkA/5krAJkrM5krZpkrmZkrzJkr/5lVAJlV
+        M5lVZplVmZlVzJlV/5mAAJmAM5mAZpmAmZmAzJmA/5mqAJmqM5mqZpmqmZmqzJmq
+        /5nVAJnVM5nVZpnVmZnVzJnV/5n/AJn/M5n/Zpn/mZn/zJn//8wAAMwAM8wAZswA
+        mcwAzMwA/8wrAMwrM8wrZswrmcwrzMwr/8xVAMxVM8xVZsxVmcxVzMxV/8yAAMyA
+        M8yAZsyAmcyAzMyA/8yqAMyqM8yqZsyqmcyqzMyq/8zVAMzVM8zVZszVmczVzMzV
+        /8z/AMz/M8z/Zsz/mcz/zMz///8AAP8AM/8AZv8Amf8AzP8A//8rAP8rM/8rZv8r
+        mf8rzP8r//9VAP9VM/9VZv9Vmf9VzP9V//+AAP+AM/+AZv+Amf+AzP+A//+qAP+q
+        M/+qZv+qmf+qzP+q///VAP/VM//VZv/Vmf/VzP/V////AP//M///Zv//mf//zP//
+        /wAAAAAAAAAAAAAAACH5BAEAAPwALAAAAAALAAsAAAhUAN21Y3fOnEFz4L61W7jw
+        HEGD4Got3LcPIsWE5tpRrLjxmy1zBTdeNPfNYEiKB2uBMyhyHzuEKzeak/ntGziU
+        DlHWLLnyoLlytc7VqvVtaNGi5gICADs
+        '''),
+    tk.PhotoImage("img_closepressed", data='''
+        R0lGODlhCwALAPcAAAAAAAAAMwAAZgAAmQAAzAAA/wArAAArMwArZgArmQArzAAr
+        /wBVAABVMwBVZgBVmQBVzABV/wCAAACAMwCAZgCAmQCAzACA/wCqAACqMwCqZgCq
+        mQCqzACq/wDVAADVMwDVZgDVmQDVzADV/wD/AAD/MwD/ZgD/mQD/zAD//zMAADMA
+        MzMAZjMAmTMAzDMA/zMrADMrMzMrZjMrmTMrzDMr/zNVADNVMzNVZjNVmTNVzDNV
+        /zOAADOAMzOAZjOAmTOAzDOA/zOqADOqMzOqZjOqmTOqzDOq/zPVADPVMzPVZjPV
+        mTPVzDPV/zP/ADP/MzP/ZjP/mTP/zDP//2YAAGYAM2YAZmYAmWYAzGYA/2YrAGYr
+        M2YrZmYrmWYrzGYr/2ZVAGZVM2ZVZmZVmWZVzGZV/2aAAGaAM2aAZmaAmWaAzGaA
+        /2aqAGaqM2aqZmaqmWaqzGaq/2bVAGbVM2bVZmbVmWbVzGbV/2b/AGb/M2b/Zmb/
+        mWb/zGb//5kAAJkAM5kAZpkAmZkAzJkA/5krAJkrM5krZpkrmZkrzJkr/5lVAJlV
+        M5lVZplVmZlVzJlV/5mAAJmAM5mAZpmAmZmAzJmA/5mqAJmqM5mqZpmqmZmqzJmq
+        /5nVAJnVM5nVZpnVmZnVzJnV/5n/AJn/M5n/Zpn/mZn/zJn//8wAAMwAM8wAZswA
+        mcwAzMwA/8wrAMwrM8wrZswrmcwrzMwr/8xVAMxVM8xVZsxVmcxVzMxV/8yAAMyA
+        M8yAZsyAmcyAzMyA/8yqAMyqM8yqZsyqmcyqzMyq/8zVAMzVM8zVZszVmczVzMzV
+        /8z/AMz/M8z/Zsz/mcz/zMz///8AAP8AM/8AZv8Amf8AzP8A//8rAP8rM/8rZv8r
+        mf8rzP8r//9VAP9VM/9VZv9Vmf9VzP9V//+AAP+AM/+AZv+Amf+AzP+A//+qAP+q
+        M/+qZv+qmf+qzP+q///VAP/VM//VZv/Vmf/VzP/V////AP//M///Zv//mf//zP//
+        /wAAAAAAAAAAAAAAACH5BAEAAPwALAAAAAALAAsAAAhqACVR0aKlEKGDBnkVJPSK
+        0KJXtCC+0kJoWLtCrlwNG7bIFaFC7YS1q9jOHESDGs8NYzfslaKGhWgVYnnOVa2I
+        DAm1G3ZO2LBaEAnVGmZumMZ2vGrVMshSIstaHoHajAj1Jq+GtYTGBMorIAA7
+        ''')
+    )
+
+ButtonNotebook()
 
 root_drive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hdd.png'))
 default_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded_open_hdd.png'))
 shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded_save_hdd.png'))
 folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/directory_closed.png'))
+folderop_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/directory_open.png'))
 file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow.png'))
+del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_trashcan.png'))
 load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/repeat_green.png'))
+live_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/computer_desktop.png'))
 json_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded.png'))
 csv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table.png'))
 uaf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/delete_red.png'))
@@ -1220,9 +1858,19 @@ search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/magnifier
 exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/no.png'))
 skin_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/skin.png'))
 pref_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/controls.png'))
-warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/warning.png'))
+question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question.png'))
+trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/trashcan.png'))
 info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/info.png'))
 error_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/error.png'))
+merror_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/error_small.png'))
+minfo_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/info_small.png'))
+warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/warning.png'))
+ods_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/cloud_cyan.png'))
+saveas_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/floppy_35inch_black.png'))
+save_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/floppy_35inch_green.png'))
+ual_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_delete.png'))
+loadl_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_new.png'))
+proj_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/tables.png'))
 
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
@@ -1231,27 +1879,73 @@ menubar = tk.Menu(root)
 root.config(menu=menubar)
 
 file_menu = tk.Menu(menubar, tearoff=0)
+odsmenu = tk.Menu(file_menu, tearoff=0)
+odlmenu = tk.Menu(file_menu, tearoff=0)
+projmenu = tk.Menu(file_menu, tearoff=0)
+
 options_menu = tk.Menu(menubar, tearoff=0)
 submenu = tk.Menu(options_menu, tearoff=0)
 
 for theme_name in sorted(root.get_themes()):
     submenu.add_command(label=theme_name,
                         command=lambda t=theme_name: [submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background=''),
-                                                      root.set_theme(t), style.map("Treeview", foreground=fixed_map("foreground"),
-                                                                                   background=fixed_map("background")),
+                                                      root.set_theme(t),
+                                                      style.map("Treeview",
+                                                                foreground=fixed_map("foreground"),
+                                                                background=fixed_map("background")),
                                                       submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'),
-                                                      save_settings()])
+                                                      save_settings(), pane_config(), ButtonNotebook()])
 
-file_menu.add_command(label="Load <UsreCid>.dat" + (' '*10), image=load_img, compound='left', command=lambda: open_dat(), accelerator="Ctrl+O")
-file_menu.add_command(label="Import JSON", image=json_img, compound='left', command=lambda: import_json())
-file_menu.add_command(label="Import CSV", image=csv_img, compound='left', command=lambda: import_csv())
-file_menu.add_command(label="Unload all files", image=uaf_img, compound='left', command=lambda: clear_all(), accelerator="Alt+0")
+odsmenu.add_command(label="Load <UserCid>.dat" + (' '*10),
+                    image=load_img, compound='left',
+                    command=lambda: open_dat(odsmenu),
+                    accelerator="Ctrl+O")
+odsmenu.add_command(label="Import JSON", image=json_img,
+                    compound='left', command=lambda: import_json(odsmenu))
+odsmenu.add_command(label="Import CSV", image=csv_img, compound='left',
+                    command=lambda: import_csv(odsmenu))
+odsmenu.add_command(label="Unload all files", image=uaf_img, compound='left',
+                    command=lambda: clear_all(), accelerator="Alt+0")
+odsmenu.entryconfig("Unload all files", state='disable')
+
+odlmenu.add_command(label="Load ODL logs", image=folderop_img, compound='left', command=lambda: open_odl())
+odlmenu.add_command(label="Unload all ODL logs", image=uaf_img, compound='left', command=lambda: del_logs())
+odlmenu.entryconfig("Unload all ODL logs", state='disable')
+
+projmenu.add_command(label="Load", image=loadl_img, compound='left', accelerator="Alt+2", command=lambda: load_proj())
+projmenu.add_command(label="Save", image=save_img, compound='left', accelerator="Alt+S", command=lambda: save_proj())
+projmenu.add_command(label="SaveAs", image=saveas_img, compound='left', command=lambda: saveAs_proj())
+projmenu.add_command(label="Unload", image=ual_img, compound='left', command=lambda: [clear_all(), del_logs()])
+projmenu.entryconfig("Save", state='disable')
+projmenu.entryconfig("SaveAs", state='disable')
+projmenu.entryconfig("Unload", state='disable')
+
+file_menu.add_command(label="Live system",
+                      image=live_img, compound='left',
+                      command=lambda: threading.Thread(target=live_system,
+                                                       args=(file_menu,),
+                                                       daemon=True).start())
+
+file_menu.add_cascade(label="OneDrive settings", menu=odsmenu,
+                      image=ods_img, compound='left')
+
+file_menu.add_cascade(label="OneDrive logs", menu=odlmenu,
+                      image=folder_img, compound='left')
+file_menu.entryconfig("OneDrive logs", state='disable')
+if menu_data['odl'] is True:
+    file_menu.entryconfig("OneDrive logs", state='normal')
 file_menu.add_separator()
-file_menu.add_command(label="Exit", image=exit_img, compound='left', command=lambda: quit(root))
-file_menu.entryconfig("Unload all files", state='disable')
-options_menu.add_cascade(label="Skins", image=skin_img, compound='left', menu=submenu)
+file_menu.add_cascade(label="Project", menu=projmenu,
+                      image=proj_img, compound='left')
+file_menu.add_separator()
+file_menu.add_command(label="Exit", image=exit_img, compound='left',
+                      command=lambda: quit(root))
+
+options_menu.add_cascade(label="Skins", image=skin_img,
+                         compound='left', menu=submenu)
 options_menu.add_separator()
-options_menu.add_command(label="Preferences", image=pref_img, compound='left', command=lambda: preferences(root))
+options_menu.add_command(label="Preferences", image=pref_img,
+                         compound='left', command=lambda: preferences(root))
 menubar.add_cascade(label="File",
                     menu=file_menu)
 menubar.add_cascade(label="Options",
@@ -1259,76 +1953,99 @@ menubar.add_cascade(label="Options",
 submenu.entryconfig(submenu.index(ttk.Style().theme_use()),
                     background='grey')
 
+if not ctypes.windll.shell32.IsUserAnAdmin():
+    file_menu.entryconfig("Live system", state="disabled")
+
 outer_frame = ttk.Frame(root)
 main_frame = ttk.Frame(outer_frame,
                        relief='groove',
                        padding=5)
-top_frame = ttk.Frame(main_frame)
+
 bottom_frame = ttk.Frame(main_frame)
 
 outer_frame.grid(row=0, column=0, sticky="nsew")
 main_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-top_frame.grid(row=0, column=0, sticky="nsew")
-bottom_frame.grid(row=2, column=0, pady=(5, 0), stick='nsew')
+bottom_frame.grid(row=1, column=0, pady=(5, 0), stick='nsew')
 
 outer_frame.grid_rowconfigure(0, weight=1)
 outer_frame.grid_columnconfigure(0, weight=1)
-main_frame.grid_rowconfigure(1, weight=1)
+main_frame.grid_rowconfigure(0, weight=1)
 main_frame.grid_columnconfigure(0, weight=1)
-top_frame.grid_rowconfigure(0, weight=1)
-top_frame.grid_columnconfigure(0, weight=1)
 bottom_frame.grid_rowconfigure(0, weight=1)
 bottom_frame.grid_columnconfigure(0, weight=1)
 
-find_label = ttk.Label(top_frame, text='')
-search_entry = ttk.Entry(top_frame, width=30)
-btn = ttk.Button(top_frame, text="Find", image=search_img, takefocus=False, compound='right', command=lambda: [clear_search(), search()])
+pw = tk.PanedWindow(main_frame, orient=tk.HORIZONTAL, background=bg, sashwidth=6)
+
+columns = ('folder_count', 'file_count')
+
+tv_frame = ScrollableNotebook.ScrollableNotebook(main_frame,
+                                                 wheelscroll=True,
+                                                 style='CustomNotebook')
+
+tv_frame.enable_traversal()
+tv_inner_frame = ttk.Frame(tv_frame)
+tv_frame.add(tv_inner_frame, text='OneDrive Folders')
+tv = ttk.Treeview(tv_inner_frame,
+                  columns=columns,
+                  selectmode='browse',
+                  takefocus='false')
+tv.heading('#0', text=' Path', anchor='w')
+tv.heading('folder_count', text=' # folders', anchor='w')
+tv.heading('file_count', text=' # files', anchor='w')
+tv.column('#0', minwidth=300, width=300, stretch=True, anchor='w')
+tv.column('folder_count', minwidth=60, width=60, stretch=False, anchor='e')
+tv.column('file_count', minwidth=55, width=55, stretch=False, anchor='e')
+
+find_frame = ttk.Frame(tv_inner_frame)
+search_entry = ttk.Entry(find_frame, width=30, exportselection=0)
+btn = ttk.Button(find_frame,
+                 text="Find",
+                 image=search_img,
+                 takefocus=False,
+                 compound='right',
+                 command=lambda: [clear_search(), search(), search_result()])
 search_entry.configure(state="disabled")
 btn.configure(state="disabled")
 
-pw = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
-
-tv_frame = ttk.Frame(main_frame, relief='groove')
-tv_inner_frame = ttk.Frame(tv_frame)
-tv_inner_frame.grid(row=0, column=0, padx=0.5, pady=0.5, sticky="nsew")
-tv = ttk.Treeview(tv_inner_frame, show='tree', selectmode='browse', takefocus='false')
 scrollbv = ttk.Scrollbar(tv_inner_frame, orient="vertical", command=tv.yview)
 scrollbh = ttk.Scrollbar(tv_inner_frame, orient="horizontal", command=tv.xview)
-tabControl = ttk.Notebook(main_frame)
+tabControl = ttk.Notebook()
 tab1 = ttk.Frame(tabControl)
 tabControl.add(tab1, text='Details')
 value_label = ttk.Label(bottom_frame, text='')
-pb = ttk.Progressbar(bottom_frame, orient='horizontal', length=160, mode='determinate')
+pb = ttk.Progressbar(bottom_frame, orient='horizontal',
+                     length=160, mode='determinate')
 sl = ttk.Separator(bottom_frame, orient='vertical')
-message = ttk.Label(bottom_frame, text=0, background='red', anchor='center', width=3)
+message = ttk.Label(bottom_frame, text=0, background='red',
+                    anchor='center', width=3)
 sr = ttk.Separator(bottom_frame, orient='vertical')
 sg = ttk.Sizegrip(bottom_frame)
 
 details = tk.Text(tab1, undo=False, width=50, state='disable')
+details.tag_configure('red', foreground="red")
 tv.configure(yscrollcommand=scrollbv.set, xscrollcommand=scrollbh.set)
 tv.tag_configure('yellow', background="yellow", foreground="black")
+tv.tag_configure('red', foreground="red")
 
 tabControl.grid_rowconfigure(0, weight=1)
 tabControl.grid_columnconfigure(0, weight=1)
 tab1.grid_rowconfigure(0, weight=1)
 tab1.grid_columnconfigure(0, weight=1)
 
-tv_frame.grid_rowconfigure(0, weight=1)
-tv_frame.grid_columnconfigure(0, weight=1)
-tv_inner_frame.grid_rowconfigure(0, weight=1)
+tv_inner_frame.grid_rowconfigure(1, weight=1)
 tv_inner_frame.grid_columnconfigure(0, weight=1)
 
-pw.add(tv_frame)
-pw.add(tabControl)
+pw.add(tv_frame, minsize=435)
+pw.add(tabControl, width=400)
 
-find_label.grid(row=0, column=1, sticky='e')
-search_entry.grid(row=0, column=2, sticky="e", padx=5)
-btn.grid(row=0, column=3, sticky="e", padx=5)
+search_entry.grid(row=0, column=0, sticky="e", padx=5)
+btn.grid(row=0, column=1, padx=5, pady=5)
 
-pw.grid(row=1, column=0, sticky="nsew")
-tv.grid(row=0, column=0, sticky="nsew")
-scrollbv.grid(row=0, column=1, sticky="nsew")
-scrollbh.grid(row=1, column=0, sticky="nsew")
+pw.grid(row=0, column=0, sticky="nsew")
+find_frame.grid(row=0, column=0, sticky='ew')
+tv.grid(row=1, column=0, sticky="nsew")
+scrollbv.grid(row=1, column=1, sticky="nsew")
+scrollbh.grid(row=2, column=0, sticky="nsew")
 details.grid(row=0, column=0, sticky="nsew")
 
 value_label.grid(row=0, column=0, sticky='se')
@@ -1343,8 +2060,11 @@ tv.bind('<<TreeviewSelect>>', selectItem)
 tv.bind("<Button-3>", do_popup)
 tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
 tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
-root.bind('<Control-o>', lambda event=None: open_dat())
+root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
 root.bind('<Alt-0>', lambda event=None: clear_all())
+root.bind('<<NotebookTabChanged>>', lambda event=None: log_tab())
+search_entry.bind('<Return>',
+                  lambda event=None: [clear_search(), search(), search_result()])
 bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
 
 keyboard.is_pressed('shift')

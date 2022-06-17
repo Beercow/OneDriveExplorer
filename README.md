@@ -14,6 +14,8 @@ This project requires several additional modules. You can install them with the 
 python3 -m pip install -r requirements.txt
 ```
 
+<span style="color:red">**&#42;Note:** pytsk3 and quickxorhash require a compiler to install. Using the executables is recommended.</span>
+
 ## Command line
 
 ![cmd_help](./Images/cmd_help.png)
@@ -26,7 +28,7 @@ OneDriveExplorer.py -f business1\d1a7c039-6175-4ddb-bcdb-a8de45cf1678.dat
 
 Depending on the options, OneDriveExplorer can produce JSON, CSV, or HTML files of the parsed data. The `--pretty` option can be used to output the JSON into a more human readable layout.
 
-Additionally, a user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive.
+A user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive. Along with the registry hive, $Recycle.Bin can be added with the `-rb` option to look for deleted files.
 
 ### Example output
 
@@ -48,7 +50,9 @@ The GUI consists of two panes: the folder structure on the left and details on t
 
 ![gui](./Images/gui.png)
 
-The GUI is capable of parsing dat files along with loading JSON or CSV from a previously parsed dat file. OneDriveExplorer GUI also supports loading multiple files. When loading a dat file, an additional dialog will appear to allow you to supply a registry file. This can be disabled by holding down `SHIFT` or disabling it in the preferences menu.
+The GUI is capable of parsing the live system and dat files, along with loading JSON or CSV from a previously parsed dat file. OneDriveExplorer GUI also supports loading multiple files. When loading a dat file, an additional dialog will appear to allow you to supply a registry file. This can be disabled by holding down `SHIFT` or disabling it in the preferences menu.
+
+**&#42;Experamental:** OneDrive ODL logs can be enabled in the Preferences menu.
 
 ![file_menu](./Images/file_menu.png)  ![hive](./Images/hive.png)
 
@@ -72,6 +76,14 @@ The messages dialogue can be accessed by double clicking on the number in the lo
 ![indicator](./Images/message_indicator.png)
 ![messages](./Images/message.png)
 
+Projects can also be created to save your work without having to parse the files again. This has the advantage of loading the data more quickly.
+
+![project menu](./Images/project.png)
+
+If ODL log files are enabled, additional tabs for each users logs will be created.
+
+![ODL logs](./Images/odl.png)
+
 ## File location
 
 The default file location of the `.dat` files are:
@@ -81,5 +93,4 @@ The default file location of the `.dat` files are:
 
 ## Todo
 
-- [x] Support for unicode characters
-- [ ] Set minimum width on slider left/right
+- [ ] Better support for ODL logs
