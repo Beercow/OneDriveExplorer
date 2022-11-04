@@ -1,0 +1,66 @@
+#define settingsfilemanager_788_loadglobalsettings_des "User CID"
+
+typedef struct _settingsfilemanager_788_loadglobalsettings{
+    int32 name_len;
+    char name[name_len];
+    int32 cid_len;
+    char cid[cid_len];
+} settingsfilemanager_788_loadglobalsettings;
+
+#define settingsfilemanager_378_savedrivesettingsbusiness_des "libraryScope"
+
+typedef struct _settingsfilemanager_378_savedrivesettingsbusiness{
+    int64 unk1;
+    int32 ScopeId_len;
+    char ScopeId[ScopeId_len];
+    int32 unk2;
+    int32 ListName_len;
+    char ListName[ListName_len];
+    int32 ListId_len;
+    char ListId[ListId_len];
+    int32 SiteId_len;
+    char SiteId[SiteId_len];
+    int32 WebId_len;
+    char WebId[WebId_len];
+    int32 TenantId_len;
+    char TenantId[TenantId_len];
+    int32 URL_len;
+    char URL[URL_len];
+    int64 unk3;
+    int32 MountPoint_len;
+    char MountPoint[MountPoint_len];
+    int64 unk4;
+    int32 SiteName_len;
+    char SiteName[SiteName_len];
+    int32 LockFileGUID_len;
+    char LockFileGUID[LockFileGUID_len];
+    int32 unk5;
+    BYTE unk6;
+} settingsfilemanager_378_savedrivesettingsbusiness;
+
+#define settingsfilemanager_439_savedrivesettingsbusiness_des "libraryFolder"
+
+typedef struct _settingsfilemanager_439_savedrivesettingsbusiness{
+    int64 unk1;
+    int32 ScopeId_len;
+    char ScopeId[ScopeId_len];
+    int32 unk2;
+    int32 ListName_len;
+    char ListName[ListName_len];
+    int32 ListId_len;
+    char ListId[ListId_len];
+    int32 SiteId_len;
+    char SiteId[SiteId_len];
+    int32 WebId_len;
+    char WebId[WebId_len];
+    int32 TenantId_len;
+    char TenantId[TenantId_len];
+    int32 URL_len;
+    char URL[URL_len];
+    int64 unk3;
+    int32 MountPoint_len;
+    char MountPoint[MountPoint_len];
+    int32 unk4;
+    int32 LockFileGUID_len;
+    char LockFileGUID[LockFileGUID_len];
+} settingsfilemanager_439_savedrivesettingsbusiness;

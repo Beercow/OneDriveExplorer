@@ -91,7 +91,7 @@ def hash_file(file):
                 sha1.update(data)
                 h.update(data)
 
-        return [sha1.hexdigest(), base64.b64encode(h.digest()).decode('utf-8')]
+        return [f'SHA1({sha1.hexdigest()})', f'quickXor({base64.b64encode(h.digest()).decode("utf-8")})']
     except Exception as e:
         return ['', '']
 
@@ -127,7 +127,7 @@ def getFileMetadata(iName, files, od_keys, personal):
                     if personal:
                         hash = hash_file(f'{iName.replace("$I", "$R")}{file}')[0]
                     else:
-                        hash = hash_file(f'{iName.replace("$I", "$R")}')[1]
+                        hash = hash_file(f'{iName.replace("$I", "$R")}{file}')[1]
                     fileSize = os.stat(f'{iName.replace("$I", "$R")}{file}')
                     name = file.split('\\')[-1]
                     path = file.rsplit('\\', 1)[0]

@@ -1,0 +1,29 @@
+#define winboxfiltercommunicationsport_1061_onrenamecompletion_des "File Rename"
+
+typedef struct _winboxfiltercommunicationsport_1061_onrenamecompletion{
+    int32 OldFileName_len;
+    char OldFileName[OldFileName_len];
+    int32 NewFileName_len;
+    char NewFileName[NewFileName_len];
+    int64 unk1;
+    int64 unk2;
+    int32 ProcessName_len;
+    char ProcessName[ProcessName_len];
+    int64 unk3;
+    int32 unk4;
+} winboxfiltercommunicationsport_1061_onrenamecompletion;
+
+#define winboxfiltercommunicationsport_1084_onrenamecompletion_des "File Rename"
+
+typedef struct _winboxfiltercommunicationsport_1084_onrenamecompletion{
+    int32 OldFileName_len;
+    char OldFileName[OldFileName_len];
+    int32 NewFileName_len;
+    char NewFileName[NewFileName_len];
+    int64 unk1;
+    int64 unk2;
+    int32 ProcessName_len;
+    char ProcessName[ProcessName_len];
+    int64 unk3;
+    int32 unk4;
+} winboxfiltercommunicationsport_1084_onrenamecompletion;

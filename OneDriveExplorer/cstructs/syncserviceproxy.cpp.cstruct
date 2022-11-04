@@ -1,0 +1,14 @@
+#define _syncserviceproxy_6299_ondownloadedselectivesyncentries_des ""
+
+typedef struct _syncserviceproxy_6299_ondownloadedselectivesyncentries{
+    int32 driveItem_len;
+    char driveItem[driveItem_len];
+    int32 type_len;
+    char type[type_len];
+    int32 driveItemID_len;
+    char driveItemID[driveItemID_len];
+    int32 eTag_len;
+    char eTag[eTag_len];
+    int32 parentID_len;
+    char parentID[parentID_len];
+} syncserviceproxy_6299_ondownloadedselectivesyncentries;

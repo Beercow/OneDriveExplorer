@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 
 def print_csv(df, rbin_df, name, csv_path, csv_name=False):
     log.info(f'Started writing CSV file')
+
+    if not os.path.exists(csv_path):
+        os.makedirs(csv_path)
+
     df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
 
     try:

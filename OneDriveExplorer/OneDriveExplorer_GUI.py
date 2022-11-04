@@ -1,8 +1,10 @@
 import os
 import sys
 import re
+import base64
 import json
 import ctypes
+import webbrowser
 import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
@@ -10,8 +12,9 @@ from tkinter import filedialog
 import threading
 from queue import Queue
 import pandas as pd
-from pandastable import Table
-from PIL import ImageTk, Image
+import numpy as np
+from pandastable import config
+from PIL import ImageTk, Image, ImageGrab
 import time
 import keyboard
 import logging
@@ -23,15 +26,31 @@ from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
 from ode.renderers.project import save_project
 from ode.renderers.project import load_project
-from ode.parsers.dat_new import parse_dat
+from ode.parsers.dat import parse_dat
 from ode.parsers.csv_file import parse_csv
 from ode.parsers.onedrive import parse_onedrive
-from ode.parsers.odl import parse_odl
+from ode.parsers.odl import parse_odl, load_cparser
 from ode.helpers.mft import live_hive
-import ode.helpers.ScrollableNotebook as ScrollableNotebook
+from ode.helpers import pandastablepatch
+from ode.helpers import ScrollableNotebookpatch
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# Per monitor DPI aware. This app checks for the DPI when it is
+# created and adjusts the scale factor whenever the DPI changes.
+# These applications are not automatically scaled by the system.
 ctypes.windll.shcore.SetProcessDpiAwareness(2)
+
+# shortcuts to the WinAPI functionality
+set_window_pos = ctypes.windll.user32.SetWindowPos
+set_window_long = ctypes.windll.user32.SetWindowLongPtrW
+get_window_long = ctypes.windll.user32.GetWindowLongPtrW
+get_parent = ctypes.windll.user32.GetParent
+
+# some of the WinAPI flags
+GWL_STYLE = -16
+
+WS_MINIMIZEBOX = 131072
+WS_MAXIMIZEBOX = 65536
 
 log_capture_string = StringBuffer()
 logging.basicConfig(level=logging.INFO,
@@ -41,7 +60,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.06.17"
+__version__ = "2022.11.04"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -50,6 +69,8 @@ user_logs = {}
 reghive = ''
 recbin = ''
 proj_name = None
+cur_sel = ''
+stop = threading.Event()
 
 if getattr(sys, 'frozen', False):
     # If the application is run as a bundle, the PyInstaller bootloader
@@ -92,7 +113,8 @@ else:
                              "path": ".",\
                              "hive": false,\
                              "odl": false,\
-                             "odl_save": false}'
+                             "odl_save": false,\
+                             "font": null}'
                            )
 
     with open("ode.settings", "w") as jsonfile:
@@ -104,12 +126,19 @@ class quit:
         self.root = root
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
-        self.win.attributes("-toolwindow", 1)
         self.win.title("Please confirm")
+        self.win.iconbitmap(application_path + '/Images/favicon.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.__callback)
+        hwnd = get_parent(self.win.winfo_id())
+        #   getting the old style
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
+        #   setting new style
+        set_window_long(hwnd, GWL_STYLE, new_style)
 
         self.frame = ttk.Frame(self.win, relief='groove')
 
@@ -173,7 +202,7 @@ class preferences:
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
-        self.win.protocol("WM_DELETE_WINDOW", self.close_pref)
+        self.win.protocol("WM_DELETE_WINDOW", self.__callback)
 
         s = ttk.Style()
         s.map('Red.TCheckbutton',
@@ -319,7 +348,7 @@ class preferences:
         h = self.root.winfo_height()
         try:
             self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
-        except:
+        except Exception:
             pass
 
     def pretty_config(self):
@@ -362,6 +391,9 @@ class preferences:
         with open("ode.settings", "w") as jsonfile:
             json.dump(menu_data, jsonfile)
         self.win.destroy()
+
+    def __callback(self):
+        return
 
     def close_pref(self):
         self.win.destroy()
@@ -445,7 +477,7 @@ class hive:
         h = self.root.winfo_height()
         try:
             self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
-        except:
+        except Exception:
             pass
 
 
@@ -517,7 +549,7 @@ class rec_bin:
         h = self.root.winfo_height()
         try:
             self.win.geometry("+%d+%d" % (x + w/4, y + h/3))
-        except:
+        except Exception:
             pass
 
 
@@ -530,6 +562,7 @@ class messages:
         self.win.minsize(400, 300)
         self.win.grab_set()
         self.win.focus_force()
+        self.win.protocol("WM_DELETE_WINDOW", self.close_mess)
         message['background'] = ''
         message['foreground'] = ''
         self.columns = ('Message Date', 'Message Type', 'Message')
@@ -561,10 +594,15 @@ class messages:
                           width=87,
                           yscrollcommand=self.tb_scroll.set)
         self.total = ttk.Label(self.inner_frame, text='Total messages:')
+        self.value_label = ttk.Label(self.inner_frame, text='')
+        self.pb = ttk.Progressbar(self.inner_frame, orient='horizontal',
+                                  length=160, mode='indeterminate')
         self.clear = ttk.Button(self.inner_frame, text='Clear messages',
                                 takefocus=False, command=self.clear)
         self.export = ttk.Button(self.inner_frame, text='Export messages',
-                                 takefocus=False, command=self.export)
+                                 takefocus=False,
+                                 command=lambda: threading.Thread(target=self.exportmessage,
+                                                                  daemon=True).start())
         self.sg = ttk.Sizegrip(self.inner_frame)
 
         self.tree.heading('Message Date', text='Message Date', anchor='w')
@@ -580,7 +618,29 @@ class messages:
         self.tb_scroll.config(command=self.tb.yview)
         self.tb.config(state='disable')
 
+        self.tree.grid(row=0, column=0, columnspan=5, padx=(10, 0),
+                       pady=(10, 0), sticky='nsew')
+        self.tree_scroll.grid(row=0, column=5, padx=(0, 10),
+                              pady=(10, 0), sticky="nsew")
+        self.tb.grid(row=1, column=0, columnspan=5, padx=(10, 0),
+                     pady=(5, 10), sticky='nsew')
+        self.tb_scroll.grid(row=1, column=5, padx=(0, 10),
+                            pady=(5, 10), sticky="nsew")
+        self.total.grid(row=2, column=0, padx=(10, 0), pady=(0, 5), stick='w')
+        self.value_label.grid(row=2, column=1, padx=5, pady=(0, 5))
+        self.pb.grid(row=2, column=2, pady=(0, 5))
+        self.clear.grid(row=2, column=3, padx=5, pady=(0, 5), stick='e')
+        self.export.grid(row=2, column=4, pady=(0, 5), stick='e')
+        self.sg.grid(row=2, column=5, stick='se')
+        self.sync_windows()
+        self.tree.bind('<<TreeviewSelect>>', self.select)
+        self.mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
+        self.total['text'] = f'Total messages: {self.mcount}'
+        self.value_label.grid_remove()
+        self.pb.grid_remove()
+
         data = log_capture_string.getvalue().split('\n')
+
         for m in data:
             m = m.split(', ', 2)
             try:
@@ -592,24 +652,11 @@ class messages:
                     image = merror_img
             except IndexError:
                 image = ''
-            self.tree.insert("", "end", values=m, image=image)
-
-        self.tree.grid(row=0, column=0, columnspan=3, padx=(10, 0),
-                       pady=(10, 0), sticky='nsew')
-        self.tree_scroll.grid(row=0, column=3, padx=(0, 10),
-                              pady=(10, 0), sticky="nsew")
-        self.tb.grid(row=1, column=0, columnspan=3, padx=(10, 0),
-                     pady=(5, 10), sticky='nsew')
-        self.tb_scroll.grid(row=1, column=3, padx=(0, 10),
-                            pady=(5, 10), sticky="nsew")
-        self.total.grid(row=2, column=0, padx=(10, 0), pady=(0, 5), stick='w')
-        self.clear.grid(row=2, column=1, padx=5, pady=(0, 5), stick='e')
-        self.export.grid(row=2, column=2, pady=(0, 5), stick='e')
-        self.sg.grid(row=2, column=3, stick='se')
-        self.sync_windows()
-        self.tree.bind('<<TreeviewSelect>>', self.select)
-        self.mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
-        self.total['text'] = f'Total messages: {self.mcount}'
+            try:
+                self.tree.insert("", "end", values=m, image=image)
+            except Exception:
+                break
+            self.win.update()
 
     def select(self, event=None):
         self.tb.config(state='normal')
@@ -633,9 +680,15 @@ class messages:
         message['background'] = ''
         message['foreground'] = ''
 
-    def export(self):
+    def exportmessage(self, event=None):
         path = filedialog.askdirectory(initialdir="/")
         if path:
+            self.clear.config(state='disable')
+            self.export.config(state='disable')
+            self.value_label['text'] = "Exporting messages. Please wait..."
+            self.pb.start()
+            self.value_label.grid(row=2, column=1, pady=(0, 5))
+            self.pb.grid(row=2, column=2, pady=(0, 5))
             ids = self.tree.get_children()
             excel_name = path + '\\OneDriveExplorerMessages_' + datetime.now().strftime("%Y-%m-%dT%H%M%S.xlsx")
             lst = []
@@ -646,10 +699,20 @@ class messages:
                                                          'Message Type',
                                                          'Message'])
 
-            try:
-                writer = pd.ExcelWriter(excel_name)
-                df.to_excel(writer, 'OneDriveExplorer Messages', index=False)
-                writer.save()
+            try:  # need to thread
+                with pd.ExcelWriter(excel_name) as writer:
+                    row_count = len(df.index)
+                    if row_count > 1048576:
+                        groups = df.groupby(np.arange(len(df.index))//1048575)
+                        for (frameno, frame) in groups:
+                            frame.to_excel(writer,
+                                           f'OneDriveExplorer Messages {frameno}',
+                                           index=False)
+                    else:
+                        df.to_excel(writer,
+                                    'OneDriveExplorer Messages',
+                                    index=False)
+                self.pb.stop()
                 export_result(self.win, excel_name)
             except Exception as e:
                 logging.error(e)
@@ -661,24 +724,35 @@ class messages:
                 mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
                 self.total['text'] = f'Total messages: {mcount}'
                 message['text'] = mcount
+            self.value_label.grid_forget()
+            self.pb.grid_forget()
+            self.clear.config(state='normal')
+            self.export.config(state='normal')
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
         y = self.root.winfo_y()
         self.win.geometry("+%d+%d" % (x, y))
 
+    def close_mess(self):
+        self.win.destroy()
+
+    def onmotion(self):
+        self.update()
+
 
 class export_result:
     def __init__(self, root, excel_name, failed=False):
         self.root = root
-        self.excel_name = excel_name.replace('/', '\\')
         self.failed = failed
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         if self.failed:
             self.win.title("Export failed!")
+            self.excel_name = excel_name
         else:
             self.win.title("Export successful!")
+            self.excel_name = excel_name.replace('/', '\\')
         self.win.iconbitmap(application_path + '/Images/OneDrive.ico')
         self.win.grab_set()
         self.win.focus_force()
@@ -727,41 +801,189 @@ class export_result:
         h = self.root.winfo_height()
         try:
             self.win.geometry("+%d+%d" % (x + w/2, y + h/2))
-        except:
+        except Exception:
             pass
+
+
+class help:
+    def __init__(self, root):
+        self.root = root
+        self.win = tk.Toplevel(self.root)
+        self.win.title("Help")
+        self.win.iconbitmap(application_path + '/Images/question.ico')
+        self.win.focus_force()
+        self.win.resizable(False, False)
+        self.win.protocol("WM_DELETE_WINDOW", self.close_help)
+
+        hwnd = get_parent(self.win.winfo_id())
+        #   getting the old style
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
+        #   setting new style
+        set_window_long(hwnd, GWL_STYLE, new_style)
+
+        self.frame = ttk.Frame(self.win)
+        self.label1 = ttk.Label(self.frame, text="To load <UserCid>.dat, File -> OneDrive settings -> Load <UserCid>.dat", justify="left", anchor='w')
+        self.label2 = ttk.Label(self.frame, text="Once <UserCid>.dat is loaded, OneDriveExplorer operates much like File Explorer.", justify="left", anchor='w')
+        self.label3 = ttk.Label(self.frame, text="Context menu\nRight click on folder/file to export Name, Path, Details, etc.", justify="left", anchor='w')
+        self.label4 = ttk.Label(self.frame, text="For full details, see the included manual.", justify="left", anchor='w')
+
+        self.frame.grid(row=0, column=0)
+        self.label1.grid(row=0, column=0, padx=(10, 30), pady=(5, 0), sticky='w')
+        self.label2.grid(row=1, column=0, padx=(10, 30), sticky='w')
+        self.label3.grid(row=1, column=0, padx=(10, 30), sticky='w')
+        self.label4.grid(row=2, column=0, padx=(10, 30), pady=(0, 20), sticky='w')
+        self.sync_windows()
+
+    def sync_windows(self, event=None):
+        x = self.root.winfo_x()
+        qw = self.win.winfo_width()
+        y = self.root.winfo_y()
+        qh = self.win.winfo_height()
+        w = self.root.winfo_width()
+        h = self.root.winfo_height()
+        self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
+
+    def close_help(self):
+        self.win.destroy()
+
+
+class about:
+    def __init__(self, root):
+        self.root = root
+        self.win = tk.Toplevel(self.root)
+        self.win.wm_transient(self.root)
+        self.win.title("About OneDriveExplorer")
+        self.win.iconbitmap(application_path + '/Images/favicon.ico')
+        self.win.focus_force()
+        self.win.resizable(False, False)
+        self.win.protocol("WM_DELETE_WINDOW", self.close_about)
+
+        hwnd = get_parent(self.win.winfo_id())
+        #   getting the old style
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
+        #   setting new style
+        set_window_long(hwnd, GWL_STYLE, new_style)
+
+        self.frame = ttk.Frame(self.win)
+        self.label = ttk.Label(self.frame, image=ode_img, anchor='n')
+        self.label1 = ttk.Label(self.frame, text="OneDriveExplorer",
+                                justify="left", anchor='w')
+        self.label2 = ttk.Label(self.frame, text=f"Version {__version__}",
+                                justify="left", anchor='w')
+        self.label3 = ttk.Label(self.frame, text="Copyright © 2022",
+                                justify="left", anchor='w')
+        self.label4 = ttk.Label(self.frame, text="Brian Maloney",
+                                justify="left", anchor='w')
+        self.label5 = ttk.Label(self.frame, text="L̲a̲t̲e̲s̲t̲_R̲e̲l̲e̲a̲s̲e̲",
+                                foreground='#0563C1', cursor="hand2",
+                                justify="left", anchor='w')
+        self.text = tk.Text(self.frame, width=27, height=8, wrap=tk.WORD)
+        line = "GUI based application for reconstructing the folder structure of OneDrive from <UserCid>.dat"
+        self.text.insert(tk.END, line)
+        self.text.config(state='disable')
+        self.scrollbv = ttk.Scrollbar(self.frame, orient="vertical", command=self.text.yview)
+        self.text.configure(yscrollcommand=self.scrollbv.set)
+
+        self.ok = ttk.Button(self.frame,
+                             text="OK",
+                             takefocus=False,
+                             command=self.close_about)
+
+        self.frame.grid(row=0, column=0)
+        self.label.grid(row=0, column=0, rowspan=6,
+                        padx=10, pady=(10, 0), sticky='n')
+        self.label1.grid(row=0, column=1,
+                         padx=(0, 10), pady=(10, 0), sticky='w')
+        self.label2.grid(row=1, column=1, sticky='w')
+        self.label3.grid(row=2, column=1, sticky='w')
+        self.label4.grid(row=3, column=1, sticky='w')
+        self.label5.grid(row=4, column=1,
+                         padx=(0, 10), pady=(0, 10), sticky='w')
+        self.text.grid(row=5, column=1, sticky='w')
+        self.scrollbv.grid(row=5, column=2, padx=(0, 10), sticky="nsew")
+        self.ok.grid(row=6, column=1, padx=(0, 10), pady=10, sticky='e')
+
+        self.label5.bind("<Double-Button-1>", self.callback)
+        self.sync_windows()
+
+    def sync_windows(self, event=None):
+        x = self.root.winfo_x()
+        qw = self.win.winfo_width()
+        y = self.root.winfo_y()
+        qh = self.win.winfo_height()
+        w = self.root.winfo_width()
+        h = self.root.winfo_height()
+        self.win.geometry("+%d+%d" % (x + w/4 - qw/4, y + h/2 - qh/2))
+
+    def callback(self, event=None):
+        webbrowser.open_new_tab("https://github.com/Beercow/OneDriveExplorer/releases/latest")
+        self.label5.configure(foreground='#954F72')
+
+    def close_about(self):
+        self.win.destroy()
 
 
 def ButtonNotebook():
 
-    style.element_create("close", "image", "img_close",
-                         ("active", "pressed", "!disabled", "img_closepressed"),
-                         ("active", "!disabled", "img_closeactive"),
-                         border=8, sticky='')
-    style.layout("CustomNotebook", [("CustomNotebook.client",
-                                     {"sticky": "nswe"})])
-    style.layout("CustomNotebook.Tab", [
-        ("CustomNotebook.tab", {
-            "sticky": "nswe",
-            "children": [
-                ("CustomNotebook.padding", {
-                    "side": "top",
-                    "sticky": "nswe",
-                    "children": [
-                        ("CustomNotebook.focus", {
-                            "side": "top",
-                            "sticky": "nswe",
-                            "children": [
+    test = style.map('TNotebook.Tab')
+    style.map('CustomNotebook.Tab', **test)
+
+    try:
+        style.element_create("close", "image", "img_close",
+                             ("active", "pressed", "!disabled", "img_closepressed"),
+                             ("active", "!disabled", "img_closeactive"),
+                             border=8, sticky='')
+        style.layout("CustomNotebook", [("CustomNotebook.client",
+                                        {"sticky": "nswe"})])
+        style.layout("CustomNotebook.Tab", [
+            ("CustomNotebook.tab", {
+                "sticky": "nswe",
+                "children": [
+                    ("CustomNotebook.padding", {
+                        "side": "top",
+                        "sticky": "nswe",
+                        "children": [
+                            # ("CustomNotebook.focus", {
+                                # "side": "top",
+                                # "sticky": "nswe",
+                                # "children": [
                                 ("CustomNotebook.label",
                                  {"side": "left", "sticky": ''}),
                                 ("CustomNotebook.close",
                                  {"side": "left", "sticky": ''}),
-                            ]
-                        })
-                    ]
-                })
-            ]
-        })
-    ])
+                                ]
+                            # })
+                        # ]
+                    })
+                ]
+            })
+        ])
+    except Exception:
+        pass
+
+    # Nothing to do with ButtonNotebook, removing focus lines from other tabs
+    style.layout("TNotebook.Tab", [
+        ('Notebook.tab', {
+            'sticky': 'nswe',
+            'children': [
+                ('Notebook.padding', {
+                    'side': 'top',
+                    'sticky': 'nswe',
+                    'children': [
+                        # ('Notebook.focus', {
+                            # 'side': 'top',
+                            # 'sticky': 'nswe',
+                            # 'children': [
+                            ('Notebook.label',
+                                {'side': 'top', 'sticky': ''})],
+                })],
+            })],
+        # })]
+    )
 
     def on_close_press(event):
         """Called when the button is pressed over the close button"""
@@ -774,7 +996,7 @@ def ButtonNotebook():
             index = widget.index("@%d,%d" % (x, y))
             if index == 0:
                 return
-        except:
+        except Exception:
             return
 
         if "close" in elem:
@@ -806,22 +1028,25 @@ def ButtonNotebook():
         for item in root.winfo_children():
             try:
                 if item.winfo_ismapped():
-                    if str(item) == '.!frame':
+                    if str(item) == '.!frame' or str(item) == '.!notebook2':
                         pass
                     else:
                         item.destroy()
-            except:
+            except Exception:
                 pass
 
         if "close" in elem and widget.pressed_index == index:
             try:
                 del user_logs[f'{widget.tab(index, "text").replace(" L", "_l")}.csv']
-            except:
+            except Exception:
                 pass
 
             widget.winfo_children()[index].destroy()
             widget.event_generate("<<NotebookClosedTab>>")
             if len(tv_frame.tabs()) == 1:
+                for item in infoFrame.winfo_children():
+                    if '.!notebook2.!frame.' in str(item):
+                        item.destroy()
                 odlmenu.entryconfig("Unload all ODL logs", state='disable')
                 if len(tv.get_children()) == 0:
                     projmenu.entryconfig("Save", state='disable')
@@ -838,7 +1063,8 @@ def ButtonNotebook():
 
 def pane_config():
     bg = style.lookup('TFrame', 'background')
-    pw.config(background=bg, sashwidth=6)
+    pwv.config(background=bg, sashwidth=6)
+    pwh.config(background=bg, sashwidth=6)
     ttk.Style().theme_use()
 
 
@@ -889,6 +1115,12 @@ def search_result():
 
 
 def clear_search():
+    for item in infoFrame.winfo_children():
+        if '.!notebook2.!frame.' in str(item):
+            item.destroy()
+
+    root.update_idletasks()
+
     for i in detached_items:
         tv.reattach(i, '', "end")
         close_children(i)
@@ -899,7 +1131,7 @@ def clear_search():
             tags = list(tv.item(hit, 'tags'))
             tags = [x for x in tags if x == 'red']
             tv.item(hit, tags=tags)
-        except:
+        except Exception:
             pass
     found.clear()
     if len(tv.selection()) > 0:
@@ -913,6 +1145,7 @@ def clear_all():
     details.delete('1.0', tk.END)
     details.config(state='disable')
     odsmenu.entryconfig("Unload all files", state='disable')
+    file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
     if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
@@ -1073,43 +1306,14 @@ def parent_child(d, parent_id=None):
         root.update_idletasks()
 
 
-def selectItem(a):
-    curItem = tv.selection()
-    values = tv.item(curItem, 'values')
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    try:
-        if values[6] == 'Root Drive':
-            line = f'Name: {values[5]}\nType: {values[6]}'
-        elif values[6] == 'Root Shared' or values[6] == 'Root Default':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nDriveItemId: {values[3]}'
-        elif values[6] == 'Folder':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
-        elif values[6] == 'Root Deleted':
-            line = f'Name: {values[5]}\nType: {values[6]}'
-        elif values[6] == 'File - deleted':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nDeleteTimeStamp: {values[11]} UTC'
-        else:
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
-        if values[6] == 'Folder' or 'Root' in values[6]:
-            line += f'\n\n# Children: {values[9]}'
-        if 'deleted' in values[6].lower():
-            details.insert(tk.END, line, 'red')
-        else:
-            details.insert(tk.END, line)
-        details.see(tk.END)
-    except IndexError:
-        pass
-
-    details.config(state='disable')
-
-
 def live_system(menu):
     global reghive
     global recbin
     message.unbind('<Double-Button-1>', bind_id)
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Options", state="disabled")
+    menubar.entryconfig("View", state="disabled")
+    menubar.entryconfig("Help", state="disabled")
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
     d = {}
@@ -1143,6 +1347,8 @@ def live_system(menu):
                 logging.info(f'Parsing OneDrive data for {key}')
                 menubar.entryconfig("File", state="disabled")
                 menubar.entryconfig("Options", state="disabled")
+                menubar.entryconfig("View", state="disabled")
+                menubar.entryconfig("Help", state="disabled")
                 search_entry.configure(state="disabled")
                 btn.configure(state="disabled")
                 value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
@@ -1156,6 +1362,12 @@ def live_system(menu):
                     start_parsing(x, filename, reghive, recbin)
 
     if menu_data['odl'] is True:
+        menubar.entryconfig("File", state="disabled")
+        menubar.entryconfig("Options", state="disabled")
+        menubar.entryconfig("View", state="disabled")
+        menubar.entryconfig("Help", state="disabled")
+        search_entry.configure(state="disabled")
+        btn.configure(state="disabled")
         for key, value in d.items():
             for k, v in value.items():
                 if k == 'logs':
@@ -1163,13 +1375,24 @@ def live_system(menu):
                     pb.stop()
                     odl = parse_odl(logs[0], key, pb, value_label, gui=True)
                     tb = ttk.Frame()
-                    pt = Table(tb, dataframe=odl, showtoolbar=False, showstatusbar=False)
+                    pt = pandastablepatch.MyTable(tb,
+                                                  dataframe=odl,
+                                                  maxcellwidth=900,
+                                                  showtoolbar=False,
+                                                  showstatusbar=False,
+                                                  enable_menus=True,
+                                                  editable=False)
                     tv_frame.add(tb, text=f'{key} Logs')
+                    pt.adjustColumnWidths()
                     pt.show()
                     user_logs.setdefault(f'{key}_logs.csv', pt)
                     if menu_data['odl_save'] is True:
+                        value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
+                        pb.configure(mode='indeterminate')
+                        pb.start()
                         log_output = f'{key}_logs.csv'
                         odl.to_csv(log_output, index=False)
+                        pb.stop()
 
     reghive = ''
     recbin = ''
@@ -1177,6 +1400,7 @@ def live_system(menu):
     pb.configure(mode='determinate')
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
     message['text'] = mcount
+
     if "INFO," in log_capture_string.getvalue():
         message['background'] = ''
         message['foreground'] = ''
@@ -1186,8 +1410,18 @@ def live_system(menu):
     if "ERROR," in log_capture_string.getvalue():
         message['background'] = 'red'
         message['foreground'] = ''
+
     rebind()
+
     value_label['text'] = "All jobs complete"
+
+    menubar.entryconfig("File", state="normal")
+    menubar.entryconfig("Options", state="normal")
+    menubar.entryconfig("View", state="normal")
+    menubar.entryconfig("Help", state="normal")
+    search_entry.configure(state="normal")
+    btn.configure(state="normal")
+
     if len(tv_frame.tabs()) > 1:
         odlmenu.entryconfig("Unload all ODL logs", state='normal')
         projmenu.entryconfig("Save", state='normal')
@@ -1245,7 +1479,6 @@ def import_csv(menu):
 
 
 def open_odl():
-#    pass
     folder_name = filedialog.askdirectory(initialdir="/", title="Open")
 
     if folder_name:
@@ -1258,6 +1491,8 @@ def odl(folder_name):
     message.unbind('<Double-Button-1>', bind_id)
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Options", state="disabled")
+    menubar.entryconfig("View", state="disabled")
+    menubar.entryconfig("Help", state="disabled")
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
     key_find = re.compile(r'Users/(?P<user>.*)?/AppData')
@@ -1269,19 +1504,32 @@ def odl(folder_name):
     pb.stop()
     odl = parse_odl(folder_name, key, pb, value_label, gui=True)
     tb = ttk.Frame()
-    pt = Table(tb, dataframe=odl, showtoolbar=False, showstatusbar=False)
+    pt = pandastablepatch.MyTable(tb,
+                                  dataframe=odl,
+                                  maxcellwidth=900,
+                                  showtoolbar=False,
+                                  showstatusbar=False,
+                                  enable_menus=True,
+                                  editable=False)
+    pt.adjustColumnWidths()
     tv_frame.add(tb, text=f'{key} Logs')
     pt.show()
     user_logs.setdefault(f'{key}_logs.csv', pt)
     pb.stop()
-    value_label['text'] = "Parsing complete"
 
     if menu_data['odl_save'] is True:
         log_output = f'{key}_logs.csv'
         try:
+            value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
+            pb.configure(mode='indeterminate')
+            pb.start()
             odl.to_csv(log_output, index=False)
         except Exception as e:
             logging.error(e)
+
+    pb.stop()
+    pb.configure(mode='determinate')
+    value_label['text'] = "Parsing complete"
 
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
     message['text'] = mcount
@@ -1297,6 +1545,8 @@ def odl(folder_name):
 
     menubar.entryconfig("File", state="normal")
     menubar.entryconfig("Options", state="normal")
+    menubar.entryconfig("View", state="normal")
+    menubar.entryconfig("Help", state="normal")
     search_entry.configure(state="normal")
     btn.configure(state="normal")
     rebind()
@@ -1316,13 +1566,15 @@ def save_settings():
 def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
     try:
         message.unbind('<Double-Button-1>', bind_id)
-    except:
+    except Exception:
         pass
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Options", state="disabled")
+    menubar.entryconfig("View", state="disabled")
+    menubar.entryconfig("Help", state="disabled")
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
 
@@ -1467,17 +1719,21 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         if x != 'Live system':
             pb['value'] = 0
         value_label['text'] = f'{file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
+        filename = filename.replace('/', '\\')
+        logging.info(f'{filename}: {file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
 
     else:
         try:
             filename = filename.replace('/', '\\')
-        except:
+        except Exception:
             pass
         logging.warning(f'Unable to parse {filename}.')
         value_label['text'] = f'Unable to parse {filename}.'
 
     menubar.entryconfig("File", state="normal")
     menubar.entryconfig("Options", state="normal")
+    menubar.entryconfig("View", state="normal")
+    menubar.entryconfig("Help", state="normal")
     search_entry.configure(state="normal")
     btn.configure(state="normal")
 
@@ -1485,6 +1741,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         odsmenu.entryconfig("Unload all files", state='normal')
         projmenu.entryconfig("Save", state='normal')
         projmenu.entryconfig("SaveAs", state='normal')
+        file_menu.entryconfig("Export 'OneDrive Folders'", state='normal')
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
     message['text'] = mcount
     if "INFO," in log_capture_string.getvalue():
@@ -1574,6 +1831,7 @@ def del_folder(iid):
     details.config(state='disable')
     if len(tv.get_children()) == 0:
         odsmenu.entryconfig("Unload all files", state='disable')
+        file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
         search_entry.configure(state="disabled")
         btn.configure(state="disabled")
         if len(tv_frame.tabs()) == 1:
@@ -1587,8 +1845,8 @@ def del_logs():
     global proj_name
     for item in tv_frame.winfo_children():
         for i in item.winfo_children():
-            if '.!frame.!frame.!scrollablenotebook.!notebook2.' in str(i):
-                if str(i) == '.!frame.!frame.!scrollablenotebook.!notebook2.!frame':
+            if '.!frame.!frame.!myscrollablenotebook.!notebook2.' in str(i):
+                if str(i) == '.!frame.!frame.!myscrollablenotebook.!notebook2.!frame':
                     continue
                 i.destroy()
 
@@ -1598,6 +1856,10 @@ def del_logs():
                 continue
             item.destroy()
 
+    for item in infoFrame.winfo_children():
+        if '.!notebook2.!frame.' in str(item):
+            item.destroy()
+
     user_logs.clear()
     odlmenu.entryconfig("Unload all ODL logs", state='disable')
     if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
@@ -1605,6 +1867,129 @@ def del_logs():
         projmenu.entryconfig("SaveAs", state='disable')
         projmenu.entryconfig("Unload", state='disable')
         proj_name = None
+
+
+def new_selection():
+    global cur_sel
+    curItem = tv.selection()
+    selectItem()
+
+    try:
+        if cur_sel == curItem[0]:
+            return
+    except Exception:
+        return
+    else:
+        cur_sel = curItem[0]
+
+        t1 = threading.Thread(target=get_info,
+                              daemon=True)
+
+        if 'get_info' not in str(threading.enumerate()):
+            stop.clear()
+            t1.start()
+        else:
+            stop.set()
+
+
+def selectItem():
+    curItem = tv.selection()
+    values = tv.item(curItem, 'values')
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    try:
+        if values[6] == 'Root Drive':
+            line = f'Name: {values[5]}\nType: {values[6]}'
+        elif values[6] == 'Root Shared' or values[6] == 'Root Default':
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nDriveItemId: {values[3]}'
+        elif values[6] == 'Folder':
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
+        elif values[6] == 'Root Deleted':
+            line = f'Name: {values[5]}\nType: {values[6]}'
+        elif values[6] == 'File - deleted':
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nDeleteTimeStamp: {values[11]} UTC'
+        else:
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
+        if values[6] == 'Folder' or 'Root' in values[6]:
+            line += f'\n\n# Children: {values[9]}'
+        if 'deleted' in values[6].lower():
+            details.insert(tk.END, line, 'red')
+        else:
+            details.insert(tk.END, line)
+        details.see(tk.END)
+    except IndexError:
+        pass
+
+    details.config(state='disable')
+
+
+def get_info():
+    df_list = []
+    curItem = tv.selection()
+    values = tv.item(curItem, 'values')
+    for item in root.winfo_children():
+        for i in item.winfo_children():
+            if '!mytable' in str(i):
+                df_list.append(i.model.df)
+
+    if len(df_list) == 0:
+        return
+
+    for item in infoFrame.winfo_children():
+        if '.!notebook2.!frame.' in str(item):
+            item.destroy()
+
+    root.update_idletasks()
+
+    if f'{values[6]}' != 'File - deleted' and len(values[3]) == 0:
+        return
+
+    infoNB.tab(infoFrame, text="Loading... ")
+    root.update_idletasks()
+
+    info = []
+
+    # find logs for deleted files
+    if f'{values[6]}' == 'File - deleted' and len(values[8]) != 0:
+        file_hash = values[8].split("(")
+
+        if file_hash[0] == 'SHA1':
+            info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[8].split("(")[1].strip(")")}', case=False, na=False)] for df in df_list])
+        if file_hash[0] == 'quickXor':
+            data = ''.join(['{:02x}'.format(i) for i in base64.b64decode(file_hash[1].strip(")"))])
+            info = pd.concat([df.loc[df.Params.astype('string').str.contains(data, case=False, na=False)] for df in df_list])
+
+    # find logs for files
+    if f'{values[6]}' != 'File - deleted' and len(values[3]) != 0:
+        info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[3]}', case=False, na=False)] for df in df_list])
+
+    if len(info) == 0 or stop.is_set():
+        infoNB.tab(infoFrame, text="Log Entries")
+        if tv.selection()[0] != curItem[0]:
+            stop.clear()
+            threading.Thread(target=get_info,
+                             daemon=True).start()
+        return
+
+    pt = pandastablepatch.MyTable(infoFrame,
+                                  dataframe=info,
+                                  maxcellwidth=900,
+                                  showtoolbar=False,
+                                  showstatusbar=False,
+                                  enable_menus=True,
+                                  editable=False)
+    pt.adjustColumnWidths()
+    pt.show()
+    pt.redraw()
+    if stop.is_set():
+        for item in infoFrame.winfo_children():
+            if '.!notebook2.!frame.' in str(item):
+                item.destroy()
+        if tv.selection()[0] != curItem[0]:
+            stop.clear()
+            threading.Thread(target=get_info,
+                             daemon=True).start()
+    infoNB.tab(infoFrame, text="Log Entries")
 
 
 def open_children(parent):
@@ -1649,9 +2034,11 @@ def rebind():
 
 def log_tab():
     if tv_frame.index("current") != 0:
-        pw.remove(tabControl)
+        pwh.remove(tabControl)
+        pwv.remove(infoNB)
     else:
-        pw.add(tabControl, width=400)
+        pwh.add(tabControl, width=400)
+        pwv.add(infoNB, minsize=100)
 
 
 def load_proj():
@@ -1688,8 +2075,15 @@ def proj_parse(q, proj_name):
         if '_logs.csv' in data[0]:
             key = data[0].split('_')[0]
             tb = ttk.Frame()
-            pt = Table(tb, dataframe=data[1], showtoolbar=False, showstatusbar=False)
+            pt = pandastablepatch.MyTable(tb,
+                                          dataframe=data[1],
+                                          maxcellwidth=900,
+                                          showtoolbar=False,
+                                          showstatusbar=False,
+                                          enable_menus=True,
+                                          editable=False)
             tv_frame.add(tb, text=f'{key} Logs')
+            pt.adjustColumnWidths()
             pt.show()
             user_logs.setdefault(f'{key}_logs.csv', pt)
             q.task_done()
@@ -1698,13 +2092,15 @@ def proj_parse(q, proj_name):
         if data[0] == 'wait':
             try:
                 message.unbind('<Double-Button-1>', bind_id)
-            except:
+            except Exception:
                 pass
             details.config(state='normal')
             details.delete('1.0', tk.END)
             details.config(state='disable')
             menubar.entryconfig("File", state="disabled")
             menubar.entryconfig("Options", state="disabled")
+            menubar.entryconfig("View", state="disabled")
+            menubar.entryconfig("Help", state="disabled")
             search_entry.configure(state="disabled")
             btn.configure(state="disabled")
             pb.configure(mode='indeterminate')
@@ -1713,11 +2109,12 @@ def proj_parse(q, proj_name):
             q.task_done()
 
         if data[0] == 'done':
-            print(q.empty())
             break
 
     menubar.entryconfig("File", state="normal")
     menubar.entryconfig("Options", state="normal")
+    menubar.entryconfig("View", state="normal")
+    menubar.entryconfig("Help", state="normal")
     search_entry.configure(state="normal")
     btn.configure(state="normal")
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
@@ -1758,13 +2155,69 @@ def saveAs_proj(filename=None):
         projmenu.entryconfig("Unload", state='normal')
 
 
+def export_tree(ext=None):
+    filelocation = filedialog.asksaveasfilename(defaultextension=f'.{ext.lower()}')
+
+    if filelocation:
+        x = root.winfo_rootx()+main_frame.winfo_x()+tv_frame.winfo_x()+tv_inner_frame.winfo_x()+tv.winfo_x()
+        y = root.winfo_rooty()+main_frame.winfo_y()+tv_frame.winfo_y()+tv_inner_frame.winfo_y()+tv.winfo_y()
+        x1 = x+tv.winfo_width()
+        y1 = y+tv.winfo_height()
+        ImageGrab.grab().crop((x, y, x1, y1)).save(filelocation, ext, resolution=100.0)
+
+
+def split_font(font):
+    parts = []
+    bracket_level = 0
+    current = []
+    # trick to remove special-case of trailing chars
+    for c in (font + " "):
+        if c == " " and bracket_level == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            if c == "{":
+                bracket_level += 1
+            elif c == "}":
+                bracket_level -= 1
+            current.append(c)
+
+    if len(parts) == 2:
+        parts.append('')
+
+    return parts
+
+
+def font_changed(font):
+    global default_font
+    root.tk.call('tk', 'fontchooser', 'configure', '-font', font)
+    default_font = font
+    pandastablepatch.default_font = font
+    details.config(font=default_font)
+    font = split_font(font)
+    options = {'font': font[0], 'fontsize': font[1], 'fontstyle': ' '.join(font[2:])}
+    for item in infoFrame.winfo_children():
+        if '!mytable' in str(item):
+            config.apply_options(options, item)
+            item.redraw()
+    menu_data['font'] = default_font
+    save_settings()
+
+
 root = ThemedTk()
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
 root.iconbitmap(application_path + '/Images/OneDrive.ico')
-root.geometry('835x500')
+root.geometry('835x600')
 root.minsize(835, 500)
 root.protocol("WM_DELETE_WINDOW", lambda: quit(root))
+
+default_font = str(menu_data['font'])
+pandastablepatch.root = root
+pandastablepatch.default_font = default_font
+pandastablepatch.application_path = application_path
+
+root.tk.call('tk', 'fontchooser', 'configure', '-font', default_font, '-command', root.register(font_changed))
 
 style = ttk.Style()
 
@@ -1856,6 +2309,7 @@ csv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table.png'))
 uaf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/delete_red.png'))
 search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/magnifier.png'))
 exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/no.png'))
+font_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/format_normal.png'))
 skin_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/skin.png'))
 pref_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/controls.png'))
 question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question.png'))
@@ -1871,6 +2325,18 @@ save_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/floppy_35in
 ual_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_delete.png'))
 loadl_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_new.png'))
 proj_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/tables.png'))
+png_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/PNG-16.png'))
+pdf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/PDF-16.png'))
+message_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/language_blue.png'))
+question_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question_small.png'))
+ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode.png'))
+ode_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode_small.png'))
+
+asc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_sort_asc.png'))
+desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_sort_desc.png'))
+
+pandastablepatch.asc_img = asc_img
+pandastablepatch.desc_img = desc_img
 
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
@@ -1878,13 +2344,140 @@ root.grid_columnconfigure(0, weight=1)
 menubar = tk.Menu(root)
 root.config(menu=menubar)
 
+outer_frame = ttk.Frame(root)
+main_frame = ttk.Frame(outer_frame, relief='groove', padding=5)
+
+bottom_frame = ttk.Frame(main_frame)
+
+outer_frame.grid(row=0, column=0, sticky="nsew")
+main_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+bottom_frame.grid(row=1, column=0, pady=(5, 0), stick='nsew')
+
+outer_frame.grid_rowconfigure(0, weight=1)
+outer_frame.grid_columnconfigure(0, weight=1)
+main_frame.grid_rowconfigure(0, weight=1)
+main_frame.grid_columnconfigure(0, weight=1)
+bottom_frame.grid_rowconfigure(0, weight=1)
+bottom_frame.grid_columnconfigure(0, weight=1)
+
+pwv = tk.PanedWindow(main_frame, orient=tk.VERTICAL, background=bg, sashwidth=6)
+pwh = tk.PanedWindow(main_frame, orient=tk.HORIZONTAL, background=bg, sashwidth=6)
+
+columns = ('folder_count', 'file_count')
+
+tv_frame = ScrollableNotebookpatch.MyScrollableNotebook(main_frame,
+                                                        wheelscroll=True,
+                                                        style='CustomNotebook')
+
+tv_frame.enable_traversal()
+tv_inner_frame = ttk.Frame(tv_frame)
+tv_frame.add(tv_inner_frame, text='OneDrive Folders')
+tv = ttk.Treeview(tv_inner_frame,
+                  columns=columns,
+                  selectmode='browse',
+                  takefocus='false')
+tv.heading('#0', text=' Path', anchor='w')
+tv.heading('folder_count', text=' # folders', anchor='w')
+tv.heading('file_count', text=' # files', anchor='w')
+tv.column('#0', minwidth=300, width=300, stretch=True, anchor='w')
+tv.column('folder_count', minwidth=60, width=60, stretch=False, anchor='e')
+tv.column('file_count', minwidth=55, width=55, stretch=False, anchor='e')
+
+find_frame = ttk.Frame(tv_inner_frame)
+
+find_frame.grid_columnconfigure(0, weight=1)
+
+search_entry = ttk.Entry(find_frame, width=30, exportselection=0)
+btn = ttk.Button(find_frame,
+                 text="Find",
+                 image=search_img,
+                 takefocus=False,
+                 compound='right',
+                 command=lambda: [clear_search(), search(), search_result()])
+search_entry.configure(state="disabled")
+btn.configure(state="disabled")
+
+scrollbv = ttk.Scrollbar(tv_inner_frame, orient="vertical", command=tv.yview)
+scrollbh = ttk.Scrollbar(tv_inner_frame, orient="horizontal", command=tv.xview)
+tabControl = ttk.Notebook()
+tab1 = ttk.Frame(tabControl)
+tabControl.add(tab1, text='Details')
+value_label = ttk.Label(bottom_frame, text='')
+pb = ttk.Progressbar(bottom_frame, orient='horizontal',
+                     length=160, mode='determinate')
+sl = ttk.Separator(bottom_frame, orient='vertical')
+message = ttk.Label(bottom_frame, text=0, background='red',
+                    anchor='center', width=3)
+sr = ttk.Separator(bottom_frame, orient='vertical')
+sg = ttk.Sizegrip(bottom_frame)
+
+details = tk.Text(tab1, font=default_font, undo=False, width=50, state='disable')
+details.tag_configure('red', foreground="red")
+tv.configure(yscrollcommand=scrollbv.set, xscrollcommand=scrollbh.set)
+tv.tag_configure('yellow', background="yellow", foreground="black")
+tv.tag_configure('red', foreground="red")
+
+tabControl.grid_rowconfigure(0, weight=1)
+tabControl.grid_columnconfigure(0, weight=1)
+tab1.grid_rowconfigure(0, weight=1)
+tab1.grid_columnconfigure(0, weight=1)
+
+tv_inner_frame.grid_rowconfigure(1, weight=1)
+tv_inner_frame.grid_columnconfigure(0, weight=1)
+
+pwh.add(tv_frame, minsize=435)
+pwh.add(tabControl, width=400)
+
+infoNB = ttk.Notebook()
+infoFrame = ttk.Frame(infoNB)
+infoNB.add(infoFrame, text='Log Entries')
+
+pwv.add(pwh, minsize=100)
+pwv.add(infoNB, minsize=100)
+
+search_entry.grid(row=0, column=0, sticky="e", padx=5)
+btn.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+
+pwv.grid(row=0, column=0, sticky="nsew")
+find_frame.grid(row=0, column=0, sticky='ew')
+tv.grid(row=1, column=0, sticky="nsew")
+scrollbv.grid(row=1, column=1, sticky="nsew")
+scrollbh.grid(row=2, column=0, sticky="nsew")
+details.grid(row=0, column=0, sticky="nsew")
+
+value_label.grid(row=0, column=0, sticky='se')
+pb.grid(row=0, column=1, padx=5, sticky='se')
+sl.grid(row=0, column=2, padx=(0, 1), sticky='ns')
+message.grid(row=0, column=3, sticky='nse')
+sr.grid(row=0, column=4, padx=(1, 2), sticky='nse')
+sg.grid(row=0, column=5, sticky='se')
+
+
+tv.bind('<<TreeviewSelect>>', lambda event=None: new_selection())
+tv.bind("<Button-3>", do_popup)
+tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
+tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
+root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
+root.bind('<Alt-0>', lambda event=None: clear_all())
+root.bind('<<NotebookTabChanged>>', lambda event=None: log_tab())
+search_entry.bind('<Return>',
+                  lambda event=None: [clear_search(), search(), search_result()])
+bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
+
+keyboard.is_pressed('shift')
+
 file_menu = tk.Menu(menubar, tearoff=0)
 odsmenu = tk.Menu(file_menu, tearoff=0)
 odlmenu = tk.Menu(file_menu, tearoff=0)
 projmenu = tk.Menu(file_menu, tearoff=0)
+exportmenu = tk.Menu(file_menu, tearoff=0)
 
 options_menu = tk.Menu(menubar, tearoff=0)
 submenu = tk.Menu(options_menu, tearoff=0)
+
+view_menu = tk.Menu(menubar, tearoff=0)
+
+help_menu = tk.Menu(menubar, tearoff=0)
 
 for theme_name in sorted(root.get_themes()):
     submenu.add_command(label=theme_name,
@@ -1920,6 +2513,9 @@ projmenu.entryconfig("Save", state='disable')
 projmenu.entryconfig("SaveAs", state='disable')
 projmenu.entryconfig("Unload", state='disable')
 
+exportmenu.add_command(label="PNG", image=png_img, compound='left', command=lambda: export_tree(ext='PNG'))
+exportmenu.add_command(label="PDF",  image=pdf_img, compound='left', command=lambda widget=tv: export_tree(ext='PDF'))
+
 file_menu.add_command(label="Live system",
                       image=live_img, compound='left',
                       command=lambda: threading.Thread(target=live_system,
@@ -1938,141 +2534,47 @@ file_menu.add_separator()
 file_menu.add_cascade(label="Project", menu=projmenu,
                       image=proj_img, compound='left')
 file_menu.add_separator()
+file_menu.add_cascade(label="Export 'OneDrive Folders'", menu=exportmenu,
+                      image=saveas_img, compound='left')
+file_menu.add_separator()
 file_menu.add_command(label="Exit", image=exit_img, compound='left',
                       command=lambda: quit(root))
 
+file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
+
+options_menu.add_command(label="Font", image=font_img, compound='left',
+                         command=lambda: root.tk.call('tk', 'fontchooser', 'show'))
 options_menu.add_cascade(label="Skins", image=skin_img,
                          compound='left', menu=submenu)
 options_menu.add_separator()
 options_menu.add_command(label="Preferences", image=pref_img,
                          compound='left', command=lambda: preferences(root))
+
+view_menu.add_command(label="Messages", image=message_img,
+                      compound='left', command=lambda: messages(root))
+
+help_menu.add_command(label="Quick help", image=question_small_img,
+                      compound='left', command=lambda: help(root))
+help_menu.add_command(label="About", image=ode_small_img,
+                      compound='left', command=lambda: about(root))
+
 menubar.add_cascade(label="File",
                     menu=file_menu)
 menubar.add_cascade(label="Options",
                     menu=options_menu)
+menubar.add_cascade(label="View",
+                    menu=view_menu)
+menubar.add_cascade(label="Help",
+                    menu=help_menu)
 submenu.entryconfig(submenu.index(ttk.Style().theme_use()),
                     background='grey')
 
 if not ctypes.windll.shell32.IsUserAnAdmin():
     file_menu.entryconfig("Live system", state="disabled")
 
-outer_frame = ttk.Frame(root)
-main_frame = ttk.Frame(outer_frame,
-                       relief='groove',
-                       padding=5)
-
-bottom_frame = ttk.Frame(main_frame)
-
-outer_frame.grid(row=0, column=0, sticky="nsew")
-main_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-bottom_frame.grid(row=1, column=0, pady=(5, 0), stick='nsew')
-
-outer_frame.grid_rowconfigure(0, weight=1)
-outer_frame.grid_columnconfigure(0, weight=1)
-main_frame.grid_rowconfigure(0, weight=1)
-main_frame.grid_columnconfigure(0, weight=1)
-bottom_frame.grid_rowconfigure(0, weight=1)
-bottom_frame.grid_columnconfigure(0, weight=1)
-
-pw = tk.PanedWindow(main_frame, orient=tk.HORIZONTAL, background=bg, sashwidth=6)
-
-columns = ('folder_count', 'file_count')
-
-tv_frame = ScrollableNotebook.ScrollableNotebook(main_frame,
-                                                 wheelscroll=True,
-                                                 style='CustomNotebook')
-
-tv_frame.enable_traversal()
-tv_inner_frame = ttk.Frame(tv_frame)
-tv_frame.add(tv_inner_frame, text='OneDrive Folders')
-tv = ttk.Treeview(tv_inner_frame,
-                  columns=columns,
-                  selectmode='browse',
-                  takefocus='false')
-tv.heading('#0', text=' Path', anchor='w')
-tv.heading('folder_count', text=' # folders', anchor='w')
-tv.heading('file_count', text=' # files', anchor='w')
-tv.column('#0', minwidth=300, width=300, stretch=True, anchor='w')
-tv.column('folder_count', minwidth=60, width=60, stretch=False, anchor='e')
-tv.column('file_count', minwidth=55, width=55, stretch=False, anchor='e')
-
-find_frame = ttk.Frame(tv_inner_frame)
-search_entry = ttk.Entry(find_frame, width=30, exportselection=0)
-btn = ttk.Button(find_frame,
-                 text="Find",
-                 image=search_img,
-                 takefocus=False,
-                 compound='right',
-                 command=lambda: [clear_search(), search(), search_result()])
-search_entry.configure(state="disabled")
-btn.configure(state="disabled")
-
-scrollbv = ttk.Scrollbar(tv_inner_frame, orient="vertical", command=tv.yview)
-scrollbh = ttk.Scrollbar(tv_inner_frame, orient="horizontal", command=tv.xview)
-tabControl = ttk.Notebook()
-tab1 = ttk.Frame(tabControl)
-tabControl.add(tab1, text='Details')
-value_label = ttk.Label(bottom_frame, text='')
-pb = ttk.Progressbar(bottom_frame, orient='horizontal',
-                     length=160, mode='determinate')
-sl = ttk.Separator(bottom_frame, orient='vertical')
-message = ttk.Label(bottom_frame, text=0, background='red',
-                    anchor='center', width=3)
-sr = ttk.Separator(bottom_frame, orient='vertical')
-sg = ttk.Sizegrip(bottom_frame)
-
-details = tk.Text(tab1, undo=False, width=50, state='disable')
-details.tag_configure('red', foreground="red")
-tv.configure(yscrollcommand=scrollbv.set, xscrollcommand=scrollbh.set)
-tv.tag_configure('yellow', background="yellow", foreground="black")
-tv.tag_configure('red', foreground="red")
-
-tabControl.grid_rowconfigure(0, weight=1)
-tabControl.grid_columnconfigure(0, weight=1)
-tab1.grid_rowconfigure(0, weight=1)
-tab1.grid_columnconfigure(0, weight=1)
-
-tv_inner_frame.grid_rowconfigure(1, weight=1)
-tv_inner_frame.grid_columnconfigure(0, weight=1)
-
-pw.add(tv_frame, minsize=435)
-pw.add(tabControl, width=400)
-
-search_entry.grid(row=0, column=0, sticky="e", padx=5)
-btn.grid(row=0, column=1, padx=5, pady=5)
-
-pw.grid(row=0, column=0, sticky="nsew")
-find_frame.grid(row=0, column=0, sticky='ew')
-tv.grid(row=1, column=0, sticky="nsew")
-scrollbv.grid(row=1, column=1, sticky="nsew")
-scrollbh.grid(row=2, column=0, sticky="nsew")
-details.grid(row=0, column=0, sticky="nsew")
-
-value_label.grid(row=0, column=0, sticky='se')
-pb.grid(row=0, column=1, padx=5, sticky='se')
-sl.grid(row=0, column=2, padx=(0, 1), sticky='ns')
-message.grid(row=0, column=3, sticky='nse')
-sr.grid(row=0, column=4, padx=(1, 2), sticky='nse')
-sg.grid(row=0, column=5, sticky='se')
-
-
-tv.bind('<<TreeviewSelect>>', selectItem)
-tv.bind("<Button-3>", do_popup)
-tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
-tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
-root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
-root.bind('<Alt-0>', lambda event=None: clear_all())
-root.bind('<<NotebookTabChanged>>', lambda event=None: log_tab())
-search_entry.bind('<Return>',
-                  lambda event=None: [clear_search(), search(), search_result()])
-bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
-
-keyboard.is_pressed('shift')
-
-if getattr(sys, 'frozen', False):
-    pyi_splash.close()
 
 logging.info(f'OneDriveExplorer {__version__} ready!')
+load_cparser()
 mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
 message['text'] = f"{mcount}"
 if "INFO," in log_capture_string.getvalue():
@@ -2084,5 +2586,8 @@ if "WARNING," in log_capture_string.getvalue():
 if "ERROR," in log_capture_string.getvalue():
     message['background'] = 'red'
     message['foreground'] = ''
+
+if getattr(sys, 'frozen', False):
+    pyi_splash.close()
 
 root.mainloop()

@@ -1,0 +1,14 @@
+typedef struct _getselectivesyncinformationcallbackhandler_138_endgetselectivesyncinformation{
+    int32 size1;
+    char data1[size1];
+    int32 size2;
+    char data2[size2];
+    int32 size3;
+    char data3[size3];
+    int32 size4;
+    char data4[size4];
+    int32 unk2;
+    int32 unk3;
+    int64 unk4;
+    int64 unk5;
+} getselectivesyncinformationcallbackhandler_138_endgetselectivesyncinformation;

@@ -1,0 +1,26 @@
+#define loggingapi_984_loggingsetcommondatapoint_des "Information"
+
+typedef struct _loggingapi_984_loggingsetcommondatapoint{
+    int32 data_point_len;
+    char data_point[data_point_len];
+    int32 data_len;
+    char data[data_len];
+} loggingapi_984_loggingsetcommondatapoint;
+
+#define loggingapi_1062_loggingsetcommondatapoint_des "Information"
+
+typedef struct _loggingapi_1062_loggingsetcommondatapoint{
+    int32 data_point_len;
+    char data_point[data_point_len];
+    int32 data_len;
+    char data[data_len];
+} loggingapi_1062_loggingsetcommondatapoint;
+
+#define loggingapi_1142_loggingsetcommondatapoint_des "Information"
+
+typedef struct _loggingapi_1142_loggingsetcommondatapoint{
+    int32 data_point_len;
+    char data_point[data_point_len];
+    int32 data_len;
+    char data[data_len];
+} loggingapi_1142_loggingsetcommondatapoint;

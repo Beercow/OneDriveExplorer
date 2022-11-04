@@ -1,0 +1,4 @@
+typedef struct _signinbrowsernavigator_180_onnavigatecomplete{
+    int32 URL_len;
+    char URL[URL_len];
+} signinbrowsernavigator_180_onnavigatecomplete;

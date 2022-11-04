@@ -1,0 +1,26 @@
+#define absconn_183_onreceive_des ""
+
+typedef struct _absconn_183_onreceive{
+    int64 unk1;
+    int64 unk2;
+    int32 data_len;
+    char data[data_len];
+} absconn_183_onreceive;
+
+#define absconn_185_onreceive_des ""
+
+typedef struct _absconn_185_onreceive{
+    int64 unk1;
+    int64 unk2;
+    int32 data_len;
+    char data[data_len];
+} absconn_185_onreceive;
+
+#define absconn_120_senddata_des ""
+
+typedef struct _absconn_120_senddata{
+    int64 unk1;
+    int32 unk2;
+    int32 data_len;
+    char data[data_len];
+} absconn_120_senddata;

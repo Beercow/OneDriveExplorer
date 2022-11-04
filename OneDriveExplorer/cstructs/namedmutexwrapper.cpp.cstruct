@@ -1,0 +1,9 @@
+typedef struct _namedmutexwrapper_36_tryacquireandwait{
+    int32 data_len;
+    char data[data_len];
+} namedmutexwrapper_36_tryacquireandwait;
+
+typedef struct _namedmutexwrapper_37_tryacquireandwait{
+    int32 data_len;
+    char data[data_len];
+} namedmutexwrapper_37_tryacquireandwait;

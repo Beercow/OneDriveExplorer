@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 
 def print_html(df, rbin_df, name, html_path):
     log.info(f'Started writing HTML file')
+
+    if not os.path.exists(html_path):
+        os.makedirs(html_path)
+
     df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
 
     try:

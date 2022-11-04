@@ -1,0 +1,5 @@
+typedef struct _eventmachinescheduler_254_attachthreadpool{
+    int32 size;
+    char data[size];
+    int8 unk;
+} eventmachinescheduler_254_attachthreadpool;

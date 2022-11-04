@@ -90,5 +90,5 @@ def progress(count, total, status=''):
 
 def progress_gui(total, count, pb, value_label, status=False):
     if pb['value'] != 100:
-        pb['value'] = round(100.0 * count / float(total))
+        pb['value'] = round(100.0 * count / float(total), 1)
         value_label['text'] = f"{status} {pb['value']}%"

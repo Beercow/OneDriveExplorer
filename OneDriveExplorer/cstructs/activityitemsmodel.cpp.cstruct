@@ -1,0 +1,29 @@
+#define activityitemsmodel_238_additemtohistory_des "File Activity"
+
+typedef struct _activityitemsmodel_238_additemtohistory{
+    int32 file_name_len;
+    char file_name[file_name_len];
+    int32 action_len;
+    char action[action_len];
+    int32 unk;
+} activityitemsmodel_238_additemtohistory;
+
+#define activityitemsmodel_295_additemtohistory_des "File Activity"
+
+typedef struct _activityitemsmodel_295_additemtohistory{
+    int32 file_name_len;
+    char file_name[file_name_len];
+    int32 action_len;
+    char action[action_len];
+    int32 unk;
+} activityitemsmodel_295_additemtohistory;
+
+#define activityitemsmodel_296_additemtohistory_des "File Activity"
+
+typedef struct _activityitemsmodel_296_additemtohistory{
+    int32 file_name_len;
+    char file_name[file_name_len];
+    int32 action_len;
+    char action[action_len];
+    int32 unk;
+} activityitemsmodel_296_additemtohistory;

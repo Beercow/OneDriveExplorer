@@ -7,9 +7,9 @@ import logging
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
-from ode.parsers.dat_new import parse_dat
+from ode.parsers.dat import parse_dat
 from ode.parsers.onedrive import parse_onedrive
-from ode.parsers.odl import parse_odl
+from ode.parsers.odl import parse_odl, load_cparser
 
 logging.basicConfig(level=logging.INFO,
                     format='\n\n%(asctime)s, %(levelname)s, %(message)s\n',
@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.06.17"
+__version__ = "200.11.04"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 
@@ -79,7 +79,7 @@ def main():
     parser.add_argument("-rb", "--RECYCLE_BIN", help="$Recycle.Bin")
     parser.add_argument("--csv", help="Directory to save CSV formatted results to. Be sure to include the full path in double quotes.")
     parser.add_argument("--csvf", help="File name to save CSV formatted results to. When present, overrides default name.")
-    parser.add_argument("--html", help="Directory to save xhtml formatted results to. Be sure to include the full path in double quotes.")
+    parser.add_argument("--html", help="Directory to save html formatted results to. Be sure to include the full path in double quotes.")
     parser.add_argument("--json", help="Directory to save json representation to. Use --pretty for a more human readable layout.")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
     parser.add_argument("--debug", help="Show debug information during processing.", action='store_true')
@@ -206,6 +206,7 @@ def main():
                             output()
 
         if args.logs:
+            load_cparser()
             for key, value in d.items():
                 for k, v in value.items():
                     if k == 'logs':

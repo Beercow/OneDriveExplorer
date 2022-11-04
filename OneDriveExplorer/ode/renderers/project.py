@@ -55,7 +55,7 @@ def load_project(zip_name, q, stop_event):
                 if '_logs.csv' in filename:
                     q.put(['wait', filename])
                     send_data = []
-                    df = pd.read_csv(data)
+                    df = pd.read_csv(data, dtype=str)
                     send_data.append(filename)
                     send_data.append(df)
                     q.put(send_data)

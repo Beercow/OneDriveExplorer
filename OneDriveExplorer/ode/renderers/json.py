@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 
 def print_json(df, rbin_df, name, pretty, json_path):
     log.info(f'Started writing JSON file')
+
+    if not os.path.exists(json_path):
+        os.makedirs(json_path)
+
     def subset(dict_, keys):
         return {k: dict_[k] for k in keys}
 
@@ -114,6 +118,10 @@ def print_json(df, rbin_df, name, pretty, json_path):
 
 def print_json_gui(cache, name, pretty, json_path):
     log.info(f'Started writing JSON file')
+
+    if not os.path.exists(json_path):
+        os.makedirs(json_path)
+
     if pretty:
         json_object = json.dumps(cache,
                                  sort_keys=False,

@@ -1,0 +1,7 @@
+typedef struct _desktophost_152_desktophostdesktophost{
+    int64 unk;
+} desktophost_152_desktophost;
+
+typedef struct _desktophost_1053_ontransition{
+    int32 unk;
+} desktophost_1053_ontransition;

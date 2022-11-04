@@ -1,0 +1,23 @@
+#define localchanges_1623_readmodtime_des "Date modified"
+
+typedef struct _localchanges_1623_readmodtime{
+    int32 file_name_len;
+    char  file_name[file_name_len];
+    int64 date_modified;
+} localchanges_1623_readmodtime;
+
+#define localchanges_1625_readmodtime_des "Date modified"
+
+typedef struct _localchanges_1625_readmodtime{
+    int32 file_name_len;
+    char  file_name[file_name_len];
+    int64 date_modified;
+} localchanges_1625_readmodtime;
+
+#define localchanges_1646_readmodtime_des "Date modified"
+
+typedef struct _localchanges_1646_readmodtime{
+    int32 file_name_len;
+    char  file_name[file_name_len];
+    int64 date_modified;
+} localchanges_1646_readmodtime;

@@ -79,7 +79,7 @@ def parse_onedrive(df, reghive=False, recbin=False, personal=False):
     parent_dict = dict(zip(df.DriveItemId, df.ParentId))
 
     if 'Path' in df.columns:
-        df['Level'] = ''
+        df['Level'] = df['Path'].str.split('\\\\').str.len()
 
     else:
         df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))

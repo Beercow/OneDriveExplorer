@@ -1,0 +1,35 @@
+typedef struct _aclhelper_934_getacl{
+    int32 Folder_Name_len;
+    char Folder_Name[Folder_Name_len];
+    int32 unk;
+} aclhelper_934_getacl;
+
+typedef struct _aclhelper_244_readonlyguard{
+    int32 Folder_Name_len;
+    char Folder_Name[Folder_Name_len];
+} aclhelper_244_readonlyguard;
+
+typedef struct _aclhelper_224_recordcalltimetaken{
+    int32 unk1;
+    int64 unk2;
+} aclhelper_224_recordcalltimetaken;
+
+typedef struct _aclhelper_249_recordcalltimetaken{
+    int32 unk1;
+    int64 unk2;
+} aclhelper_249_recordcalltimetaken;
+
+typedef struct _aclhelper_251_recordcalltimetaken{
+    int32 unk1;
+    int64 unk2;
+} aclhelper_251_recordcalltimetaken;
+
+typedef struct _aclhelper_617_removedenydeletechildrenimpl{
+    int32 Mountpoint_len;
+    char Mountpoint[Mountpoint_len];
+} aclhelper_617_removedenydeletechildrenimpl;
+
+typedef struct _aclhelper_550_setdenydeletechildrenimpl{
+    int32 Mountpoint_len;
+    char Mountpoint[Mountpoint_len];
+} aclhelper_550_setdenydeletechildrenimpl;
