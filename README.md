@@ -1,12 +1,19 @@
 # OneDriveExplorer Summary
 
-OneDriveExplorer is a command line and GUI based application for reconstructing the folder structure of OneDrive from the `<UserCid>.dat` and `<UserCid>.dat.previous` file.
+OneDriveExplorer is a command line and GUI based application for reconstructing the folder structure of OneDrive from the `<UserCid>.dat` and `<UserCid>.dat.previous` file. Also supports parsing OneDrive logs with extensions `.odl`, `.odlgz`, `.odlsent` and `.aold`. Log parsing is heavily based on the work of Yogesh Khatri [odl.py](https://github.com/ydkhatri/OneDrive).
 
 ## Usage
 
 **Note:** `ode.settings` file will need to be deleted when running new builds
 
-## Requirements
+
+Settings and log files are found in the following loacations:
+ * \AppData\Local\Microsoft\OneDrive\logs\Business<span style="color:yellow"><1-9></span>
+ * \AppData\Local\Microsoft\OneDrive\logs\Personal
+ 
+ Log files will be unobfuscated if the `ObfuscationStringMap.txt` and\or `general.keystore` file(s) are present.
+
+### Requirements
 
 This project requires several additional modules. You can install them with the provided requirements.txt file as follows:
 
@@ -16,7 +23,7 @@ python3 -m pip install -r requirements.txt
 
 <span style="color:red">**&#42;Note:** pytsk3 and quickxorhash require a compiler to install. Using the executables is recommended.</span>
 
-## Command line
+### Command line
 
 ![cmd_help](./Images/cmd_help.png)
 
@@ -93,4 +100,5 @@ The default file location of the `.dat` files are:
 
 ## Todo
 
-- [ ] Better support for ODL logs
+- [ ] Documentation for command line
+- [ ] Documentation for mapping files

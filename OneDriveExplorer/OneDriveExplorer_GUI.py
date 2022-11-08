@@ -60,7 +60,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.11.04"
+__version__ = "2022.11.08"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -1610,21 +1610,18 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
             file_count = df.Type.value_counts()['File']
 
         except KeyError:
-            logging.warning("KeyError: 'File'")
             file_count = 0
 
         try:
             del_count = df.Type.value_counts()['File - deleted']
 
         except KeyError:
-            logging.warning("KeyError: 'File - deleted'")
             del_count = 0
 
         try:
             folder_count = df.Type.value_counts()['Folder']
 
         except KeyError:
-            logging.warning("KeyError: 'Folder'")
             folder_count = 0
 
         def subset(dict_, keys):
@@ -1664,7 +1661,6 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
                 del_count = rbin_df.Type.value_counts()['File - deleted']
 
             except (KeyError, AttributeError):
-                logging.warning("KeyError: 'File - deleted'")
                 del_count = 0
 
         cache = {'ParentId': '',

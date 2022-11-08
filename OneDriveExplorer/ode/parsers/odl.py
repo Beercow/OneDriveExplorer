@@ -21,6 +21,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
+# Based off of Yogesh Khatri, @SwiftForensics https://github.com/ydkhatri/OneDrive/blob/main/odl.py
+#
 
 import os
 import io
@@ -28,9 +30,13 @@ import gzip
 import re
 import string
 import datetime
+import base64
+import json
 import pandas as pd
 from ode.utils import progress_gui, progress
 from dissect import cstruct
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
 import logging
 
 log = logging.getLogger(__name__)
@@ -38,6 +44,10 @@ log = logging.getLogger(__name__)
 printable_chars_for_re = string.printable.replace('\\', '\\\\').replace('[', '\\[').replace(']', '\\]')
 ascii_chars_re = re.compile(f'[{printable_chars_for_re}]' + '{4,}')
 cparser = ''
+
+# UnObfuscation code
+dkey_dict = {}
+utf_type = 'utf16'
 
 headers = '''
 
@@ -119,6 +129,66 @@ def guess_encoding(obfuscation_map_path):
     return encoding
 
 
+def decrypt(cipher_text, dkey):
+    '''cipher_text is expected to be base64 encoded'''
+    global dkey_dict
+    global utf_type
+
+    if not dkey_dict:
+        return ""
+    if len(cipher_text) < 22:
+        return ""  # invalid
+    # add proper base64 padding
+    remainder = len(cipher_text) % 4
+    if remainder == 1:
+        return ""  # invalid b64
+    elif remainder in (2, 3):
+        cipher_text += "=" * (4 - remainder)
+    try:
+        cipher_text = cipher_text.replace('_', '/').replace('-', '+')
+        cipher_text = base64.b64decode(cipher_text)
+    except Exception:
+        return ""
+
+    if len(cipher_text) % 16 != 0:
+        return ""
+    else:
+        pass
+
+    try:
+        cipher = AES.new(dkey, AES.MODE_CBC, iv=b'\0'*16)
+        raw = cipher.decrypt(cipher_text)
+    except ValueError:
+        return ""
+    try:
+        plain_text = unpad(raw, 16)
+    except Exception:
+        return ""
+    try:
+        plain_text = plain_text.decode(utf_type)  # , 'ignore')
+    except ValueError:
+        return ""
+    return plain_text
+
+
+def read_keystore(keystore_path):
+    global dkey_dict
+    global utf_type
+    encoding = guess_encoding(keystore_path)
+    with open(keystore_path, 'r', encoding=encoding) as f:
+        try:
+            j = json.load(f)
+            dkey = j[0]['Key']
+            version = j[0]['Version']
+            utf_type = 'utf32' if dkey.endswith('\\u0000\\u0000') else 'utf16'
+            log.info(f"Recovered Unobfuscation key {dkey}, version={version}, utf_type={utf_type}")
+            dkey_dict[os.path.dirname(keystore_path)] = base64.b64decode(dkey)
+            if version != 1:
+                log.warning(f'WARNING: Key version {version} is unsupported. This may not work. Contact the author if you see this to add support for this version.')
+        except ValueError as ex:
+            log.error("JSON error " + str(ex))
+
+
 def read_obfuscation_map(obfuscation_map_path, map):
     if map is None:
         map = {}
@@ -131,12 +201,6 @@ def read_obfuscation_map(obfuscation_map_path, map):
             terms = line.split('\t')
             if len(terms) == 2:
                 if terms[0] in map:  # REPEATED item found!
-#                    repeated_items_found = True
-#                    old_val = map[terms[0]]
-#                    new_val = f'{old_val}|{terms[1]}'
-#                    map[terms[0]] = new_val
-#                    last_key = terms[0]
-#                    last_val = new_val
                     pass
                 else:
                     map[terms[0]] = terms[1]
@@ -145,15 +209,15 @@ def read_obfuscation_map(obfuscation_map_path, map):
             else:
                 last_val += '\n' + line
                 map[last_key] = last_val
-                #print('Error? ' + str(terms))
+
     if repeated_items_found:
         log.warning('WARNING: Multiple instances of some keys were found in the ObfuscationMap.')
     return map
 
 
-def tokenized_replace(string, map):
+def tokenized_replace(string, map, dkey):
     output = ''
-    tokens = ':\\.@%#&*-+=|{}!?<>;:~()//"\''
+    tokens = ':\\.@%#&*|{}!?<>;:~()//"\''
     parts = []  # [ ('word', 1), (':', 0), ..] word=1, token=0
     last_word = ''
     last_token = ''
@@ -185,21 +249,23 @@ def tokenized_replace(string, map):
             output += part[0]
         else:  # word
             word = part[0]
-            if word in map:
+            decrypted_word = decrypt(word, dkey)
+            if decrypted_word:
+                output += decrypted_word
+            elif word in map:
                 output += map[word]
             else:
                 output += word
     return output
 
 
-def extract_strings(data, map):
+def extract_strings(data, map, dkey):
     extracted = []
     # for match in not_control_char_re.finditer(data): # This gets all unicode chars, can include lot of garbage if you only care about English, will miss out other languages
     for match in ascii_chars_re.finditer(data):  # Matches ONLY Ascii (old behavior) , good if you only care about English
         x = match.group().rstrip('\n').rstrip('\r')
         x.replace('\r', '').replace('\n', ' ')
-        if map is not None:
-            x = tokenized_replace(x, map)
+        x = tokenized_replace(x, map, dkey)
         extracted.append(x)
 
     if len(extracted) == 0:
@@ -209,7 +275,7 @@ def extract_strings(data, map):
     return extracted
 
 
-def unobfucate_strings(data, map):
+def unobfucate_strings(data, map, dkey):
     params = []
     exclude = ['_len', 'unk']
 
@@ -218,8 +284,7 @@ def unobfucate_strings(data, map):
             continue
         if isinstance(value, bytes):
             value = value.decode('utf8', 'ignore')
-            if map is not None:
-                value = tokenized_replace(value, map)
+            value = tokenized_replace(value, map, dkey)
         params.append(f'{key}={str(value)}')
 
     return params
@@ -228,6 +293,11 @@ def unobfucate_strings(data, map):
 def process_odl(filename, map):
     odl_rows = []
     basename = os.path.basename(filename)
+#    dirname = os.path.dirname(filename)
+    try:
+        dkey = [dkey_dict[key] for key in dkey_dict if key in os.path.dirname(filename)][0]
+    except Exception:
+        dkey = ''
     try:
         f = open(filename, 'rb')
     except Exception as e:
@@ -242,13 +312,7 @@ def process_odl(filename, map):
             log.warning(f'{basename} wrong header! Did not find EBFGONED')
             return pd.DataFrame()
         signature = f.read(8)
-#        header = f.read(8)
-#        if header[0:8] == b'EBFGONED':  # Odl header
-#            f.seek(0x100)
-#            header = f.read(8)
-#            file_pos = 0x108
-#        else:
-#            file_pos = 8
+
         # Now either we have the gzip header here or the CDEF header (compressed or uncompressed handles both)
         if signature[0:4] == b'\x1F\x8B\x08\x00':  # gzip
             try:
@@ -294,13 +358,11 @@ def process_odl(filename, map):
                 'Param13': ''
             }
             data_block = cparser.Data_block(data_block)
-#            cstruct.dumpstruct(header)
             if data_block.data_len == 0 or data_block.signature != 0xffeeddcc:
                 return pd.DataFrame()
             timestamp = ReadUnixMsTime(data_block.timestamp)
             odl['Timestamp'] = timestamp
             data = cparser.Data(f.read(data_block.data_len))
-#            cstruct.dumpstruct(data)
             params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
             f.seek(- params_len, io.SEEK_CUR)
 
@@ -309,12 +371,11 @@ def process_odl(filename, map):
                     structure = getattr(cparser, f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.unknown}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
                     try:
                         params = structure(f.read(params_len))
-#                        cstruct.dumpstruct(params)
                         if len(params) == 0:
                             f.seek(- params_len, 1)
-                            params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
+                            params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map, dkey)
                         else:
-                            params = unobfucate_strings(params, map)
+                            params = unobfucate_strings(params, map, dkey)
                             try:
                                 odl['Param1'] = params[0]
                                 odl['Param2'] = params[1]
@@ -336,9 +397,9 @@ def process_odl(filename, map):
                     except EOFError:
                         log.error(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.unknown}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
                         f.seek(- params_len, 1)
-                        params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
+                        params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map, dkey)
                 except AttributeError:
-                    params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
+                    params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map, dkey)
 
             else:
                 params = ''
@@ -357,7 +418,7 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
     filenames = []
     obfuscation_maps = []
 
-    map = None
+    map = {}
 
     df = pd.DataFrame(columns=['Filename',
                                'File_Index',
@@ -386,10 +447,14 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
     for path, subdirs, files in os.walk(rootDir):
         filematch = ([os.path.join(path, file) for file in files if file.endswith(('.odl', '.odlgz', '.odlsent', '.aodl'))])
         obfuscation_map = ([os.path.join(path, file) for file in files if file == "ObfuscationStringMap.txt"])
+        keystore_file = (os.path.join(path, file) for file in files if file == "general.keystore")
         if filematch:
             filenames += filematch
         if obfuscation_map:
             obfuscation_maps += obfuscation_map
+        if keystore_file:
+            for keystore in keystore_file:
+                read_keystore(keystore)
 
     if obfuscation_maps:
         for obfuscation_map_file in obfuscation_maps:

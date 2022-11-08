@@ -11,3 +11,4 @@ dissect.cstruct
 psutil
 pytsk3
 quickxorhash
+pycryptodome

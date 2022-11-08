@@ -42,7 +42,7 @@ def directoryRecurse(directoryObject, parentPath, user, filedata=False):
         try:
             f_type = entryObject.info.name.type
             size = entryObject.info.meta.size
-        except:
+        except Exception:
             continue
 
         try:
