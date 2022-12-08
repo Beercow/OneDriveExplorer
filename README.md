@@ -100,5 +100,5 @@ The default file location of the `.dat` files are:
 
 ## Todo
 
-- [ ] Documentation for command line
+- [x] Documentation for command line
 - [ ] Documentation for mapping files
