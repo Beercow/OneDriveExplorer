@@ -4,9 +4,6 @@ OneDriveExplorer is a command line and GUI based application for reconstructing 
 
 ## Usage
 
-**Note:** `ode.settings` file will need to be deleted when running new builds
-
-
 Settings and log files are found in the following loacations:
  * \AppData\Local\Microsoft\OneDrive\logs\Business<span style="color:yellow"><1-9></span>
  * \AppData\Local\Microsoft\OneDrive\logs\Personal
