@@ -35,10 +35,14 @@ def parse_csv(filename):
         csv_name = ''
     log.info(f'Started parsing {csv_name}')
 
-    df = pd.read_csv(filename,
-                     dtype=str)
-    df['Children'] = pd.Series([[] for x in range(len(df.index))])
-    df = df.fillna('')
-    df['Name'] = df.apply(lambda row: row['Name'].encode('cp1252').decode('utf-8', 'replace'), axis=1)
+    try:
+        df = pd.read_csv(filename,
+                         dtype=str)
+        df['Children'] = pd.Series([[] for x in range(len(df.index))])
+        df = df.fillna('')
+        df['Name'] = df.apply(lambda row: row['Name'].encode('cp1252').decode('utf-8', 'replace'), axis=1)
+    except Exception:
+        log.error(f'Not a valid csv. {csv_name}')
+        df = pd.DataFrame()
 
     return df, csv_name

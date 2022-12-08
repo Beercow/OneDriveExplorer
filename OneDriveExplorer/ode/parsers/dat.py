@@ -17,13 +17,12 @@ import re
 import logging
 import codecs
 import pandas as pd
-from Registry import Registry
 from ode.utils import unicode_strings, progress, progress_gui
 
 log = logging.getLogger(__name__)
 
 
-def parse_dat(usercid, reghive, recbin, start, gui=False, pb=False, value_label=False):
+def parse_dat(usercid, reghive, recbin, start, account, gui=False, pb=False, value_label=False):
     usercid = (usercid).replace('/', '\\')
 
     if reghive:
@@ -39,9 +38,9 @@ def parse_dat(usercid, reghive, recbin, start, gui=False, pb=False, value_label=
             total = len(f.read())
             f.seek(0)
             version = int(f.read(1).hex(), 16)
-            uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
-            personal = uuid4hex.search(f.read())
-            if not personal:
+            if account == 'Personal':
+                uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
+            else:
                 uuid4hex = re.compile(b'"({[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}},[0-9]*)"', re.I)
             f.seek(0)
             dir_index = []
@@ -71,7 +70,7 @@ def parse_dat(usercid, reghive, recbin, start, gui=False, pb=False, value_label=
                 else:
                     type = 'Folder'
                 if type == 'File':
-                    if personal:
+                    if account == 'Personal':
                         hash = f'SHA1({f.read(20).hex()})'
                     else:
                         hash = f'quickXor({codecs.encode(f.read(20), "base64").decode("utf-8").rstrip()})'
@@ -86,23 +85,11 @@ def parse_dat(usercid, reghive, recbin, start, gui=False, pb=False, value_label=
                     buffer = n_current - f.tell()
                 name = unicode_strings(f.read(buffer), DriveItemId)
                 if not dir_index:
-                    if reghive and personal:
-                        try:
-                            reg_handle = Registry.Registry(reghive)
-                            int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive\Personal')
-                            for providers in int_keys.values():
-                                if providers.name() == 'MountPoint':
-                                    mountpoint = providers.value()
-                        except Exception as e:
-                            log.warning(f'Unable to read registry hive! {e}')
-                            mountpoint = 'User Folder'
-                    else:
-                        mountpoint = 'User Folder'
                     input = {'ParentId': '',
                              'DriveItemId': ParentId,
                              'eTag': '',
                              'Type': 'Root Default',
-                             'Name': mountpoint,
+                             'Name': 'User Folder',
                              'Size': '',
                              'Hash': '',
                              'Children': []
@@ -134,4 +121,4 @@ def parse_dat(usercid, reghive, recbin, start, gui=False, pb=False, value_label=
     if not gui:
         print('\n')
 
-    return pd.DataFrame.from_records(dir_index), f.name, personal
+    return pd.DataFrame.from_records(dir_index), f.name

@@ -1,0 +1,19 @@
+Description: Description of code file # Required
+Author: Your name here # Required
+Version: 1.0 # Required, increment as CStruct is revised.
+Id: Unique GUID here # Required
+Code_File: Name of code file here # Required
+
+Functions: Can contain multiple functions # Required
+    -
+        Function: Name of function # Required
+        Description: Description of function # Required
+        Flags: List of flags CStructure parses # Required
+        Structure: | # Required, at a minimum, all elements under Structure are required.
+            #define %s_des "%s"
+            struct %s {
+            };
+
+# Documentation
+# Include any documentation on code file. If none, please include N/A instead.
+# Please end all CStructs with a blank new line below your last # line under Documentation. AKA hit enter once.

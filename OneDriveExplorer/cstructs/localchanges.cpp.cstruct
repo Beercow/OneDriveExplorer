@@ -1,23 +1,21 @@
-#define localchanges_1623_readmodtime_des "Date modified"
+Description: Local Changes
+Author: Brian Maloney
+Version: 1.0
+Id: 9a67fa47-7124-4bec-8f5e-8930cabfb56e
+Code_File: localChanges.cpp
 
-typedef struct _localchanges_1623_readmodtime{
-    int32 file_name_len;
-    char  file_name[file_name_len];
-    int64 date_modified;
-} localchanges_1623_readmodtime;
+Functions:
+    -
+        Function: ReadModTime
+        Description: Date modified
+        Flags: [1623, 1625, 1626, 1646]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 file_name_len;
+                char  file_name[file_name_len];
+                int64 date_modified;
+            };
 
-#define localchanges_1625_readmodtime_des "Date modified"
-
-typedef struct _localchanges_1625_readmodtime{
-    int32 file_name_len;
-    char  file_name[file_name_len];
-    int64 date_modified;
-} localchanges_1625_readmodtime;
-
-#define localchanges_1646_readmodtime_des "Date modified"
-
-typedef struct _localchanges_1646_readmodtime{
-    int32 file_name_len;
-    char  file_name[file_name_len];
-    int64 date_modified;
-} localchanges_1646_readmodtime;
+# Documentation
+# N/A

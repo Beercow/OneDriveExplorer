@@ -41,7 +41,7 @@ def from_unix_sec(_):
         return datetime.utcfromtimestamp(0).strftime('%Y-%m-%d %H:%M:%S')
 
 
-def find_deleted(recbin, od_keys, personal):
+def find_deleted(recbin, od_keys, account):
     recbin = (recbin).replace('/', '\\')
     log.info(f'Started parsing {recbin}')
     d = {}
@@ -69,7 +69,7 @@ def find_deleted(recbin, od_keys, personal):
             if k == 'files':
                 filenames = v
 
-        match = getFileMetadata(iname, filenames, od_keys, personal)
+        match = getFileMetadata(iname, filenames, od_keys, account)
         if match:
             for m in match:
                 rbin.append(m)
@@ -96,7 +96,7 @@ def hash_file(file):
         return ['', '']
 
 
-def getFileMetadata(iName, files, od_keys, personal):
+def getFileMetadata(iName, files, od_keys, account):
     fileRecord = 0
 
     with open(iName, "rb") as file:
@@ -124,7 +124,7 @@ def getFileMetadata(iName, files, od_keys, personal):
         if [x.name() for x in list(account.values()) if f'{x.name()}\\' in fileName]:
             if len(files) != 0:
                 for file in files:
-                    if personal:
+                    if account == 'Personal':
                         hash = hash_file(f'{iName.replace("$I", "$R")}{file}')[0]
                     else:
                         hash = hash_file(f'{iName.replace("$I", "$R")}{file}')[1]
@@ -147,7 +147,7 @@ def getFileMetadata(iName, files, od_keys, personal):
                     yield input
 
             else:
-                if personal:
+                if account == 'Personal':
                     hash = hash_file(f'{iName.replace("$I", "$R")}')[0]
                 else:
                     hash = hash_file(f'{iName.replace("$I", "$R")}')[1]

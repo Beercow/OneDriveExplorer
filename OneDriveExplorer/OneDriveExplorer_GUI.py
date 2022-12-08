@@ -5,21 +5,26 @@ import base64
 import json
 import ctypes
 import webbrowser
+import argparse
 import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
 from tkinter import filedialog
+import tkinter.font as tkFont
 import threading
 from queue import Queue
+from io import StringIO
 import pandas as pd
 import numpy as np
 from pandastable import config
 from PIL import ImageTk, Image, ImageGrab
 import time
 import keyboard
+from ruamel.yaml import YAML
 import logging
 from io import StringIO as StringBuffer
 from datetime import datetime
+from cerberus import Validator
 import warnings
 from ode.renderers.json import print_json_gui
 from ode.renderers.csv_file import print_csv
@@ -33,6 +38,7 @@ from ode.parsers.odl import parse_odl, load_cparser
 from ode.helpers.mft import live_hive
 from ode.helpers import pandastablepatch
 from ode.helpers import ScrollableNotebookpatch
+from ode.utils import schema
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # Per monitor DPI aware. This app checks for the DPI when it is
@@ -60,7 +66,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.11.08"
+__version__ = "2022.12.08"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -71,6 +77,10 @@ recbin = ''
 proj_name = None
 cur_sel = ''
 stop = threading.Event()
+tipwindow = None
+current_tab = None
+menu_data = None
+v = Validator()
 
 if getattr(sys, 'frozen', False):
     # If the application is run as a bundle, the PyInstaller bootloader
@@ -103,8 +113,13 @@ else:
 if os.path.isfile('ode.settings'):
     with open("ode.settings", "r") as jsonfile:
         menu_data = json.load(jsonfile)
+        if not v.validate(menu_data, schema.menu_data):
+            logging.error(f'{jsonfile.name} is not valid. {v.errors}')
+            menu_data = None
         jsonfile.close()
-else:
+
+if menu_data is None:
+    logging.info('Creating ode.settings file.')
     menu_data = json.loads('{"theme": "vista",\
                              "json": false,\
                              "pretty": false,\
@@ -204,10 +219,6 @@ class preferences:
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.__callback)
 
-        s = ttk.Style()
-        s.map('Red.TCheckbutton',
-              foreground=[("!disabled", "red"), ("disabled", "pink")])
-
         self.json_save = tk.BooleanVar(value=menu_data['json'])
         self.json_pretty = tk.BooleanVar(value=menu_data['pretty'])
         self.csv_save = tk.BooleanVar(value=menu_data['csv'])
@@ -223,16 +234,11 @@ class preferences:
                                      relief='groove',
                                      padding=5)
 
-        self.exp_label = ttk.Label(self.inner_frame,
-                                   text='Experimental',
-                                   foreground='red'
-                                   )
-
-        self.select_frame = ttk.Frame(self.inner_frame)
+        self.select_frame = ttk.LabelFrame(self.inner_frame, text="<UserCid>.dat output")
         self.path_frame = ttk.Frame(self.inner_frame)
         self.hive_frame = ttk.Frame(self.inner_frame)
-        self.exp_frame = ttk.LabelFrame(self.inner_frame,
-                                        labelwidget=self.exp_label)
+        self.odl_frame = ttk.LabelFrame(self.inner_frame,
+                                        text="ODL settings")
         self.exit_frame = ttk.Frame(self.inner_frame)
 
         self.exit_frame.grid_rowconfigure(0, weight=1)
@@ -241,9 +247,9 @@ class preferences:
         self.frame.grid(row=0, column=0, sticky="nsew")
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         self.select_frame.grid(row=0, column=0, sticky="nsew")
-        self.path_frame.grid(row=1, column=0, pady=25, sticky="nsew")
-        self.hive_frame.grid(row=2, column=0, pady=(0, 25), sticky="nsew")
-        self.exp_frame.grid(row=3, column=0, pady=(0, 25), sticky="nsew")
+        self.odl_frame.grid(row=1, column=0, pady=25, sticky="nsew")
+        self.path_frame.grid(row=2, column=0, pady=(0, 25), sticky="nsew")
+        self.hive_frame.grid(row=3, column=0, pady=(0, 25), sticky="nsew")
         self.exit_frame.grid(row=4, column=0, sticky="nsew")
 
         self.auto_json = ttk.Checkbutton(self.select_frame,
@@ -291,23 +297,21 @@ class preferences:
                                        takefocus=False
                                        )
 
-        self.exp = ttk.Checkbutton(self.exp_frame,
-                                   text="Enable ODL log parsing",
-                                   var=self.odl,
-                                   offvalue=False,
-                                   onvalue=True,
-                                   takefocus=False,
-                                   command=self.odl_config,
-                                   style='Red.TCheckbutton'
-                                   )
+        self.en_odl = ttk.Checkbutton(self.odl_frame,
+                                      text="Enable ODL log parsing",
+                                      var=self.odl,
+                                      offvalue=False,
+                                      onvalue=True,
+                                      takefocus=False,
+                                      command=self.odl_config
+                                      )
 
-        self.exp_save = ttk.Checkbutton(self.exp_frame,
+        self.auto_odl = ttk.Checkbutton(self.odl_frame,
                                         text="Auto Save ODL",
                                         var=self.odl_save,
                                         offvalue=False,
                                         onvalue=True,
-                                        takefocus=False,
-                                        style='Red.TCheckbutton'
+                                        takefocus=False
                                         )
 
         self.save = ttk.Button(self.exit_frame, text="Save",
@@ -323,8 +327,8 @@ class preferences:
         self.save_path.grid(row=0, column=1)
         self.btn.grid(row=0, column=2, padx=5)
         self.reghive.grid(row=0, column=2, padx=5)
-        self.exp.grid(row=0, column=0, padx=5, sticky="w")
-        self.exp_save.grid(row=1, column=0, padx=5, sticky="w")
+        self.en_odl.grid(row=0, column=0, padx=5, sticky="w")
+        self.auto_odl.grid(row=1, column=0, padx=5, sticky="w")
         self.save.grid(row=0, column=0, pady=5, sticky="e")
         self.cancel.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 
@@ -333,7 +337,7 @@ class preferences:
             self.json_pretty.set(False)
 
         if self.odl.get() is False:
-            self.exp_save.configure(state="disabled")
+            self.auto_odl.configure(state="disabled")
             self.odl_save.set(False)
 
         self.sync_windows()
@@ -360,9 +364,9 @@ class preferences:
 
     def odl_config(self):
         if self.odl.get() is True:
-            self.exp_save.configure(state="normal")
+            self.auto_odl.configure(state="normal")
         else:
-            self.exp_save.configure(state="disabled")
+            self.auto_odl.configure(state="disabled")
             self.odl_save.set(False)
 
     def select_dir(self):
@@ -805,6 +809,236 @@ class export_result:
             pass
 
 
+class cstructs:
+    def __init__(self, root, df):
+        self.root = root
+        self.df = df
+        self.win = tk.Toplevel(self.root)
+        self.win.title("CStructs")
+        self.win.iconbitmap(application_path + '/Images/cstruct.ico')
+        self.win.grab_set()
+        self.win.focus_force()
+        self.win.resizable(False, False)
+        self.win.protocol("WM_DELETE_WINDOW", self.close_plugins)
+        hwnd = get_parent(self.win.winfo_id())
+        #   getting the old style
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
+        #   setting new style
+        set_window_long(hwnd, GWL_STYLE, new_style)
+
+        self.frame = ttk.Frame(self.win)
+
+        self.inner_frame = ttk.Frame(self.frame,
+                                     relief='groove')
+
+        self.cstruct_frame = ttk.Frame(self.inner_frame)
+
+        self.bottom_frame = ttk.Frame(self.inner_frame)
+
+        self.plugin_list = tk.Listbox(self.cstruct_frame, activestyle='dotbox',
+                                      exportselection=False, width=100, bd=0)
+        self.scrollbv = ttk.Scrollbar(self.cstruct_frame, orient="vertical",
+                                      command=self.plugin_list.yview)
+        self.plugin_list.configure(yscrollcommand=self.scrollbv.set)
+
+        self.code_label = ttk.Label(self.inner_frame, text="Code file",
+                                    justify="left", anchor='w')
+        self.entry1 = ttk.Entry(self.inner_frame, width=88)
+        self.author_label = ttk.Label(self.inner_frame, text="Author",
+                                      justify="left", anchor='w')
+        self.entry2 = ttk.Entry(self.inner_frame, width=88)
+        self.function_label = ttk.Label(self.inner_frame, text="Functions",
+                                        justify="left", anchor='w')
+        self.function_list = tk.Listbox(self.inner_frame, activestyle='none',
+                                        exportselection=False, width=86,
+                                        height=3, bd=0, selectmode="SINGLE")
+        self.fscrollbv = ttk.Scrollbar(self.inner_frame, orient="vertical",
+                                       command=self.function_list.yview)
+        self.function_list.configure(yscrollcommand=self.fscrollbv.set)
+        self.version_label = ttk.Label(self.inner_frame, text="Version",
+                                       justify="left", anchor='w')
+        self.entry3 = ttk.Entry(self.inner_frame, width=88)
+        self.id_label = ttk.Label(self.inner_frame, text="Internal GUID",
+                                  justify="left", anchor='w')
+        self.entry4 = ttk.Entry(self.inner_frame, width=88)
+        self.description_label = ttk.Label(self.inner_frame, text="Description",
+                                           justify="left", anchor='w')
+        self.entry5 = ttk.Entry(self.inner_frame, width=88)
+
+        self.load_label = ttk.Label(self.bottom_frame, text="CStructs loaded:",
+                                    justify="left", anchor='w')
+        self.sl = ttk.Separator(self.bottom_frame, orient='vertical')
+        self.total = ttk.Label(self.bottom_frame, text=f"{self.df.shape[0]}",
+                               anchor='center', width=3)
+        self.sr = ttk.Separator(self.bottom_frame, orient='vertical')
+        self.btn = ttk.Button(self.inner_frame, text="Add'l. Info",
+                              takefocus=False, command=self.more_info)
+
+        if self.total['text'] == '0':
+            self.btn.configure(state='disabled')
+            self.entry1.configure(state="disabled")
+            self.entry2.configure(state="disabled")
+            self.entry3.configure(state="disabled")
+            self.entry4.configure(state="disabled")
+            self.entry5.configure(state="disabled")
+            self.plugin_list.configure(state="disabled")
+
+        if not self.df.empty:
+            self.plugin_list.insert("end", *self.df.Code_File)
+            self.plugin_list.select_set(0)
+            self.selected_item(event=None)
+
+        self.sync_windows(self.win)
+
+        self.frame.grid(row=0, column=0, sticky='nsew')
+        self.inner_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
+        self.cstruct_frame.grid(row=0, column=0, columnspan=3,
+                                padx=10, pady=10, sticky='nsew')
+        self.bottom_frame.grid(row=7, column=0, columnspan=3, padx=10,
+                               pady=(10, 2), sticky='sw')
+
+        self.plugin_list.grid(row=0, column=0, sticky="nsew")
+        self.scrollbv.grid(row=0, column=1, sticky="nsew")
+
+        self.code_label.grid(row=1, column=0, padx=(10, 0),
+                             pady=(0, 5), sticky='w')
+        self.entry1.grid(row=1, column=1, padx=(0, 10), columnspan=2,
+                         pady=(0, 5), sticky='e')
+        self.author_label.grid(row=2, column=0, padx=(10, 0),
+                               pady=(0, 5), sticky='w')
+        self.entry2.grid(row=2, column=1, padx=(0, 10), columnspan=2,
+                         pady=(0, 5), sticky='e')
+        self.function_label.grid(row=3, column=0, padx=(10, 0),
+                                 pady=(0, 5), sticky='nw')
+        self.function_list.grid(row=3, column=1, padx=(4, 0),
+                                pady=(0, 5), sticky='e')
+        self.fscrollbv.grid(row=3, column=2, padx=(0, 10), pady=(0, 5), sticky="nsew")
+        self.version_label.grid(row=4, column=0, padx=(10, 0),
+                                pady=(0, 5), sticky='w')
+        self.entry3.grid(row=4, column=1, padx=(0, 10), columnspan=2,
+                         pady=(0, 5), sticky='e')
+        self.id_label.grid(row=5, column=0, padx=(10, 0),
+                           pady=(0, 5), sticky='w')
+        self.entry4.grid(row=5, column=1, padx=(0, 10), columnspan=2,
+                         pady=(0, 5), sticky='e')
+        self.description_label.grid(row=6, column=0, padx=(10, 0),
+                                    pady=(0, 5), sticky='w')
+        self.entry5.grid(row=6, column=1, padx=(0, 10), columnspan=2,
+                         pady=(0, 5), sticky='e')
+
+        self.load_label.grid(row=0, column=0, padx=(0, 5), sticky='w')
+        self.sl.grid(row=0, column=1, sticky='ns')
+        self.total.grid(row=0, column=2)
+        self.sr.grid(row=0, column=3, sticky='ns')
+        self.btn.grid(row=7, column=1, columnspan=2, padx=10, pady=(0, 5), sticky='e')
+
+        ttk.Style().map('TEntry', foreground=[('disabled', ttk.Style().lookup('TEntry', 'foreground'))])
+
+        self.plugin_list.bind("<<ListboxSelect>>", self.selected_item)
+        self.function_list.bind('<Button>', lambda a: "break")
+        self.function_list.bind('<Motion>', lambda a: "break")
+
+    def selected_item(self, event):
+        for i in self.plugin_list.curselection():
+            text = self.df.loc[self.df.Code_File == self.plugin_list.get(i)].values.tolist()[0]
+            self.function_list.delete(0, "end")
+            for x in text[5]:
+                self.function_list.insert("end", f"\u2008{x['Function']}")
+            self.entry1.configure(state="normal")
+            self.entry2.configure(state="normal")
+            self.entry3.configure(state="normal")
+            self.entry4.configure(state="normal")
+            self.entry5.configure(state="normal")
+            self.entry1.delete(0, "end")
+            self.entry2.delete(0, "end")
+            self.entry3.delete(0, "end")
+            self.entry4.delete(0, "end")
+            self.entry5.delete(0, "end")
+            self.entry1.insert(0, text[4])
+            self.entry2.insert(0, text[1])
+            self.entry3.insert(0, text[2])
+            self.entry4.insert(0, text[3])
+            self.entry5.insert(0, text[0])
+            self.entry1.configure(state="disabled")
+            self.entry2.configure(state="disabled")
+            self.entry3.configure(state="disabled")
+            self.entry4.configure(state="disabled")
+            self.entry5.configure(state="disabled")
+
+    def more_info(self):
+        self.info = tk.Toplevel(self.win)
+        self.info.title("CStructs")
+        self.info.iconbitmap(application_path + '/Images/cstruct.ico')
+        self.info.grab_set()
+        self.info.focus_force()
+        self.info.resizable(False, False)
+        hwnd = get_parent(self.info.winfo_id())
+        #   getting the old style
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
+        #   setting new style
+        set_window_long(hwnd, GWL_STYLE, new_style)
+
+        self.info_frame = ttk.Frame(self.info)
+
+        self.info_inner_frame = ttk.Frame(self.info_frame, padding=5,
+                                          relief='groove')
+
+        self.scrollb = ttk.Scrollbar(self.info_inner_frame)
+        self.info_text = CustomText(self.info_inner_frame,
+                                    yscrollcommand=self.scrollb.set,
+                                    padx=5,
+                                    pady=5,
+                                    fg="DarkOrange2")
+        self.scrollb.config(command=self.info_text.yview)
+
+        self.info_text.tag_configure("blue", foreground="blue")
+        self.info_text.tag_configure("black", foreground="black")
+        self.info_text.tag_configure("green", foreground="green")
+        self.info_text.tag_configure("gray", foreground="dim gray")
+        self.info_text.tag_configure("dblue", foreground="DodgerBlue2")
+        self.info_text.tag_configure("black2", foreground="black")
+        self.info_text.tag_configure("dgreen", foreground="DarkSeaGreen3")
+
+        yaml = YAML()
+        yaml.compact(seq_seq=False, seq_map=False)
+        string_stream = StringIO()
+
+        for i in self.plugin_list.curselection():
+            text = self.df.loc[self.df.Code_File == self.plugin_list.get(i)].values.tolist()[0]
+            yaml.dump(text[5], string_stream)
+            self.info_text.insert("end", string_stream.getvalue())
+            self.info_text.highlight_pattern("Function|Description|Flags|Structure(?=:)", "blue", regexp=True)
+            self.info_text.highlight_pattern(":\s|:\s\||\s.*?(?=;)", "black", regexp=True)
+            self.info_text.highlight_pattern("#\s.*?$", "green", regexp=True)
+            self.info_text.highlight_pattern("#define\s.*?$|{|}|;|(\];)|(?:\S)(\[)", "gray", regexp=True)
+            self.info_text.highlight_pattern("(?:\S)(?=\[)", "black2", regexp=True)
+            self.info_text.highlight_pattern("//.*?$", "dgreen", regexp=True)
+            self.info_text.highlight_pattern("\s(BYTE|CHAR|DWORD|INT|INT128|INT16|INT32|INT64|INT8|LONG|LONG32|LONG64|LONGLONG|OWORD|QWORD|SHORT|UCHAR|UINT|UINT128|UINT16|UINT32|UINT64|UINT8|ULONG|ULONG64|ULONGLONG|USHORT|WCHAR|WORD|__int128|__int16|__int32|__int64|__int8|char|int|int128|int128_t|int16|int16_t|int32|int32_t|int64|int64_t|int8|int8_t|long long|long|short|signed char|signed int|signed long long|signed long|signed short|struct|u1|u16|u2|u4|u8|uchar|uint|uint128|uint128_t|uint16|uint16_t|uint32|uint32_t|uint64|uint64_t|uint8|uint8_t|ulong|unsigned __int128|unsigned char|unsigned int|unsigned long long|unsigned long|unsigned short|ushort|void|wchar|wchar_t)\s", "dblue", regexp=True)
+
+        self.info_frame.grid(row=0, column=0)
+        self.info_inner_frame.grid(row=0, column=0)
+        self.info_text.grid(row=0, column=0)
+        self.scrollb.grid(row=0, column=1, sticky='nsew')
+
+        self.sync_windows(self.info)
+
+        self.info_text.bind('<Key>', lambda a: "break")
+        self.info_text.bind('<Button>', lambda a: "break")
+        self.info_text.bind('<Motion>', lambda a: "break")
+
+    def sync_windows(self, window, event=None):
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        window.geometry("+%d+%d" % (x, y))
+
+    def close_plugins(self):
+        self.win.destroy()
+
+
 class help:
     def __init__(self, root):
         self.root = root
@@ -885,7 +1119,8 @@ class about:
         line = "GUI based application for reconstructing the folder structure of OneDrive from <UserCid>.dat"
         self.text.insert(tk.END, line)
         self.text.config(state='disable')
-        self.scrollbv = ttk.Scrollbar(self.frame, orient="vertical", command=self.text.yview)
+        self.scrollbv = ttk.Scrollbar(self.frame, orient="vertical",
+                                      command=self.text.yview)
         self.text.configure(yscrollcommand=self.scrollbv.set)
 
         self.ok = ttk.Button(self.frame,
@@ -927,6 +1162,133 @@ class about:
         self.win.destroy()
 
 
+class CustomText(tk.Text):
+    '''A text widget with a new method, highlight_pattern()
+
+    example:
+
+    text = CustomText()
+    text.tag_configure("red", foreground="#ff0000")
+    text.highlight_pattern("this should be red", "red")
+
+    The highlight_pattern method is a simplified python
+    version of the tcl code at http://wiki.tcl.tk/3246
+    '''
+    def __init__(self, *args, **kwargs):
+        tk.Text.__init__(self, *args, **kwargs)
+
+    def highlight_pattern(self, pattern, tag, start="1.0", end="end",
+                          regexp=False):
+        '''Apply the given tag to all text that matches the given pattern
+
+        If 'regexp' is set to True, pattern will be treated as a regular
+        expression according to Tcl's regular expression syntax.
+        '''
+
+        start = self.index(start)
+        end = self.index(end)
+        self.mark_set("matchStart", start)
+        self.mark_set("matchEnd", start)
+        self.mark_set("searchLimit", end)
+
+        count = tk.IntVar()
+        while True:
+            index = self.search(pattern, "matchEnd","searchLimit",
+                                count=count, regexp=regexp)
+            if index == "": break
+            if count.get() == 0: break # degenerate pattern which matches zero-length strings
+            self.mark_set("matchStart", index)
+            self.mark_set("matchEnd", "%s+%sc" % (index, count.get()))
+            self.tag_add(tag, "matchStart", "matchEnd")
+
+
+def showtip(text, widget, flip=False):
+    global tipwindow
+    matches = ["start_parsing", "live_system", "odl", "load_project", "proj_parse"]
+
+    "Display text in tooltip window"
+    if tipwindow or not text:
+        return
+
+    # disables tooltip if parsing data
+    if any(x in str(threading.enumerate()) for x in matches):
+        return
+
+    x, y, cx, cy = widget.bbox("insert")
+    if flip:
+        x = x + widget.winfo_pointerx() - 330
+        y = y + cy + widget.winfo_pointery() + 20 - 90
+    else:
+        x = x + widget.winfo_pointerx()
+        y = y + cy + widget.winfo_pointery() + 20
+
+    tipwindow = tw = tk.Toplevel(widget)
+    tw.wm_overrideredirect(1)
+    tw.wm_geometry("+%d+%d" % (x, y))
+
+    text = text.split('\n', 1)
+    h = (text[1].count('\n') + 2)
+    reg_font = ("Segoe UI", 8, "normal")
+    w = tkFont.Font(family="Segoe UI", size=8, weight="normal").measure(max(text[1].split('\n'), key=len))
+    w2 = tkFont.Font(family="Segoe UI", size=8, weight="normal").metrics('linespace')
+    h2 = w2 * (text[1].count('\n') + 2)
+
+    frame = tk.Frame(tw, width=w+20, height=h2+12, background="grey81", padx=1, pady=1)
+    textbox = tk.Text(frame, height=h, font=reg_font, padx=8, relief="flat",
+                      bd=0, pady=5)
+
+    bold_font = ("Segoe UI", 8, "bold")
+    textbox.tag_configure("bold", font=bold_font)
+    textbox.tag_configure("regular", font=reg_font)
+    textbox.insert('end', text[0] + '\n', 'bold')
+    textbox.insert('end', text[1], 'regular')
+    textbox.configure(state='disable')
+
+    frame.pack()
+    frame.pack_propagate(0)
+    textbox.pack()
+
+    widget.after(5000, lambda: tw.destroy())
+
+
+def hidetip():
+    global tipwindow
+    tw = tipwindow
+    tipwindow = None
+    if tw:
+        tw.destroy()
+
+
+def CreateToolTip(widget, text, flip=False):
+    def enter(event):
+        showtip(text, widget, flip)
+
+    def leave(event):
+        hidetip()
+    widget.bind('<Enter>', enter)
+    widget.bind('<Leave>', leave)
+
+
+def motion(event):
+    global current_tab
+    if event.widget.identify(event.x, event.y) == 'label':
+        index = event.widget.index("@%d,%d" % (event.x, event.y))
+        if index != 0:
+            return
+        if current_tab != event.widget.tab(index, 'text'):
+            current_tab = event.widget.tab(index, 'text')
+            if event.widget.tab(index, 'text') == 'Details':
+                text = 'Details\n  Displays detailed information of the file/folder selected.'
+            if event.widget.tab(index, 'text') == 'Log Entries':
+                text = 'Log Entries\n  Displays related logs to the file/folder selected. This\n  will only be populated if OneDrive logs are parsed\n  along with the <userCid>.dat file.'
+            if event.widget.tab(index, 'text') == 'OneDrive Folders  ':
+                text = 'OneDrive Folders\n  Displays the <UserCid>.dat files that have been loaded\n  and the folder structure of OneDrive.'
+            showtip(text, event.widget)
+    else:
+        hidetip()
+        current_tab = None
+
+
 def ButtonNotebook():
 
     test = style.map('TNotebook.Tab')
@@ -962,6 +1324,8 @@ def ButtonNotebook():
                 ]
             })
         ])
+        style.configure('CustomNotebook.Tab', **style.configure('TNotebook.Tab'))
+        style.configure('CustomNotebook', **style.configure('TNotebook'))
     except Exception:
         pass
 
@@ -1050,6 +1414,7 @@ def ButtonNotebook():
                 odlmenu.entryconfig("Unload all ODL logs", state='disable')
                 if len(tv.get_children()) == 0:
                     projmenu.entryconfig("Save", state='disable')
+                    root.unbind('<Alt-s>')
                     projmenu.entryconfig("SaveAs", state='disable')
                     projmenu.entryconfig("Unload", state='disable')
                     proj_name = None
@@ -1150,6 +1515,7 @@ def clear_all():
     btn.configure(state="disabled")
     if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
         projmenu.entryconfig("Save", state='disable')
+        root.unbind('<Alt-s>')
         projmenu.entryconfig("SaveAs", state='disable')
         projmenu.entryconfig("Unload", state='disable')
         proj_name = None
@@ -1425,6 +1791,7 @@ def live_system(menu):
     if len(tv_frame.tabs()) > 1:
         odlmenu.entryconfig("Unload all ODL logs", state='normal')
         projmenu.entryconfig("Save", state='normal')
+        root.bind('<Alt-s>', lambda event=None: save_proj())
         projmenu.entryconfig("SaveAs", state='normal')
 
 
@@ -1487,7 +1854,18 @@ def open_odl():
                          daemon=True).start()
 
 
-def odl(folder_name):
+def import_odl():
+    filename = filedialog.askopenfile(initialdir="/",
+                                      title="Import CSV",
+                                      filetypes=(("ODL csv file",
+                                                  "*.csv"),))
+    if filename:
+        threading.Thread(target=odl,
+                         args=(filename, True,),
+                         daemon=True).start()
+
+
+def odl(folder_name, csv=False):
     message.unbind('<Double-Button-1>', bind_id)
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Options", state="disabled")
@@ -1496,28 +1874,68 @@ def odl(folder_name):
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
     key_find = re.compile(r'Users/(?P<user>.*)?/AppData')
-    key = re.findall(key_find, folder_name)
-    if len(key) == 0:
-        key = 'ODL'
+    if csv:
+        key = folder_name.name.split('/')[-1].split('_')[0]
     else:
-        key = key[0]
+        key = re.findall(key_find, folder_name)
+        if len(key) == 0:
+            key = 'ODL'
+        else:
+            key = key[0]
     pb.stop()
-    odl = parse_odl(folder_name, key, pb, value_label, gui=True)
+    if csv:
+        header_list = ['Filename',
+                       'File_Index',
+                       'Timestamp',
+                       'One_Drive_Version',
+                       'OS_Version',
+                       'Code_File',
+                       'Flags',
+                       'Function',
+                       'Description',
+                       'Params',
+                       'Param1',
+                       'Param2',
+                       'Param3',
+                       'Param4',
+                       'Param5',
+                       'Param6',
+                       'Param7',
+                       'Param8',
+                       'Param9',
+                       'Param10',
+                       'Param11',
+                       'Param12',
+                       'Param13']
+
+        pb.configure(mode='indeterminate')
+        value_label['text'] = f'Parsing log files for {key}. Please wait....'
+        pb.start()
+        odl = pd.read_csv(folder_name, dtype=str)
+        import_headers = odl.axes[1]
+        if list(set(import_headers) - set(header_list)):
+            odl = pd.DataFrame()
+            logging.error(f'{folder_name.name} not a valid ODL csv.')
+    else:
+        odl = parse_odl(folder_name, key, pb, value_label, gui=True)
+
     tb = ttk.Frame()
-    pt = pandastablepatch.MyTable(tb,
-                                  dataframe=odl,
-                                  maxcellwidth=900,
-                                  showtoolbar=False,
-                                  showstatusbar=False,
-                                  enable_menus=True,
-                                  editable=False)
-    pt.adjustColumnWidths()
-    tv_frame.add(tb, text=f'{key} Logs')
-    pt.show()
-    user_logs.setdefault(f'{key}_logs.csv', pt)
+
+    if not odl.empty:
+        pt = pandastablepatch.MyTable(tb,
+                                      dataframe=odl,
+                                      maxcellwidth=900,
+                                      showtoolbar=False,
+                                      showstatusbar=False,
+                                      enable_menus=True,
+                                      editable=False)
+        pt.adjustColumnWidths()
+        tv_frame.add(tb, text=f'{key} Logs')
+        pt.show()
+        user_logs.setdefault(f'{key}_logs.csv', pt)
     pb.stop()
 
-    if menu_data['odl_save'] is True:
+    if menu_data['odl_save'] is True and not csv:
         log_output = f'{key}_logs.csv'
         try:
             value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
@@ -1554,6 +1972,7 @@ def odl(folder_name):
     if len(tv_frame.tabs()) > 1:
         odlmenu.entryconfig("Unload all ODL logs", state='normal')
         projmenu.entryconfig("Save", state='normal')
+        root.bind('<Alt-s>', lambda event=None: save_proj())
         projmenu.entryconfig("SaveAs", state='normal')
 
 
@@ -1582,15 +2001,17 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
     dat = False
 
     if x == 'Live system':
-        df, name, personal = parse_dat(filename, reghive, recbin, start,
-                                       gui=True, pb=pb, value_label=value_label)
-        df, rbin_df = parse_onedrive(df, reghive, recbin, personal)
+        account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
+        df, name = parse_dat(filename, reghive, recbin, start, account,
+                             gui=True, pb=pb, value_label=value_label)
+        df, rbin_df = parse_onedrive(df, account, reghive, recbin)
         dat = True
 
     if x == 'Load <UserCid>.dat' + (' '*10):
-        df, name, personal = parse_dat(filename, reghive, recbin, start,
-                                       gui=True, pb=pb, value_label=value_label)
-        df, rbin_df = parse_onedrive(df, reghive, recbin, personal)
+        account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
+        df, name = parse_dat(filename, reghive, recbin, start, account,
+                             gui=True, pb=pb, value_label=value_label)
+        df, rbin_df = parse_onedrive(df, account, reghive, recbin)
         dat = True
 
     if x == 'Import JSON':
@@ -1599,7 +2020,8 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
 
     if x == 'Import CSV':
         df, name = parse_csv(filename)
-        df, rbin_df = parse_onedrive(df)
+        if not df.empty:
+            df, rbin_df = parse_onedrive(df)
 
     if x == 'Project':
         name = filename
@@ -1715,7 +2137,10 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         if x != 'Live system':
             pb['value'] = 0
         value_label['text'] = f'{file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
-        filename = filename.replace('/', '\\')
+        try:
+            filename = filename.replace('/', '\\')
+        except Exception:
+            filename = filename.name.replace('/', '\\')
         logging.info(f'{filename}: {file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
 
     else:
@@ -1723,8 +2148,8 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
             filename = filename.replace('/', '\\')
         except Exception:
             pass
-        logging.warning(f'Unable to parse {filename}.')
-        value_label['text'] = f'Unable to parse {filename}.'
+        logging.warning(f'Unable to parse {filename}.')  # see about changing to name
+        value_label['text'] = f'Unable to parse {filename}.'  # see about changing to name
 
     menubar.entryconfig("File", state="normal")
     menubar.entryconfig("Options", state="normal")
@@ -1736,6 +2161,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
     if len(tv.get_children()) > 0:
         odsmenu.entryconfig("Unload all files", state='normal')
         projmenu.entryconfig("Save", state='normal')
+        root.bind('<Alt-s>', lambda event=None: save_proj())
         projmenu.entryconfig("SaveAs", state='normal')
         file_menu.entryconfig("Export 'OneDrive Folders'", state='normal')
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
@@ -1832,6 +2258,7 @@ def del_folder(iid):
         btn.configure(state="disabled")
         if len(tv_frame.tabs()) == 1:
             projmenu.entryconfig("Save", state='disable')
+            root.unbind('<Alt-s>')
             projmenu.entryconfig("SaveAs", state='disable')
             projmenu.entryconfig("Unload", state='disable')
             proj_name = None
@@ -1860,6 +2287,7 @@ def del_logs():
     odlmenu.entryconfig("Unload all ODL logs", state='disable')
     if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
         projmenu.entryconfig("Save", state='disable')
+        root.unbind('<Alt-s>')
         projmenu.entryconfig("SaveAs", state='disable')
         projmenu.entryconfig("Unload", state='disable')
         proj_name = None
@@ -2191,7 +2619,10 @@ def font_changed(font):
     pandastablepatch.default_font = font
     details.config(font=default_font)
     font = split_font(font)
-    options = {'font': font[0], 'fontsize': font[1], 'fontstyle': ' '.join(font[2:])}
+    options = {'font': font[0],
+               'fontsize': font[1],
+               'fontstyle': ' '.join(font[2:])
+               }
     for item in infoFrame.winfo_children():
         if '!mytable' in str(item):
             config.apply_options(options, item)
@@ -2213,7 +2644,8 @@ pandastablepatch.root = root
 pandastablepatch.default_font = default_font
 pandastablepatch.application_path = application_path
 
-root.tk.call('tk', 'fontchooser', 'configure', '-font', default_font, '-command', root.register(font_changed))
+root.tk.call('tk', 'fontchooser', 'configure', '-font', default_font,
+             '-command', root.register(font_changed))
 
 style = ttk.Style()
 
@@ -2324,6 +2756,7 @@ proj_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/tables.png'
 png_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/PNG-16.png'))
 pdf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/PDF-16.png'))
 message_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/language_blue.png'))
+cstruct_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_column.png'))
 question_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question_small.png'))
 ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode.png'))
 ode_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode_small.png'))
@@ -2367,7 +2800,7 @@ tv_frame = ScrollableNotebookpatch.MyScrollableNotebook(main_frame,
 
 tv_frame.enable_traversal()
 tv_inner_frame = ttk.Frame(tv_frame)
-tv_frame.add(tv_inner_frame, text='OneDrive Folders')
+tv_frame.add(tv_inner_frame, text='OneDrive Folders  ')
 tv = ttk.Treeview(tv_inner_frame,
                   columns=columns,
                   selectmode='browse',
@@ -2422,7 +2855,7 @@ tv_inner_frame.grid_rowconfigure(1, weight=1)
 tv_inner_frame.grid_columnconfigure(0, weight=1)
 
 pwh.add(tv_frame, minsize=435)
-pwh.add(tabControl, width=400)
+pwh.add(tabControl, minsize=400)
 
 infoNB = ttk.Notebook()
 infoFrame = ttk.Frame(infoNB)
@@ -2454,11 +2887,17 @@ tv.bind("<Button-3>", do_popup)
 tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
 tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
 root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
-root.bind('<Alt-0>', lambda event=None: clear_all())
+root.bind('<Control-m>', lambda event=None: messages(root))
+root.bind('<Alt-KeyPress-0>', lambda event=None: clear_all())
+root.bind('<Alt-KeyPress-2>', lambda event=None: load_proj())
+root.bind('<Alt-s>', lambda event=None: save_proj())
 root.bind('<<NotebookTabChanged>>', lambda event=None: log_tab())
 search_entry.bind('<Return>',
                   lambda event=None: [clear_search(), search(), search_result()])
 bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
+tabControl.bind('<Motion>', motion)
+infoNB.bind('<Motion>', motion)
+root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', motion)
 
 keyboard.is_pressed('shift')
 
@@ -2497,20 +2936,31 @@ odsmenu.add_command(label="Unload all files", image=uaf_img, compound='left',
                     command=lambda: clear_all(), accelerator="Alt+0")
 odsmenu.entryconfig("Unload all files", state='disable')
 
-odlmenu.add_command(label="Load ODL logs", image=folderop_img, compound='left', command=lambda: open_odl())
-odlmenu.add_command(label="Unload all ODL logs", image=uaf_img, compound='left', command=lambda: del_logs())
+odlmenu.add_command(label="Load ODL logs", image=folderop_img, compound='left',
+                    command=lambda: open_odl())
+odlmenu.add_command(label="Import CSV", image=csv_img, compound='left',
+                    command=lambda: import_odl())
+odlmenu.add_command(label="Unload all ODL logs", image=uaf_img,
+                    compound='left', command=lambda: del_logs())
 odlmenu.entryconfig("Unload all ODL logs", state='disable')
 
-projmenu.add_command(label="Load", image=loadl_img, compound='left', accelerator="Alt+2", command=lambda: load_proj())
-projmenu.add_command(label="Save", image=save_img, compound='left', accelerator="Alt+S", command=lambda: save_proj())
-projmenu.add_command(label="SaveAs", image=saveas_img, compound='left', command=lambda: saveAs_proj())
-projmenu.add_command(label="Unload", image=ual_img, compound='left', command=lambda: [clear_all(), del_logs()])
+projmenu.add_command(label="Load", image=loadl_img, compound='left',
+                     accelerator="Alt+2", command=lambda: load_proj())
+projmenu.add_command(label="Save", image=save_img, compound='left',
+                     accelerator="Alt+S", command=lambda: save_proj())
+projmenu.add_command(label="SaveAs", image=saveas_img, compound='left',
+                     command=lambda: saveAs_proj())
+projmenu.add_command(label="Unload", image=ual_img, compound='left',
+                     command=lambda: [clear_all(), del_logs()])
 projmenu.entryconfig("Save", state='disable')
+root.unbind('<Alt-s>')
 projmenu.entryconfig("SaveAs", state='disable')
 projmenu.entryconfig("Unload", state='disable')
 
-exportmenu.add_command(label="PNG", image=png_img, compound='left', command=lambda: export_tree(ext='PNG'))
-exportmenu.add_command(label="PDF",  image=pdf_img, compound='left', command=lambda widget=tv: export_tree(ext='PDF'))
+exportmenu.add_command(label="PNG", image=png_img, compound='left',
+                       command=lambda: export_tree(ext='PNG'))
+exportmenu.add_command(label="PDF",  image=pdf_img, compound='left',
+                       command=lambda widget=tv: export_tree(ext='PDF'))
 
 file_menu.add_command(label="Live system",
                       image=live_img, compound='left',
@@ -2546,8 +2996,11 @@ options_menu.add_separator()
 options_menu.add_command(label="Preferences", image=pref_img,
                          compound='left', command=lambda: preferences(root))
 
-view_menu.add_command(label="Messages", image=message_img,
+view_menu.add_command(label="Messages", image=message_img, accelerator="Ctrl+M",
                       compound='left', command=lambda: messages(root))
+view_menu.add_separator()
+view_menu.add_command(label="CStructs", image=cstruct_img,
+                      compound='left', command=lambda: cstructs(root, cstruct_df))
 
 help_menu.add_command(label="Quick help", image=question_small_img,
                       compound='left', command=lambda: help(root))
@@ -2568,9 +3021,19 @@ submenu.entryconfig(submenu.index(ttk.Style().theme_use()),
 if not ctypes.windll.shell32.IsUserAnAdmin():
     file_menu.entryconfig("Live system", state="disabled")
 
+CreateToolTip(message, text='Total messages\n'
+              '  Contains the total number of messages available. A yellow\n'
+              '  background indicates a warning message is available. A red\n'
+              '  background indicates an error message is available.',
+              flip=True)
+
 
 logging.info(f'OneDriveExplorer {__version__} ready!')
-load_cparser()
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--cstructs", help="The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was executed.")
+args = parser.parse_args()
+cstruct_df = load_cparser(args.cstructs)
 mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
 message['text'] = f"{mcount}"
 if "INFO," in log_capture_string.getvalue():

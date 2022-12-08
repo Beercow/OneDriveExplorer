@@ -32,8 +32,10 @@ import string
 import datetime
 import base64
 import json
+from ruamel.yaml import YAML
+from cerberus import Validator
 import pandas as pd
-from ode.utils import progress_gui, progress
+from ode.utils import progress_gui, progress, schema
 from dissect import cstruct
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
@@ -85,22 +87,61 @@ typedef struct _Data{
 '''
 
 
-def load_cparser():
+def load_cparser(cstructs_dir=False):
     global cparser
     cparser = cstruct.cstruct()
     cparser.load(headers)
+    yaml = YAML()
+    v = Validator()
+
+    if not cstructs_dir:
+        cstructs_dir = f'{os.getcwd()}\\cstructs'
+
+    log.info(f"Loading ODL cstructs from {cstructs_dir}")
+
+    li = []
+    id = []
 
     try:
-        for file in os.listdir(f'{os.getcwd()}/cstructs'):
+        for file in os.listdir(cstructs_dir):
             if file.startswith('!'):
                 continue
             try:
-                cparser.loadfile(os.path.join(f'{os.getcwd()}/cstructs', file))
+                if not file.endswith('cstruct'):
+                    continue
+                with open(os.path.join(cstructs_dir, file)) as f:
+                    data = yaml.load(f.read())
+                    if not v.validate(data, schema.cstruct):
+                        log.error(f'{file} is not valid. {v.errors}')
+                        continue
+                    if data['Id'] in id:
+                        log.error(f'Id is not unique. {file} will not load.')
+                        continue
+                    else:
+                        id.append(data['Id'])
+
+                    for x in data['Functions']:
+                        for flag in x['Flags']:
+                            name = f"{data['Code_File'].lower().split('.')[0]}_{flag}_{x['Function'].split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}"
+                            cparser.load(x['Structure'] % (name, x['Description'], name))
+
+                    df = pd.json_normalize(data)
+
+                li.append(df)
+
             except Exception as ex:
                 log.warning(f'Something went wrong loading {file}: {ex}')
                 continue
+
     except Exception as ex:
         log.warning(ex)
+
+    try:
+        df = pd.concat(li, ignore_index=True, axis=0)
+    except Exception:
+        df = pd.DataFrame()
+    log.info("Loading ODL cstructs complete.")
+    return df
 
 
 def ReadUnixMsTime(unix_time_ms):  # Unix millisecond timestamp
@@ -165,7 +206,7 @@ def decrypt(cipher_text, dkey):
     except Exception:
         return ""
     try:
-        plain_text = plain_text.decode(utf_type)  # , 'ignore')
+        plain_text = plain_text.decode(utf_type)
     except ValueError:
         return ""
     return plain_text
@@ -218,7 +259,7 @@ def read_obfuscation_map(obfuscation_map_path, map):
 def tokenized_replace(string, map, dkey):
     output = ''
     tokens = ':\\.@%#&*|{}!?<>;:~()//"\''
-    parts = []  # [ ('word', 1), (':', 0), ..] word=1, token=0
+    parts = []
     last_word = ''
     last_token = ''
     for i, char in enumerate(string):
@@ -293,7 +334,6 @@ def unobfucate_strings(data, map, dkey):
 def process_odl(filename, map):
     odl_rows = []
     basename = os.path.basename(filename)
-#    dirname = os.path.dirname(filename)
     try:
         dkey = [dkey_dict[key] for key in dkey_dict if key in os.path.dirname(filename)][0]
     except Exception:
@@ -390,7 +430,7 @@ def process_odl(filename, map):
                                 odl['Param11'] = params[10]
                                 odl['Param12'] = params[11]
                                 odl['Param13'] = params[12]
-                            except:
+                            except Exception:
                                 pass
                             params = ', '.join(params)
                         description = ''.join([v for (k, v) in cparser.consts.items() if k == f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.unknown}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}_des"])

@@ -1,9 +1,20 @@
-typedef struct _namedmutexwrapper_36_tryacquireandwait{
-    int32 data_len;
-    char data[data_len];
-} namedmutexwrapper_36_tryacquireandwait;
+Description: Named Mutex Wrapper
+Author: Brian Maloney
+Version: 1.0
+Id: 9b409ca9-c435-4358-a2d4-c43a9678f228
+Code_File: NamedMutexWrapper.cpp
 
-typedef struct _namedmutexwrapper_37_tryacquireandwait{
-    int32 data_len;
-    char data[data_len];
-} namedmutexwrapper_37_tryacquireandwait;
+Functions:
+    -
+        Function: NamedMutexWrapper::TryAcquireAndWait
+        Description: ''
+        Flags: [36, 37]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 data_len;
+                char data[data_len];
+            };
+
+# Documentation
+# N/A

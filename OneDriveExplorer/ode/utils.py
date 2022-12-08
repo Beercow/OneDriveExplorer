@@ -22,9 +22,21 @@
 # SOFTWARE.
 #
 
+import os
 import re
 import sys
 import logging
+from importlib.util import spec_from_loader, module_from_spec
+from importlib.machinery import SourceFileLoader
+
+if getattr(sys, 'frozen', False):
+    application_path = sys._MEIPASS
+else:
+    application_path = f'{os.path.dirname(os.path.abspath(__file__))}/..'
+
+spec = spec_from_loader("schema", SourceFileLoader("schema", f"{application_path}/ode/helpers/schema"))
+schema = module_from_spec(spec)
+spec.loader.exec_module(schema)
 
 log = logging.getLogger(__name__)
 

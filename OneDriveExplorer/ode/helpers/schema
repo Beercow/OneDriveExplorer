@@ -1,0 +1,95 @@
+# cstruct schema version 2.0
+cstruct = {
+    'Description': {
+        'required': True,
+        'type': 'string'
+    },
+    'Author': {
+        'required': True,
+        'type': 'string'
+    },
+    'Version': {
+        'required': True,
+        'type': 'float'
+    },
+    'Id': {
+        'required': True,
+        'type': 'string',
+        'regex': '^(?:\\{{0,1}(?:[0-9a-fA-F]){8}-(?:[0-9a-fA-F]){4}-(?:[0-9a-fA-F]){4}-(?:[0-9a-fA-F]){4}-(?:[0-9a-fA-F]){12}\\}{0,1})$'
+    },
+    'Code_File': {
+        'required': True,
+        'type': 'string'
+    },
+    'Functions': {
+        'required': True,
+        'type': 'list',
+        'schema': {
+            'type': 'dict',
+            'schema': {
+                'Description': {
+                    'required': True,
+                    'type': 'string'
+                },
+                'Flags': {
+                    'required': True,
+                    'type': 'list'
+                },
+                'Function': {
+                    'required': True,
+                    'type': 'string'
+                },
+                'Structure': {
+                    'required': True,
+                    'type': 'string',
+                    'regex': '^(?m)(#define %s_des "%s"\nstruct %s {).*$'
+                }
+            }
+        }
+    }
+}
+
+# menu_data schema version 1.4
+menu_data = {
+    'theme': {
+        'required': True,
+        'type': 'string'
+    },
+    'json': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'pretty': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'csv': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'html': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'path': {
+        'required': True,
+        'type': 'string'
+    },
+    'hive': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'odl': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'odl_save': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'font': {
+        'required': True,
+        'nullable': True,
+        'type': 'string'
+    }
+}

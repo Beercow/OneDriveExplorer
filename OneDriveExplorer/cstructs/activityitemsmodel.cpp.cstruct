@@ -1,29 +1,23 @@
-#define activityitemsmodel_238_additemtohistory_des "File Activity"
+Description: Activity Items Model
+Author: Brian Maloney
+Version: 1.0
+Id: b9ee4ead-01f2-41c5-a12b-1ad42d499643
+Code_File: ActivityItemsModel.cpp
 
-typedef struct _activityitemsmodel_238_additemtohistory{
-    int32 file_name_len;
-    char file_name[file_name_len];
-    int32 action_len;
-    char action[action_len];
-    int32 unk;
-} activityitemsmodel_238_additemtohistory;
+Functions:
+    -
+        Function: ActivityItemsModel::AddItemToHistory
+        Description: File Activity
+        Flags: [238, 295, 296]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 file_name_len;
+                char file_name[file_name_len];
+                int32 action_len;
+                char action[action_len];
+                int32 unk;
+            };
 
-#define activityitemsmodel_295_additemtohistory_des "File Activity"
-
-typedef struct _activityitemsmodel_295_additemtohistory{
-    int32 file_name_len;
-    char file_name[file_name_len];
-    int32 action_len;
-    char action[action_len];
-    int32 unk;
-} activityitemsmodel_295_additemtohistory;
-
-#define activityitemsmodel_296_additemtohistory_des "File Activity"
-
-typedef struct _activityitemsmodel_296_additemtohistory{
-    int32 file_name_len;
-    char file_name[file_name_len];
-    int32 action_len;
-    char action[action_len];
-    int32 unk;
-} activityitemsmodel_296_additemtohistory;
+# Documentation
+# N/A

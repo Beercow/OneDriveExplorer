@@ -1,26 +1,34 @@
-#define absconn_183_onreceive_des ""
+Description: CAbstract Connection
+Author: Brian Maloney
+Version: 1.0
+Id: 90bf026c-fda7-4543-ac2e-2a6735679604
+Code_File: absconn.cpp
 
-typedef struct _absconn_183_onreceive{
-    int64 unk1;
-    int64 unk2;
-    int32 data_len;
-    char data[data_len];
-} absconn_183_onreceive;
+Functions:
+    -
+        Function: CAbstractConnection::OnReceive
+        Description: ''
+        Flags: [183, 185]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int64 unk1;
+                int64 unk2;
+                int32 data_len;
+                char data[data_len];
+            };
+    -
+        Function: CAbstractConnection::SendData
+        Description: ''
+        Flags: [120]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int64 unk1;
+                int32 unk2;
+                int32 data_len;
+                char data[data_len];
+            };
 
-#define absconn_185_onreceive_des ""
-
-typedef struct _absconn_185_onreceive{
-    int64 unk1;
-    int64 unk2;
-    int32 data_len;
-    char data[data_len];
-} absconn_185_onreceive;
-
-#define absconn_120_senddata_des ""
-
-typedef struct _absconn_120_senddata{
-    int64 unk1;
-    int32 unk2;
-    int32 data_len;
-    char data[data_len];
-} absconn_120_senddata;
+# Documentation
+# N/A

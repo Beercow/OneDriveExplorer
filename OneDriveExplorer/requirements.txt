@@ -12,3 +12,5 @@ psutil
 pytsk3
 quickxorhash
 pycryptodome
+ruamel.yaml
+Cerberus

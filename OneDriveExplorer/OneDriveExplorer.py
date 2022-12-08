@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "200.11.08"
+__version__ = "2022.12.08"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 
@@ -37,6 +37,8 @@ def main():
             print_html(df, rbin_df, name, args.html)
 
         if ((args.csv or args.html) and args.json) or (not args.csv and not args.html):
+            if not args.json:
+                args.json = '.'
             print_json(df, rbin_df, name, args.pretty, args.json)
 
         try:
@@ -82,8 +84,9 @@ def main():
     parser.add_argument("--html", help="Directory to save html formatted results to. Be sure to include the full path in double quotes.")
     parser.add_argument("--json", help="Directory to save json representation to. Use --pretty for a more human readable layout.")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
+    parser.add_argument("--cstructs", help="The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was executed.")
     parser.add_argument("--debug", help="Show debug information during processing.", action='store_true')
-    parser.add_argument("-l", "--logs", help="Directory to recursively process for ODL logs. Experimental.", nargs='?', const=True)
+    parser.add_argument("-l", "--logs", help="Directory to recursively process for ODL logs.", nargs='?', const=True)
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -129,8 +132,9 @@ def main():
                 sys.exit()
 
     if args.file:
-        df, name, personal = parse_dat(args.file, args.reghive, args.RECYCLE_BIN, start)
-        df, rbin_df = parse_onedrive(df, args.reghive, args.RECYCLE_BIN, personal)
+        account = os.path.dirname(args.file.replace('/', '\\')).rsplit('\\', 1)[-1]
+        df, name = parse_dat(args.file, args.reghive, args.RECYCLE_BIN, start, account)
+        df, rbin_df = parse_onedrive(df, account, args.reghive, args.RECYCLE_BIN)
         if df.empty:
             filename = args.file.replace('/', '\\')
             print(f'Unable to parse {filename}.')
@@ -196,8 +200,9 @@ def main():
                     logging.info(f'Parsing OneDrive data for {key}')
                     print(f'\n\nParsing {key} OneDrive\n')
                     for filename in filenames:
-                        df, name, personal = parse_dat(filename, args.reghive, args.RECYCLE_BIN, start)
-                        df, rbin_df = parse_onedrive(df, args.reghive, args.RECYCLE_BIN, personal)
+                        account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
+                        df, name = parse_dat(filename, args.reghive, args.RECYCLE_BIN, start, account)
+                        df, rbin_df = parse_onedrive(df, account, args.reghive, args.RECYCLE_BIN)
                         if df.empty:
                             filename = filename.replace('/', '\\')
                             print(f'Unable to parse {filename}.')
@@ -206,7 +211,7 @@ def main():
                             output()
 
         if args.logs:
-            load_cparser()
+            load_cparser(args.cstructs)
             for key, value in d.items():
                 for k, v in value.items():
                     if k == 'logs':

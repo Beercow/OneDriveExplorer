@@ -1,35 +1,61 @@
-typedef struct _aclhelper_934_getacl{
-    int32 Folder_Name_len;
-    char Folder_Name[Folder_Name_len];
-    int32 unk;
-} aclhelper_934_getacl;
+Description: ACL Helper
+Author: Brian Maloney
+Version: 1.0
+Id: 12067939-5b5a-4ea1-aa66-99d34e4a8af3
+Code_File: aclhelper.cpp
 
-typedef struct _aclhelper_244_readonlyguard{
-    int32 Folder_Name_len;
-    char Folder_Name[Folder_Name_len];
-} aclhelper_244_readonlyguard;
+Functions:
+    -
+        Function: WindowsAclHelper::GetACL
+        Description: ''
+        Flags: [934, 959]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 Folder_Name_len;
+                char Folder_Name[Folder_Name_len];
+                int32 unk;
+            };
+    -
+        Function: ReadOnlyGuard::ReadOnlyGuard
+        Description: ''
+        Flags: [244]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 Folder_Name_len;
+                char Folder_Name[Folder_Name_len];
+            };
+    -
+        Function: IAclHelper::RecordCallTimeTaken
+        Description: ''
+        Flags: [224, 249, 251]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 unk1;
+                int64 unk2;
+            };
+    -
+        Function: WindowsAclHelper::RemoveDenyDeleteChildrenImpl
+        Description: ''
+        Flags: [617]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 Mountpoint_len;
+                char Mountpoint[Mountpoint_len];
+            };
+    -
+        Function: WindowsAclHelper::SetDenyDeleteChildrenImpl
+        Description: ''
+        Flags: [550]
+        Structure: |
+            #define %s_des "%s"
+            struct %s {
+                int32 Mountpoint_len;
+                char Mountpoint[Mountpoint_len];
+            };
 
-typedef struct _aclhelper_224_recordcalltimetaken{
-    int32 unk1;
-    int64 unk2;
-} aclhelper_224_recordcalltimetaken;
-
-typedef struct _aclhelper_249_recordcalltimetaken{
-    int32 unk1;
-    int64 unk2;
-} aclhelper_249_recordcalltimetaken;
-
-typedef struct _aclhelper_251_recordcalltimetaken{
-    int32 unk1;
-    int64 unk2;
-} aclhelper_251_recordcalltimetaken;
-
-typedef struct _aclhelper_617_removedenydeletechildrenimpl{
-    int32 Mountpoint_len;
-    char Mountpoint[Mountpoint_len];
-} aclhelper_617_removedenydeletechildrenimpl;
-
-typedef struct _aclhelper_550_setdenydeletechildrenimpl{
-    int32 Mountpoint_len;
-    char Mountpoint[Mountpoint_len];
-} aclhelper_550_setdenydeletechildrenimpl;
+# Documentation
+# N/A
