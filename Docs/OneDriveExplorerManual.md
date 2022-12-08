@@ -1,9 +1,10 @@
-# OneDriveExplorer GUI
+# OneDriveExplorer
 
 ![](.\manual\ode.png)
 
 Revision history  
-date Rev. 1 - Initial Release
+2022-11-08 Rev. 1 - Initial Release  
+2022-12-07 Rev. 2 - Updated for v2022.12.08
 
 ## OneDriveExplorer GUI Introduction
 OneDriveExplorer GUI is used to view the contents of \<UserCid>.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.
@@ -63,7 +64,7 @@ The Options menu contains items for the look and feel and preferences of OneDriv
 
 ![](.\manual\options_menu.png)
 
-* Font: Change the font type, style and size. Applies to the Details, Log entries, and Log tabs.
+* Font: Change the font type, style, and size. Applies to the Details, Log entries, and Log tabs.
 * Skins: Change the overall look of OneDriveExplorer.
 * Preferences: Program options such as auto save, disabling the user hive dialog, and ODL settings.  
 
@@ -72,8 +73,11 @@ The Preferences dialog allows you to change various OneDriveExplorer settings as
 ![](.\manual\preferences.png)
 
 #### View
-The View menu contains one option, Messages.
+The View menu contains two options: Messages and CStructs.
 
+![](.\manual\view.png)
+
+##### Messages
 Messages toggles the visibility of the Messages window. The messages window displays status messages on the parsing process. The total number of messages is also shown on the main window's bottom status bar to the far right. Double clicking the message count will also show the Messages window.
 
 ![](.\manual\messages.png)
@@ -82,6 +86,9 @@ As mentioned above, the background of the messages count will be yellow if a war
 The Messages window contains two options. One for clearing the messages and the other to export the messages. Exporting the messages can be useful for troubleshooting the application.
 
 ![](.\manual\messages_number.png)
+
+##### CStructs
+The CStructs option displays a list of available cstructs for a given code file. Details include author, functions, and description. CStructs will be discussed in more detail in a dedicated section of this manual.
 
 #### Help
 The help menu contains two options: Quick help and About.
@@ -122,7 +129,15 @@ Import CSV allows for loading a previously saved CSV file from the command line 
 
 #### OneDrive logs
 *Note: This option is only available if enabled in the Preferences dialog.  
-Use this option to load OneDrive log files. The default location is *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\logs\\<Personal\Business>*. If the *ObfuscationStringMap.txt* file is found, it will be used to automatically deobfuscate the logs. There is another form of obfuscation that uses *general.keystor* but this has not been implemented yet. OneDrive logs will be discussed later.
+OneDrive logs contains two options for loading ODL data: Load ODL logs and Import csv. OneDrive logs will be discussed later. 
+
+![](.\manual\odlogs.png)
+
+##### Load ODL logs
+Use this option to load OneDrive log files. The default location is *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\logs\\<Personal\Business>*. If the *ObfuscationStringMap.txt* or *general.keystor* file is found, it will be used to automatically deobfuscate the logs.
+
+##### Import CSV
+Import CSV allows for loading a previously saved CSV file from the command line or GUI application.
 
 #### Projects
 Projects allow you to load one or more \<UserCid>.dat and log files; save the currently loaded \<UserCid>.dat and log files. This allows for quickly loading the same \<UserCid>.dat and log files for a particular case versus loading the files individually. Projects are saved with a *.ode_proj* extension.
@@ -172,54 +187,277 @@ From the OneDrive Folders tab, selecting a file/folder will populate the Log Ent
 
 ![](.\manual\logs2.png)
 
+### CStructs
+cstruct files provide a means to better parse ODL entries. The parameters of ODL entries consist of structured binary data and are parsed with a regex looking for ascii characters. cstruct files give us a means to define the structured data and extract it accordingly.
+
+CStructs live under the main OneDriveExplorer directory in a subdirectory called 'cstructs'. If you would like to load cstruct files from a different directory, use the --cstructs switch when starting OneDriveExplorer
+
+> OneDriveExplorer.exe --cstructs <folder_path>
+
+When OneDriveExplorer is started, it looks for all files matching that pattern in the cstructs folder. It then verifies that each file found is a valid cstruct file. IF it is, the cstruct is made available to OneDriveExplorer.
+
+To view all available cstructs, use the View | CStructs menu option. When this is selected the following dialog is displayed:
+
+![](.\manual\cstructs.png)
+
+To get additional details about the cstruct, click the Add'l Info button. The following dialog will be displayed:
+
+![](.\manual\add_info.png)
+
 # OneDriveExplorer
 ## OneDriveExplorer Introduction
 OneDriveExplorer is a tool used to parse \<UserCid\>.dat files and reconstruct the folder structure of OneDrive. \<UserCid\>.dat files are commonly found at %USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\settings\\<Personal\Business>
 
-## OneDriveExplorer Switches
+## Getting started
 
-In a command prompt, running OneDriveExplorer.exe will provide the following options:
+Running OneDriveExplorer.exe without any arguments displays a list of command line options:
 
 ```
 usage: OneDriveExplorer.py [-h] [-f FILE] [-d DIR] [-r REGHIVE] [-rb RECYCLE_BIN] [--csv CSV] [--csvf CSVF]
-                           [--html HTML] [--json JSON] [--pretty] [--debug] [-l [LOGS]]
+                           [--html HTML] [--json JSON] [--pretty] [--cstructs CSTRUCTS] [--debug] [-l [LOGS]]
 
-options:  
-  -h, --help            show this help message and exit  
-  -f FILE, --file FILE  <UserCid>.dat file to be parsed  
-  -d DIR, --dir DIR     Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and  
-                        ODL logs. This mode is primarily used with KAPE.  
-  -r REGHIVE, --REG_HIVE REGHIVE  
-                        If a registry hive is provided, then the mount points of the SyncEngines will be resolved.  
-  -rb RECYCLE_BIN, --RECYCLE_BIN RECYCLE_BIN  
-                        $Recycle.Bin  
-  --csv CSV             Directory to save CSV formatted results to. Be sure to include the full path in double quotes.  
-  --csvf CSVF           File name to save CSV formatted results to. When present, overrides default name.  
-  --html HTML           Directory to save html formatted results to. Be sure to include the full path in double  
-                        quotes.  
-  --json JSON           Directory to save json representation to. Use --pretty for a more human readable layout.  
-  --pretty              When exporting to json, use a more human readable layout. Default is FALSE  
-  --debug               Show debug information during processing.  
-  -l [LOGS], --logs [LOGS]  
-                        Directory to recursively process for ODL logs. Experimental.  
+options:
+  -h, --help            show this help message and exit
+  -f FILE, --file  <UserCid>.dat file to be parsed
+  -d DIR, --dir DIR     Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and
+                        ODL logs. This mode is primarily used with KAPE.
+  -r REGHIVE, --REG_HIVE REGHIVE
+                        If a registry hive is provided, then the mount points of the SyncEngines will be resolved.
+  -rb RECYCLE_BIN, --RECYCLE_BIN RECYCLE_BIN
+                        $Recycle.Bin
+  --csv CSV             Directory to save CSV formatted results to. Be sure to include the full path in double quotes.
+  --csvf CSVF           File name to save CSV formatted results to. When present, overrides default name.
+  --html HTML           Directory to save html formatted results to. Be sure to include the full path in double
+                        quotes.
+  --json JSON           Directory to save json representation to. Use --pretty for a more human readable layout.
+  --pretty              When exporting to json, use a more human readable layout. Default is FALSE
+  --cstructs CSTRUCTS   The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was
+                        executed.
+  --debug               Show debug information during processing.
+  -l [LOGS], --logs [LOGS]
+                        Directory to recursively process for ODL logs.  
   ```
   
-### Switch Descriptions
+There are several groups of command line options for OneDriveExplorer.
+
+### Source
   
-**-r**  
-This switch will instruct OneDriveExplorer to use the registry hive supplied to resolve OneDrive mount points.  
-Example: 
->OneDriveExplorer.exe -f \<file> -r NTUSER.dat  
+* **-f**: Full path, including \<UserCid>.dat, of \<UserCid>.dat file to be parse
 
-**-rb**  
-This switch will instruct OneDriveExplorer to use the $Recycle.Bin supplied to look for deleted files. This switch can only be used when a registry hive is supplied.  
-Example:
->OneDriveExplorer.exe -f \<file> -r NTUSER.dat -rb c:\\$Recycle.Bin
+* **-d**: Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and ODL logs. This mode is primarily used with KAPE.
 
-## OneDriveExplorer Command Examples
-### Example OneDriveExplorer Commands
+* **-r**: This switch will instruct OneDriveExplorer to use the registry hive supplied to resolve OneDrive mount points.  
+ 
+* **-rb**: This switch will instruct OneDriveExplorer to use the $Recycle.Bin supplied to look for deleted files. This switch can only be used when a registry hive is supplied.  
 
-## OneDriveExplorer Output
-### Analyzing OneDriveExplorer Output - CSV
+* **-l**: Directory to recursively process for ODL logs.
 
-# OneDriveExplorer cstruct "mapping" files
+### Output
+
+* **--csv**: Directory to save CSV formatted results to. Be sure to include the full path in double quotes.
+
+* **--csvf**: File name to save CSV formatted results to. When present, overrides default name
+
+* **--html**: Directory to save html formatted results to. Be sure to include the full path in double quotes.
+
+* **--json**: Directory to save json representation to. Use --pretty for a more human readable layout.
+
+* **--pretty**: When exporting to json, use a more human readable layout. Default is FALSE
+
+### Other
+
+* **--cstructs**: The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was executed.
+
+* **--debug**: Show debug information during processing.
+
+### Usage
+To use OneDriveExplorer, simply provide the `.\<UserCid>.dat` file to the `-f` argument
+
+```bash
+OneDriveExplorer.py -f business1\d1a7c039-6175-4ddb-bcdb-a8de45cf1678.dat
+```
+
+Depending on the options, OneDriveExplorer can produce JSON, CSV, or HTML files of the parsed data. The `--pretty` option can be used to output the JSON into a more human readable layout.
+
+A user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive. Along with the registry hive, $Recycle.Bin can be added with the `-rb` option to look for deleted files.
+
+# Creating CStructs
+
+# Version changes
+## v2022.12.08
+### Added
+#### commandline/GUI
+* Account for all business accounts (can be up to 9 total)
+* Add switch to change cstruct directory
+* Validate cstruct files
+#### GUI
+* Added tooltips
+* Import ODL from csv
+* Validates ode.settings file (no need to delete on new update)
+### Fixed
+#### commandline
+* Fixed json error
+#### GUI
+* Fixed json import error
+* Error handling for importing bad csv's
+## v2022.11.08
+### Added
+#### commandline/GUI
+* Support unobfuscation with `general.keystore` file
+## v2022.11.04
+### Added
+#### commandline/GUI
+* Use ObfuscationStringMap.txt if present
+* ODL maps
+#### GUI
+* Indicator for saving log files 
+* Cell pop out
+* Log entries pane
+* Export treeview to png, pdf
+### Fixed
+#### commandline/GUI
+* Find all deleted files for business
+#### GUI
+* Fixed freezing in message window
+* Better column sizing
+## v2022.06.17
+### Added
+#### commandline/GUI
+* Find deleted files
+* SHA1 of deleted file for OneDrive personal
+* quickxorhash of deleted file for OneDrive business
+* ODL logs (experimental)
+#### GUI
+* Highlight on right click in treeview
+* Removed empty values from Details pane
+* Parse live system
+* File/Folder count columns
+* Projects
+### Fixed
+#### GUI
+* Minimum width on slider left/right
+* Bug fixes
+## v2022.05.18
+### Fixed
+* Update to OneDrive broke parsing
+## v2022.04.06
+### Added
+#### commandline/GUI
+* New parsing method
+* Unicode support for names
+* quicXorHash/SHA1 of file
+### Fixed
+#### GUI
+* Search not working properly if file is removed
+* Unable to save a csv or html
+## v2022.03.11-r1
+### Added
+#### commandline
+* -d option for using with KAPE
+## v2022.03.11
+### Added
+#### commandline/GUI
+* Added path in JSON
+#### GUI
+* Unload all folders changed to Unload all files
+* Enabled Details pane to allow for copy/paste of information
+* Path in Details pane
+* Disable collapse folders when there are no folders to collapse
+* Files/Folders alphabetical order
+* Indication if search term is not found
+* Progress bar on exe splash screen
+* file/folder count when parsing JSON
+* Copy Menu
+  * Copy Name
+  * Copy Path
+  * Copy Details
+### Fixed
+* Changed buffer to prevent names from getting cut off
+* Fixed paths to be Windows paths \ vs /
+## v2022.03.04
+### Added
+#### commandline
+* --debug argument
+#### GUI
+* Debug messages
+### Fixed
+* Freezing on Import JSON/CSV
+* Menus and Find were not disabled during Load JSON
+* Handle error if Name is not found
+## v2022.03.02
+### Added
+#### commandline/GUI
+* Registry hive option
+* File size information
+#### GUI
+* Disable hive dialog in Preferences
+### Fixed
+* Error in file/folder count that could cause the GUI to freeze
+* Disabled Find unless something is loaded
+* --pretty changed to check box in Preferences
+* Set minimum size on GUI
+## v2022.02.23
+### Added
+#### commandline/GUI
+* Shared folders added to JSON
+#### GUI
+* Options menu
+  * Save to JSON
+  * Save to CSV
+  * Save to HTML
+  * Save to path
+* Splash screen to executable
+* More icons
+## v2022.02.18
+### Added
+#### commandline
+* Export to csv
+* Export to html
+#### GUI
+* Import csv
+* Horizontal scrollbar on treeview
+* icons
+* Requires Pillow
+### Fixed
+* Bug where one folder and its contents would get dropped
+* File/folder count
+## v2022.02.16
+### Added
+* Requires pandas
+### Fixed
+* Folder_UUID is now ParentId
+* Object_UUID is now DriveItemId
+* Names not resolving properly
+* Huge performance increase to parser
+## v2022.02.11
+### Added
+#### GUI
+* Autosaves parsed data to JSON
+* Load multiple dat/json
+* Added load JSON
+* Unload of individual or all files
+* Better ordering of folder structure 
+* Right click menu
+  * Remove folder
+  * Copy
+  * Expand folder
+  * Collapse folder
+#### cmdline/GUI
+* Top level object, Type changed to Root, Name changed to name of parsed file
+* Default JSON file name changed from OneDrive.json to \<filename>_OneDrive.json
+### Fixed
+* Minor code cleanup
+## v2022.02.09
+### Added
+* Added search to the GUI
+### Fixed
+* Can load new file in GUI without closing
+* Improved personal file parsing
+* Handle exception if object name cannot be found
+## v2022.02.08
+### Added
+* Added support for OneDrive Personal dat files
+### Fixed
+* Missing files/folders
+## v2022.02.03
+### Initial Release
