@@ -66,7 +66,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.12.08"
+__version__ = "2022.12.09"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -1756,7 +1756,7 @@ def live_system(menu):
                         value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
                         pb.configure(mode='indeterminate')
                         pb.start()
-                        log_output = f'{key}_logs.csv'
+                        log_output = f'{menu_data["path"]}/{key}_logs.csv'
                         odl.to_csv(log_output, index=False)
                         pb.stop()
 
@@ -1936,7 +1936,7 @@ def odl(folder_name, csv=False):
     pb.stop()
 
     if menu_data['odl_save'] is True and not csv:
-        log_output = f'{key}_logs.csv'
+        log_output = f'{menu_data["path"]}/{key}_logs.csv'
         try:
             value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
             pb.configure(mode='indeterminate')

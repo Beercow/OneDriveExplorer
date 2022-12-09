@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.12.08"
+__version__ = "2022.12.09"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 
@@ -145,8 +145,11 @@ def main():
         if rootDir is None:
             sys.exit()
         if rootDir is not True:
+            load_cparser(args.cstructs)
             odl = parse_odl(rootDir)
-            log_output = 'ODL_logs.csv'
+            if not args.csv:
+                args.csv = '.'
+            log_output = f'{args.csv}/ODL_logs.csv'
             odl.to_csv(log_output, index=False)
 
     if args.dir:
