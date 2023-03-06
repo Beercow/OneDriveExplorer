@@ -29,6 +29,7 @@ import quickxorhash
 import base64
 from datetime import datetime
 import logging
+from ode.utils import progress, progress_gui
 
 log = logging.getLogger(__name__)
 
@@ -37,11 +38,12 @@ def from_unix_sec(_):
     try:
         return datetime.utcfromtimestamp(int(_)).strftime('%Y-%m-%d %H:%M:%S')
 
-    except:
+    except Exception as e:
+        log.error(e)
         return datetime.utcfromtimestamp(0).strftime('%Y-%m-%d %H:%M:%S')
 
 
-def find_deleted(recbin, od_keys, account):
+def find_deleted(recbin, od_keys, account, gui=False, pb=False, value_label=False):
     recbin = (recbin).replace('/', '\\')
     log.info(f'Started parsing {recbin}')
     d = {}
@@ -61,6 +63,12 @@ def find_deleted(recbin, od_keys, account):
                 for name in files:
                     d[f'$I{x}'].setdefault('files', []).append(os.path.join(path, name).split(x)[-1])
 
+    total = len(d)
+    count = 0
+
+    if gui:
+        pb['value'] = 0
+
     for key, value in d.items():
         filenames = []
         for k, v in value.items():
@@ -74,6 +82,13 @@ def find_deleted(recbin, od_keys, account):
             for m in match:
                 rbin.append(m)
 
+        if gui:
+            progress_gui(total, count, pb, value_label, status='Adding deleted items. Please wait....')
+        else:
+            progress(count, total, status='Adding deleted items. Please wait....')
+        count += 1
+
+    log.info(f'Parsing complete {recbin}')
     return rbin
 
 
@@ -92,7 +107,7 @@ def hash_file(file):
                 h.update(data)
 
         return [f'SHA1({sha1.hexdigest()})', f'quickXor({base64.b64encode(h.digest()).decode("utf-8")})']
-    except Exception as e:
+    except Exception:
         return ['', '']
 
 

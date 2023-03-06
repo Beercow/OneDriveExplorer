@@ -31,7 +31,7 @@ from ode.utils import find_parent
 log = logging.getLogger(__name__)
 
 
-def parse_onedrive(df, account=False, reghive=False, recbin=False):
+def parse_onedrive(df, account=False, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
     if df.empty:
         return df, pd.DataFrame()
     share_df = df.loc[(~df.ParentId.isin(df.DriveItemId)) & (~df.Type.str.contains('Root'))]
@@ -60,15 +60,16 @@ def parse_onedrive(df, account=False, reghive=False, recbin=False):
         try:
             reg_handle = Registry.Registry(reghive)
             int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
-#            if account == 'Personal':
+
             od_keys = reg_handle.open(f'SOFTWARE\\Microsoft\\OneDrive\\Accounts\\{account}\\Tenants')
-#            else:
-#                od_keys = reg_handle.open('SOFTWARE\\Microsoft\\OneDrive\\Accounts\\Business1\\Tenants')
+
             for providers in int_keys.subkeys():
                 df.loc[(df.DriveItemId == providers.name().split('+')[0]), ['Name']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
 
             if recbin:
-                rbin = find_deleted.find_deleted(recbin, od_keys, account)
+                rbin = find_deleted.find_deleted(recbin, od_keys, account,
+                                                 gui=gui, pb=pb,
+                                                 value_label=value_label)
                 rbin_df = pd.DataFrame.from_records(rbin)
 
         except Exception as e:

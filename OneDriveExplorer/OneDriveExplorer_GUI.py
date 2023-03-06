@@ -66,7 +66,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2022.12.09"
+__version__ = "2023.03.06"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -409,7 +409,7 @@ class hive:
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         self.win.title("Load User Hive")
-        self.win.iconbitmap(application_path + '/Images/OneDrive.ico')
+        self.win.iconbitmap(application_path + '/Images/question.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
@@ -491,7 +491,7 @@ class rec_bin:
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         self.win.title("$Recycle.Bin")
-        self.win.iconbitmap(application_path + '/Images/OneDrive.ico')
+        self.win.iconbitmap(application_path + '/Images/trashcan.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
@@ -562,11 +562,18 @@ class messages:
         self.root = root
         self.win = tk.Toplevel(self.root)
         self.win.title("Messages")
-        self.win.iconbitmap(application_path + '/Images/OneDrive.ico')
+        self.win.iconbitmap(application_path + '/Images/language_blue.ico')
         self.win.minsize(400, 300)
         self.win.grab_set()
         self.win.focus_force()
         self.win.protocol("WM_DELETE_WINDOW", self.close_mess)
+        hwnd = get_parent(self.win.winfo_id())
+        #   getting the old style
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
+        #   setting new style
+        set_window_long(hwnd, GWL_STYLE, new_style)
         message['background'] = ''
         message['foreground'] = ''
         self.columns = ('Message Date', 'Message Type', 'Message')
@@ -1202,7 +1209,7 @@ class CustomText(tk.Text):
             self.tag_add(tag, "matchStart", "matchEnd")
 
 
-def showtip(text, widget, flip=False):
+def showtip(text, widget, flip=False, single=False):
     global tipwindow
     matches = ["start_parsing", "live_system", "odl", "load_project", "proj_parse"]
 
@@ -1218,6 +1225,9 @@ def showtip(text, widget, flip=False):
     if flip:
         x = x + widget.winfo_pointerx() - 330
         y = y + cy + widget.winfo_pointery() + 20 - 90
+    elif single:
+        x = x + widget.winfo_pointerx()
+        y = y + cy + widget.winfo_pointery()
     else:
         x = x + widget.winfo_pointerx()
         y = y + cy + widget.winfo_pointery() + 20
@@ -1228,12 +1238,17 @@ def showtip(text, widget, flip=False):
 
     text = text.split('\n', 1)
     h = (text[1].count('\n') + 2)
+    if single:
+        h = 1
     reg_font = ("Segoe UI", 8, "normal")
     w = tkFont.Font(family="Segoe UI", size=8, weight="normal").measure(max(text[1].split('\n'), key=len))
     w2 = tkFont.Font(family="Segoe UI", size=8, weight="normal").metrics('linespace')
     h2 = w2 * (text[1].count('\n') + 2)
 
-    frame = tk.Frame(tw, width=w+20, height=h2+12, background="grey81", padx=1, pady=1)
+    if single:
+        frame = tk.Frame(tw, width=w+20, height=h2-1, background="grey81", padx=1, pady=1)
+    else:
+        frame = tk.Frame(tw, width=w+20, height=h2+12, background="grey81", padx=1, pady=1)
     textbox = tk.Text(frame, height=h, font=reg_font, padx=8, relief="flat",
                       bd=0, pady=5)
 
@@ -1259,13 +1274,19 @@ def hidetip():
         tw.destroy()
 
 
-def CreateToolTip(widget, text, flip=False):
-    def enter(event):
-        showtip(text, widget, flip)
+def CreateToolTip(widget, text, flip=False, single=False, motion=False):
+    def enter(event, motion=False):
+        showtip(text, widget, flip, single)
 
     def leave(event):
         hidetip()
-    widget.bind('<Enter>', enter)
+
+    if motion:
+        enter(None, motion=True)
+
+    else:
+        widget.bind('<Enter>', enter)
+
     widget.bind('<Leave>', leave)
 
 
@@ -1283,8 +1304,16 @@ def motion(event):
                 text = 'Log Entries\n  Displays related logs to the file/folder selected. This\n  will only be populated if OneDrive logs are parsed\n  along with the <userCid>.dat file.'
             if event.widget.tab(index, 'text') == 'OneDrive Folders  ':
                 text = 'OneDrive Folders\n  Displays the <UserCid>.dat files that have been loaded\n  and the folder structure of OneDrive.'
-            showtip(text, event.widget)
+            CreateToolTip(event.widget, text, flip=False, single=False, motion=True)
+
+    elif event.widget.identify(event.x, event.y) == 'clear':
+        if 'invalid' not in search_entry.state():
+            search_entry.config(cursor='arrow')
+            text = 'Clear\n        '
+            CreateToolTip(event.widget, text, flip=False, single=True, motion=True)
+
     else:
+        search_entry.config(cursor='xterm')
         hidetip()
         current_tab = None
 
@@ -1296,8 +1325,9 @@ def ButtonNotebook():
 
     try:
         style.element_create("close", "image", "img_close",
-                             ("active", "pressed", "!disabled", "img_closepressed"),
-                             ("active", "!disabled", "img_closeactive"),
+                             ("active", "pressed", "!disabled", "!invalid", "img_closepressed"),
+                             ("active", "!disabled", "!invalid", "img_closeactive"),
+                             ("invalid", "img_blank"),
                              border=8, sticky='')
         style.layout("CustomNotebook", [("CustomNotebook.client",
                                         {"sticky": "nswe"})])
@@ -1356,6 +1386,7 @@ def ButtonNotebook():
             return
         x, y, widget = event.x, event.y, event.widget
         elem = widget.identify(x, y)
+
         try:
             index = widget.index("@%d,%d" % (x, y))
             if index == 0:
@@ -1424,6 +1455,87 @@ def ButtonNotebook():
 
     root.bind("<ButtonPress-1>", on_close_press, True)
     root.bind("<ButtonRelease-1>", on_close_release)
+
+
+def ButtonEntry(do_bind=False):
+
+    test = style.map('TEntry')
+    style.map('CustomEntry', **test)
+
+    try:
+        style.element_create("clear", "image", "img_blank",
+                             ("pressed", "!disabled", "img_closepressed"),
+                             ("!invalid", "!disabled", "img_close"),
+                             border=8, sticky='')
+        style.layout("CustomEntry", [("CustomEntry.client",
+                                      {"sticky": "nswe"})])
+        style.layout("CustomEntry", [
+            ('CustomEntry.field', {
+                'sticky': 'nswe',
+                'children': [
+                    ('CustomEntry.fieldbackground', {
+                        'sticky': 'nswe',
+                        'children': [
+                            ('CustomEntry.padding',
+                                {'sticky': 'nswe',
+                                    'children': [
+                                        ('CustomEntry.textarea',
+                                         {'sticky': 'nswe'}),
+                                        ('CustomEntry.clear',
+                                         {'side': 'right', 'sticky': ''}),
+                                        ]
+                                 })
+                        ]
+                    })
+                ]
+            })
+        ])
+
+        style.configure('CustomEntry', **style.configure('TEntry'))
+
+    except Exception:
+        pass
+
+    def on_press(event):
+        """Called when the button is pressed over the close button"""
+
+        if event.widget.winfo_class() != 'TEntry':
+            return
+        x, y, widget = event.x, event.y, event.widget
+        elem = widget.identify(x, y)
+
+        if 'invalid' in widget.state():
+            return
+
+        if "clear" in elem:
+            widget.state(['pressed'])
+
+    def on_release(event):
+        """Called when the button is released"""
+
+        if event.widget.winfo_class() != 'TEntry':
+            return
+
+        x, y, widget = event.x, event.y, event.widget
+
+        if not widget.instate(['pressed']):
+            return
+
+        elem = widget.identify(x, y)
+        if "clear" not in elem:
+            # user moved the mouse off of the close button
+            widget.state(["!pressed"])
+            return
+
+        widget.state(["!pressed"])
+        search_entry.state(['invalid'])
+        search_entry.delete(0, 'end')
+        clear_search()
+
+    if do_bind:
+        search_entry.state(['invalid'])
+        search_entry.bind("<ButtonPress-1>", on_press, True)
+        search_entry.bind("<ButtonRelease-1>", on_release)
 
 
 def pane_config():
@@ -1511,6 +1623,7 @@ def clear_all():
     details.config(state='disable')
     odsmenu.entryconfig("Unload all files", state='disable')
     file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
+    search_entry.delete(0, 'end')
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
     if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
@@ -1994,7 +2107,10 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
     menubar.entryconfig("Options", state="disabled")
     menubar.entryconfig("View", state="disabled")
     menubar.entryconfig("Help", state="disabled")
+    search_entry.delete(0, 'end')
+    search_entry.state(['invalid'])
     search_entry.configure(state="disabled")
+    clear_search()
     btn.configure(state="disabled")
 
     start = time.time()
@@ -2004,14 +2120,16 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
         df, name = parse_dat(filename, reghive, recbin, start, account,
                              gui=True, pb=pb, value_label=value_label)
-        df, rbin_df = parse_onedrive(df, account, reghive, recbin)
+        df, rbin_df = parse_onedrive(df, account, reghive, recbin, gui=True,
+                                     pb=pb, value_label=value_label)
         dat = True
 
     if x == 'Load <UserCid>.dat' + (' '*10):
         account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
         df, name = parse_dat(filename, reghive, recbin, start, account,
                              gui=True, pb=pb, value_label=value_label)
-        df, rbin_df = parse_onedrive(df, account, reghive, recbin)
+        df, rbin_df = parse_onedrive(df, account, reghive, recbin, gui=True,
+                                     pb=pb, value_label=value_label)
         dat = True
 
     if x == 'Import JSON':
@@ -2254,6 +2372,7 @@ def del_folder(iid):
     if len(tv.get_children()) == 0:
         odsmenu.entryconfig("Unload all files", state='disable')
         file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
+        search_entry.delete(0, 'end')
         search_entry.configure(state="disabled")
         btn.configure(state="disabled")
         if len(tv_frame.tabs()) == 1:
@@ -2631,6 +2750,14 @@ def font_changed(font):
     save_settings()
 
 
+def click(evnet):
+    if len(search_entry.get()) > 0:
+        search_entry.state(['!invalid'])
+    else:
+        search_entry.state(['invalid'])
+        clear_search()
+
+
 root = ThemedTk()
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
@@ -2718,10 +2845,16 @@ images = (
         /wAAAAAAAAAAAAAAACH5BAEAAPwALAAAAAALAAsAAAhqACVR0aKlEKGDBnkVJPSK
         0KJXtCC+0kJoWLtCrlwNG7bIFaFC7YS1q9jOHESDGs8NYzfslaKGhWgVYnnOVa2I
         DAm1G3ZO2LBaEAnVGmZumMZ2vGrVMshSIstaHoHajAj1Jq+GtYTGBMorIAA7
+        '''),
+    tk.PhotoImage("img_blank", data='''
+        iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAA
+        AARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAATSURBVDhPYxgF
+        o2AUjAIwYGAAAAQQAAGnRHxjAAAAAElFTkSuQmCC
         ''')
     )
 
 ButtonNotebook()
+ButtonEntry()
 
 root_drive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hdd.png'))
 default_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded_open_hdd.png'))
@@ -2816,7 +2949,7 @@ find_frame = ttk.Frame(tv_inner_frame)
 
 find_frame.grid_columnconfigure(0, weight=1)
 
-search_entry = ttk.Entry(find_frame, width=30, exportselection=0)
+search_entry = ttk.Entry(find_frame, width=30, exportselection=0, style='CustomEntry')
 btn = ttk.Button(find_frame,
                  text="Find",
                  image=search_img,
@@ -2894,10 +3027,13 @@ root.bind('<Alt-s>', lambda event=None: save_proj())
 root.bind('<<NotebookTabChanged>>', lambda event=None: log_tab())
 search_entry.bind('<Return>',
                   lambda event=None: [clear_search(), search(), search_result()])
+search_entry.bind('<KeyRelease>', click)
 bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
 tabControl.bind('<Motion>', motion)
 infoNB.bind('<Motion>', motion)
+search_entry.bind('<Motion>', motion)
 root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', motion)
+#print(root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').state(['invalid']))
 
 keyboard.is_pressed('shift')
 
@@ -2922,7 +3058,7 @@ for theme_name in sorted(root.get_themes()):
                                                                 foreground=fixed_map("foreground"),
                                                                 background=fixed_map("background")),
                                                       submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'),
-                                                      save_settings(), pane_config(), ButtonNotebook()])
+                                                      save_settings(), pane_config(), ButtonNotebook(), ButtonEntry()])
 
 odsmenu.add_command(label="Load <UserCid>.dat" + (' '*10),
                     image=load_img, compound='left',
@@ -3048,5 +3184,7 @@ if "ERROR," in log_capture_string.getvalue():
 
 if getattr(sys, 'frozen', False):
     pyi_splash.close()
+
+ButtonEntry(do_bind=True)
 
 root.mainloop()

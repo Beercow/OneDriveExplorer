@@ -457,7 +457,6 @@ def process_odl(filename, map):
 def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
     filenames = []
     obfuscation_maps = []
-
     map = {}
 
     df = pd.DataFrame(columns=['Filename',
