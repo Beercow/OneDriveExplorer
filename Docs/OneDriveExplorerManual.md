@@ -5,6 +5,7 @@
 Revision history  
 2022-11-08 Rev. 1 - Initial Release  
 2022-12-07 Rev. 2 - Updated for v2022.12.08
+2023-03-10 Rev. 3 - Updated for v2023.03.10
 
 ## OneDriveExplorer GUI Introduction
 OneDriveExplorer GUI is used to view the contents of \<UserCid>.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.
@@ -66,6 +67,7 @@ The Options menu contains items for the look and feel and preferences of OneDriv
 
 * Font: Change the font type, style, and size. Applies to the Details, Log entries, and Log tabs.
 * Skins: Change the overall look of OneDriveExplorer.
+* Sync with Github: Download the latest ODL Cstructs
 * Preferences: Program options such as auto save, disabling the user hive dialog, and ODL settings.  
 
 The Preferences dialog allows you to change various OneDriveExplorer settings as seen below.
@@ -213,16 +215,19 @@ OneDriveExplorer is a tool used to parse \<UserCid\>.dat files and reconstruct t
 Running OneDriveExplorer.exe without any arguments displays a list of command line options:
 
 ```
-usage: OneDriveExplorer.py [-h] [-f FILE] [-d DIR] [-r REGHIVE] [-rb RECYCLE_BIN] [--csv CSV] [--csvf CSVF]
-                           [--html HTML] [--json JSON] [--pretty] [--cstructs CSTRUCTS] [--debug] [-l [LOGS]]
+usage: OneDriveExplorer.py [-h] [-f FILE] [-d DIR] [-l [LOGS]] [-r REGHIVE] [-rb RECYCLE_BIN] [--csv CSV]
+                           [--csvf CSVF] [--html HTML] [--json JSON] [--pretty] [--clist] [--cstructs CSTRUCTS]
+                           [--sync] [--debug] [--guids]
 
 options:
   -h, --help            show this help message and exit
-  -f FILE, --file  <UserCid>.dat file to be parsed
+  -f FILE, --file FILE  <UserCid>.dat file to be parsed
   -d DIR, --dir DIR     Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and
                         ODL logs. This mode is primarily used with KAPE.
+  -l [LOGS], --logs [LOGS]
+                        Directory to recursively process for ODL logs.
   -r REGHIVE, --REG_HIVE REGHIVE
-                        If a registry hive is provided, then the mount points of the SyncEngines will be resolved.
+                        If a registry hive is provided then the mount points of the SyncEngines will be resolved.
   -rb RECYCLE_BIN, --RECYCLE_BIN RECYCLE_BIN
                         $Recycle.Bin
   --csv CSV             Directory to save CSV formatted results to. Be sure to include the full path in double quotes.
@@ -231,11 +236,15 @@ options:
                         quotes.
   --json JSON           Directory to save json representation to. Use --pretty for a more human readable layout.
   --pretty              When exporting to json, use a more human readable layout. Default is FALSE
+  --clist               List available cstructs. Defaults to 'cstructs' folder where program was executed. Use
+                        --cstructs for different cstruct folder.
   --cstructs CSTRUCTS   The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was
                         executed.
+  --sync                If true, OneDriveExplorer will download the latest Cstrucs from
+                        https://github.com/Beercow/ODEFiles prior to running. Default is FALSE
   --debug               Show debug information during processing.
-  -l [LOGS], --logs [LOGS]
-                        Directory to recursively process for ODL logs.  
+  --guids               OneDriveExplorer will generate 10 GUIDs and exit. Useful when creating new Cstructs. Default
+                        is FALSE  
   ```
   
 There are several groups of command line options for OneDriveExplorer.
@@ -266,9 +275,15 @@ There are several groups of command line options for OneDriveExplorer.
 
 ### Other
 
+* **--clist**: List available cstructs. Also used to check for errors in cstruct files.
+
 * **--cstructs**: The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was executed.
 
+* **--sync**: Downloads the latest Cstructs from https://github.com/Beercow/ODEFiles
+
 * **--debug**: Show debug information during processing.
+
+* **--guids**: Generates 10 random GUIDs for use with cstruct files.
 
 ### Usage
 To use OneDriveExplorer, simply provide the `.\<UserCid>.dat` file to the `-f` argument
@@ -284,6 +299,35 @@ A user registry hive can be supplied with the `-r` argument. This will resolve s
 # Creating CStructs
 
 # Version changes
+## v2023.03.10
+### Fixed 
+#### GUI
+* Clear button visuals
+* Updated Copyright in About pane
+### Added
+#### GUI
+* Sync with Github
+#### commandline
+* --clist option to list ODL cstructs and check for errors
+* --guids option  to generate GUIDs for Cstructs
+* --sync command to sync cstructs
+## v2023.03.06
+### Added 
+#### GUI
+* Clear button in search box
+#### commandline/GUI
+* Progress bar for deleted items
+### Fixed 
+#### GUI
+* Remove search term when disabled
+* Clear search when adding OneDrive settings data
+## v2022.12.09
+### Fixed
+#### commandline
+* Fixed error when using -l with -f
+* ODL saves to --csv path (default is .)
+#### GUI
+* ODL saves to Auto Save Path
 ## v2022.12.08
 ### Added
 #### commandline/GUI
