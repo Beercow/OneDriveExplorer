@@ -25,6 +25,10 @@
 import os
 import re
 import sys
+import shutil
+import urllib.request
+from zipfile import ZipFile
+import hashlib
 import logging
 from importlib.util import spec_from_loader, module_from_spec
 from importlib.machinery import SourceFileLoader
@@ -39,6 +43,74 @@ schema = module_from_spec(spec)
 spec.loader.exec_module(schema)
 
 log = logging.getLogger(__name__)
+
+BASE_DIR = os.getcwd()
+NEW_MAPS_URL = "https://github.com/Beercow/ODEFiles/archive/master.zip"
+NEW_MAPS_DIR = os.path.join(BASE_DIR, "ODEFiles-master", "cstructs")
+OLD_MAPS_DIR = os.path.join(BASE_DIR, "cstructs")
+
+
+def update_from_repo(gui=False):
+    print(f'\033[1;37mChecking for updated Cstructs at {NEW_MAPS_URL}...\n\033[1;0m')
+    archive_path = os.path.join(BASE_DIR, "____master.zip")
+
+    if os.path.exists(archive_path):
+        os.remove(archive_path)
+
+    urllib.request.urlretrieve(NEW_MAPS_URL, archive_path)
+
+    with ZipFile(archive_path, 'r') as zip_ref:
+        zip_ref.extractall(BASE_DIR)
+
+    os.remove(archive_path)
+
+    if not os.path.exists(OLD_MAPS_DIR):
+        os.makedirs(OLD_MAPS_DIR)
+
+    new_maps = os.listdir(NEW_MAPS_DIR)
+
+    new_local_maps = []
+    updated_local_maps = []
+
+    for new_map in new_maps:
+        dest = os.path.join(OLD_MAPS_DIR, new_map)
+
+        if not os.path.exists(dest):
+            # new target
+            new_local_maps.append(new_map)
+        else:
+            # current destination file exists, so compare to new
+            with open(os.path.join(NEW_MAPS_DIR, new_map), 'rb') as new_file:
+                new_sha = hashlib.sha1(new_file.read()).hexdigest()
+
+            with open(dest, 'rb') as dest_file:
+                dest_sha = hashlib.sha1(dest_file.read()).hexdigest()
+
+            if new_sha != dest_sha:
+                # updated file
+                updated_local_maps.append(new_map)
+        shutil.copy2(os.path.join(NEW_MAPS_DIR, new_map), dest)
+
+    if new_local_maps or updated_local_maps:
+        print("\n\033[1;31mUpdates found!\033[1;0m")
+
+        if new_local_maps:
+            print("\n\033[1;33mNew cstructs\033[1;0m")
+            for new_local_map in new_local_maps:
+                print(f"\033[1;37m{os.path.splitext(new_local_map)[0]}\033[1;0m")
+
+        if updated_local_maps:
+            print("\n\033[1;33mUpdated cstructs\033[1;0m")
+            for updated_local_map in updated_local_maps:
+                print(f"\033[1;37m{os.path.splitext(updated_local_map)[0]}\033[1;0m")
+
+    else:
+        print("\033[1;37mNo new cstructs available\033[1;0m")
+
+    shutil.rmtree(os.path.join(BASE_DIR, "ODEFiles-master"))
+
+    if gui:
+        input('\n\nPress any key to exit')
 
 
 def find_parent(x, id_name_dict, parent_dict):

@@ -39,6 +39,7 @@ from ode.helpers.mft import live_hive
 from ode.helpers import pandastablepatch
 from ode.helpers import ScrollableNotebookpatch
 from ode.utils import schema
+from ode.helpers.AnimatedGif import *
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # Per monitor DPI aware. This app checks for the DPI when it is
@@ -66,7 +67,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.03.06"
+__version__ = "2023.03.10"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -80,6 +81,8 @@ stop = threading.Event()
 tipwindow = None
 current_tab = None
 menu_data = None
+delay = None
+cstruct_df = ''
 v = Validator()
 
 if getattr(sys, 'frozen', False):
@@ -1115,7 +1118,7 @@ class about:
                                 justify="left", anchor='w')
         self.label2 = ttk.Label(self.frame, text=f"Version {__version__}",
                                 justify="left", anchor='w')
-        self.label3 = ttk.Label(self.frame, text="Copyright © 2022",
+        self.label3 = ttk.Label(self.frame, text=f"Copyright © {__version__[:4]}",
                                 justify="left", anchor='w')
         self.label4 = ttk.Label(self.frame, text="Brian Maloney",
                                 justify="left", anchor='w')
@@ -1167,6 +1170,65 @@ class about:
 
     def close_about(self):
         self.win.destroy()
+
+
+class sync_message:
+    def __init__(self, root):
+        self.root = root
+        self.win = tk.Toplevel(self.root)
+        self.win.wm_transient(self.root)
+        self.win.title("")
+        self.win.iconbitmap(application_path + '/Images/favicon.ico')
+        self.win.grab_set()
+        self.win.focus_force()
+        self.win.resizable(False, False)
+        self.win.protocol("WM_DELETE_WINDOW", self.__callback)
+        hwnd = get_parent(self.win.winfo_id())
+        #   getting the old style
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
+        #   setting new style
+        set_window_long(hwnd, GWL_STYLE, new_style)
+
+        reg_font = ("Segoe UI", 8, "normal")
+        bold_font = ("Segoe UI", 16, "bold")
+
+        self.lbl_with_my_gif = AnimatedGif(self.win, application_path + '/Images/load.gif', 0.1)
+        self.label = ttk.Label(self.win, text="Please wait           ", font=bold_font)
+        self.label1 = ttk.Label(self.win, text="Working...", font=reg_font)
+
+        self.lbl_with_my_gif.grid(row=0, column=0, rowspan=2)
+        self.label.grid(row=0, column=1, sticky="nsew")
+        self.label1.grid(row=1, column=1, sticky="nsew")
+
+        self.lbl_with_my_gif.start()
+
+        self.sync_windows()
+
+        self.root.bind('<Configure>', self.sync_windows)
+        self.win.bind('<Configure>', self.sync_windows)
+
+    def sync_windows(self, event=None):
+        if 'system' not in str(threading.enumerate()):
+            self.win.destroy()
+        try:
+            x = self.root.winfo_x()
+            qw = self.win.winfo_width()
+            y = self.root.winfo_y()
+            qh = self.win.winfo_height()
+            w = self.root.winfo_width()
+            h = self.root.winfo_height()
+            self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
+        except Exception:
+            pass
+
+    def close_sync(self):
+        self.root.unbind("<Configure>")
+        self.win.destroy()
+
+    def __callback(self):
+        return
 
 
 class CustomText(tk.Text):
@@ -1221,7 +1283,7 @@ def showtip(text, widget, flip=False, single=False):
     if any(x in str(threading.enumerate()) for x in matches):
         return
 
-    x, y, cx, cy = widget.bbox("insert")
+    x, y, cx, cy = widget.bbox(1)
     if flip:
         x = x + widget.winfo_pointerx() - 330
         y = y + cy + widget.winfo_pointery() + 20 - 90
@@ -1390,6 +1452,7 @@ def ButtonNotebook():
         try:
             index = widget.index("@%d,%d" % (x, y))
             if index == 0:
+ #               widget.state(['invalid'])
                 return
         except Exception:
             return
@@ -1480,9 +1543,9 @@ def ButtonEntry(do_bind=False):
                                 {'sticky': 'nswe',
                                     'children': [
                                         ('CustomEntry.textarea',
-                                         {'sticky': 'nswe'}),
+                                         {'side': 'left', 'sticky': ''}),
                                         ('CustomEntry.clear',
-                                         {'side': 'right', 'sticky': ''}),
+                                         {'side': 'left', 'sticky': ''}),
                                         ]
                                  })
                         ]
@@ -2750,12 +2813,32 @@ def font_changed(font):
     save_settings()
 
 
-def click(evnet):
+def click(event):
     if len(search_entry.get()) > 0:
         search_entry.state(['!invalid'])
     else:
         search_entry.state(['invalid'])
         clear_search()
+
+
+def sync():
+    global cstruct_df
+    if getattr(sys, 'frozen', False):
+        t1 = threading.Thread(target=os.system,
+                              args=("OneDriveExplorer.exe --sync --gui",),
+                              daemon=True)
+    else:
+        t1 = threading.Thread(target=os.system,
+                              args=("start /wait cmd /c OneDriveExplorer.py --sync --gui",),
+                              daemon=True)
+
+    t1.start()
+    sync_message(root)
+
+    while 'system' in str(threading.enumerate()):
+        root.update()
+
+    cstruct_df = load_cparser(args.cstructs)
 
 
 root = ThemedTk()
@@ -2872,6 +2955,7 @@ search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/magnifier
 exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/no.png'))
 font_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/format_normal.png'))
 skin_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/skin.png'))
+sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/arrow_plain_green_S.png'))
 pref_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/controls.png'))
 question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question.png'))
 trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/trashcan.png'))
@@ -2934,6 +3018,7 @@ tv_frame = ScrollableNotebookpatch.MyScrollableNotebook(main_frame,
 tv_frame.enable_traversal()
 tv_inner_frame = ttk.Frame(tv_frame)
 tv_frame.add(tv_inner_frame, text='OneDrive Folders  ')
+
 tv = ttk.Treeview(tv_inner_frame,
                   columns=columns,
                   selectmode='browse',
@@ -3033,7 +3118,6 @@ tabControl.bind('<Motion>', motion)
 infoNB.bind('<Motion>', motion)
 search_entry.bind('<Motion>', motion)
 root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', motion)
-#print(root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').state(['invalid']))
 
 keyboard.is_pressed('shift')
 
@@ -3128,6 +3212,9 @@ options_menu.add_command(label="Font", image=font_img, compound='left',
                          command=lambda: root.tk.call('tk', 'fontchooser', 'show'))
 options_menu.add_cascade(label="Skins", image=skin_img,
                          compound='left', menu=submenu)
+options_menu.add_separator()
+options_menu.add_command(label="Sync with Github", image=sync_img,
+                         compound='left', command=lambda: sync())
 options_menu.add_separator()
 options_menu.add_command(label="Preferences", image=pref_img,
                          compound='left', command=lambda: preferences(root))

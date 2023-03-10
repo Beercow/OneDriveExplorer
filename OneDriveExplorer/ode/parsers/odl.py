@@ -40,6 +40,10 @@ from dissect import cstruct
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 import logging
+import ctypes
+
+kernel32 = ctypes.windll.kernel32
+kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 
 log = logging.getLogger(__name__)
 
@@ -87,8 +91,9 @@ typedef struct _Data{
 '''
 
 
-def load_cparser(cstructs_dir=False):
+def load_cparser(cstructs_dir=False, clist=False):
     global cparser
+#    cparser = ''
     cparser = cstruct.cstruct()
     cparser.load(headers)
     yaml = YAML()
@@ -97,7 +102,8 @@ def load_cparser(cstructs_dir=False):
     if not cstructs_dir:
         cstructs_dir = f'{os.getcwd()}\\cstructs'
 
-    log.info(f"Loading ODL cstructs from {cstructs_dir}")
+    if not clist:
+        log.info(f"Loading ODL cstructs from {cstructs_dir}")
 
     li = []
     id = []
@@ -111,23 +117,27 @@ def load_cparser(cstructs_dir=False):
                     continue
                 with open(os.path.join(cstructs_dir, file)) as f:
                     data = yaml.load(f.read())
-                    if not v.validate(data, schema.cstruct):
-                        log.error(f'{file} is not valid. {v.errors}')
-                        continue
-                    if data['Id'] in id:
-                        log.error(f'Id is not unique. {file} will not load.')
-                        continue
+                    if clist:
+                        list_cstruct(file, data, v, id)
                     else:
-                        id.append(data['Id'])
+                        if not v.validate(data, schema.cstruct):
+                            log.error(f'{file} is not valid. {v.errors}')
+                            continue
+                        if data['Id'] in id:
+                            log.error(f'Id is not unique. {file} will not load.')
+                            continue
+                        else:
+                            id.append(data['Id'])
 
-                    for x in data['Functions']:
-                        for flag in x['Flags']:
-                            name = f"{data['Code_File'].lower().split('.')[0]}_{flag}_{x['Function'].split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}"
-                            cparser.load(x['Structure'] % (name, x['Description'], name))
+                        for x in data['Functions']:
+                            for flag in x['Flags']:
+                                name = f"{data['Code_File'].lower().split('.')[0]}_{flag}_{x['Function'].split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}"
+                                cparser.load(x['Structure'] % (name, x['Description'], name))
 
-                    df = pd.json_normalize(data)
+                        df = pd.json_normalize(data)
 
-                li.append(df)
+                if not clist:
+                    li.append(df)
 
             except Exception as ex:
                 log.warning(f'Something went wrong loading {file}: {ex}')
@@ -136,12 +146,26 @@ def load_cparser(cstructs_dir=False):
     except Exception as ex:
         log.warning(ex)
 
-    try:
-        df = pd.concat(li, ignore_index=True, axis=0)
-    except Exception:
-        df = pd.DataFrame()
-    log.info("Loading ODL cstructs complete.")
-    return df
+    if not clist:
+        try:
+            df = pd.concat(li, ignore_index=True, axis=0)
+        except Exception:
+            df = pd.DataFrame()
+        log.info("Loading ODL cstructs complete.")
+        return df
+
+
+def list_cstruct(file, data, v, id):
+    if not v.validate(data, schema.cstruct):
+        print(f'\033[1;31m{file} is not valid. {v.errors}\033[1;0m\n')
+        return
+    if data['Id'] in id:
+        print(f'\033[1;31mId is not unique. {file} will not load.\033[1;0m\n')
+        return
+    else:
+        id.append(data['Id'])
+    print(f"\033[1;33mODL cstruct: {data['Code_File']}\033[1;0m")
+    print(f"\033[1;37m             Description: {data['Description']}\033[1;0m\n")
 
 
 def ReadUnixMsTime(unix_time_ms):  # Unix millisecond timestamp

@@ -4,12 +4,14 @@ import re
 import argparse
 import time
 import logging
+import uuid
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
 from ode.parsers.dat import parse_dat
 from ode.parsers.onedrive import parse_onedrive
 from ode.parsers.odl import parse_odl, load_cparser
+from ode.utils import update_from_repo
 
 logging.basicConfig(level=logging.INFO,
                     format='\n\n%(asctime)s, %(levelname)s, %(message)s\n',
@@ -17,7 +19,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.03.06"
+__version__ = "2023.03.10"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 
@@ -26,6 +28,17 @@ def spinning_cursor():
     while True:
         for cursor in '|/-\\':
             yield cursor
+
+
+def guid():
+    print('\033[1;35mGenerating 10 random GUIDs\033[1;0m\n')
+    count = 0
+    while True:
+        print(f'\033[1;37m{uuid.uuid4()}\033[1;0m')
+        count += 1
+        if count == 10:
+            print()
+            break
 
 
 def main():
@@ -72,11 +85,12 @@ def main():
                                                                     (_)
     '''.format(__version__)
 
-    print(banner)
+    print(f'\033[1;37m{banner}\033[1;0m')
     start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
     parser.add_argument("-d", "--dir", help="Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and ODL logs. This mode is primarily used with KAPE.")
+    parser.add_argument("-l", "--logs", help="Directory to recursively process for ODL logs.", nargs='?', const=True)
     parser.add_argument("-r", "--REG_HIVE", dest="reghive", help="If a registry hive is provided then the mount points of the SyncEngines will be resolved.")
     parser.add_argument("-rb", "--RECYCLE_BIN", help="$Recycle.Bin")
     parser.add_argument("--csv", help="Directory to save CSV formatted results to. Be sure to include the full path in double quotes.")
@@ -84,15 +98,30 @@ def main():
     parser.add_argument("--html", help="Directory to save html formatted results to. Be sure to include the full path in double quotes.")
     parser.add_argument("--json", help="Directory to save json representation to. Use --pretty for a more human readable layout.")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
+    parser.add_argument("--clist", help="List available cstructs. Defaults to 'cstructs' folder where program was executed. Use --cstructs for different cstruct folder.", action='store_true')
     parser.add_argument("--cstructs", help="The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was executed.")
+    parser.add_argument("--sync", help="If true, OneDriveExplorer will download the latest Cstrucs from https://github.com/Beercow/ODEFiles prior to running. Default is FALSE", action='store_true')
     parser.add_argument("--debug", help="Show debug information during processing.", action='store_true')
-    parser.add_argument("-l", "--logs", help="Directory to recursively process for ODL logs.", nargs='?', const=True)
+    parser.add_argument("--guids", help="OneDriveExplorer will generate 10 GUIDs and exit. Useful when creating new Cstructs. Default is FALSE", action='store_true')
+    parser.add_argument("--gui", help=argparse.SUPPRESS, action='store_true')
 
     if len(sys.argv) == 1:
         parser.print_help()
         parser.exit()
 
     args = parser.parse_args()
+
+    if args.sync:
+        update_from_repo(args.gui)
+        sys.exit()
+
+    if args.guids:
+        guid()
+        sys.exit()
+
+    if args.clist:
+        load_cparser(args.cstructs, args.clist)
+        sys.exit()
 
     if not args.file and not args.dir:
         parser.print_help()
