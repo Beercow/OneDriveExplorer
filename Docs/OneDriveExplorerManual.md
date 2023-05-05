@@ -2,10 +2,11 @@
 
 ![](.\manual\ode.png)
 
-Revision history  
+**Revision history**  
 2022-11-08 Rev. 1 - Initial Release  
-2022-12-07 Rev. 2 - Updated for v2022.12.08
-2023-03-10 Rev. 3 - Updated for v2023.03.10
+2022-12-07 Rev. 2 - Updated for v2022.12.08  
+2023-03-10 Rev. 3 - Updated for v2023.03.10  
+2023-05-05 Rev. 4 - Updated for v2023.05.05  
 
 ## OneDriveExplorer GUI Introduction
 OneDriveExplorer GUI is used to view the contents of \<UserCid>.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.
@@ -123,6 +124,17 @@ You can bypass these dialogs in one of two ways:
 
 ![](.\manual\preferences1.png)
 
+##### Load from SQLite
+Use this option to load OneDrive SQLite databases. Default location is *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\settings*. Once a folder is selected, OneDriveExplorer will prompt to load a User Hive.
+
+![](.\manual\userhive.png)
+
+You can bypass this dialog in one of two ways:
+* Holding down SHIFT when loading \<UserCid>.dat
+* In the Preferences dialog
+
+![](.\manual\preferences1.png)
+
 ##### Import JSON
 Import JSON allows for loading a previously saved JSON file from the command line or GUI application.
 
@@ -215,13 +227,14 @@ OneDriveExplorer is a tool used to parse \<UserCid\>.dat files and reconstruct t
 Running OneDriveExplorer.exe without any arguments displays a list of command line options:
 
 ```
-usage: OneDriveExplorer.py [-h] [-f FILE] [-d DIR] [-l [LOGS]] [-r REGHIVE] [-rb RECYCLE_BIN] [--csv CSV]
-                           [--csvf CSVF] [--html HTML] [--json JSON] [--pretty] [--clist] [--cstructs CSTRUCTS]
-                           [--sync] [--debug] [--guids]
+usage: OneDriveExplorer.exe [-h] [-f FILE] [-s SQL] [-d DIR] [-l [LOGS]] [-r REGHIVE] [-rb RECYCLE_BIN] [--csv CSV]
+                            [--csvf CSVF] [--html HTML] [--json JSON] [--pretty] [--clist] [--cstructs CSTRUCTS]
+                            [--sync] [--debug] [--guids]
 
 options:
   -h, --help            show this help message and exit
   -f FILE, --file FILE  <UserCid>.dat file to be parsed
+  -s SQL, --sql SQL     OneDrive folder containing SQLite databases
   -d DIR, --dir DIR     Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and
                         ODL logs. This mode is primarily used with KAPE.
   -l [LOGS], --logs [LOGS]
@@ -252,6 +265,8 @@ There are several groups of command line options for OneDriveExplorer.
 ### Source
   
 * **-f**: Full path, including \<UserCid>.dat, of \<UserCid>.dat file to be parse
+
+* **-s**: Directory containing OneDrive SQLite databases
 
 * **-d**: Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and ODL logs. This mode is primarily used with KAPE.
 
@@ -299,6 +314,10 @@ A user registry hive can be supplied with the `-r` argument. This will resolve s
 # Creating CStructs
 
 # Version changes
+## v2023.05.05
+### Added
+#### commandline/GUI
+* Added parsing of new OneDrive SQLite databases
 ## v2023.03.10
 ### Fixed 
 #### GUI

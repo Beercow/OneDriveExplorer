@@ -11,6 +11,7 @@ from ode.renderers.html import print_html
 from ode.parsers.dat import parse_dat
 from ode.parsers.onedrive import parse_onedrive
 from ode.parsers.odl import parse_odl, load_cparser
+from ode.parsers.sqlite_db import parse_sql
 from ode.utils import update_from_repo
 
 logging.basicConfig(level=logging.INFO,
@@ -19,7 +20,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.03.10"
+__version__ = "2023.05.05"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 
@@ -72,7 +73,7 @@ def main():
             logging.warning("KeyError: 'Folder'")
             folder_count = 0
 
-        print(f'{file_count} files(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
+        print(f'\n\n{file_count} files(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds\n')
 
     banner = r'''
      _____                ___                           ___                 _
@@ -89,6 +90,7 @@ def main():
     start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
+    parser.add_argument("-s", "--sql", help="OneDrive folder containing SQLite databases")
     parser.add_argument("-d", "--dir", help="Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and ODL logs. This mode is primarily used with KAPE.")
     parser.add_argument("-l", "--logs", help="Directory to recursively process for ODL logs.", nargs='?', const=True)
     parser.add_argument("-r", "--REG_HIVE", dest="reghive", help="If a registry hive is provided then the mount points of the SyncEngines will be resolved.")
@@ -123,7 +125,7 @@ def main():
         load_cparser(args.cstructs, args.clist)
         sys.exit()
 
-    if not args.file and not args.dir:
+    if not args.file and not args.dir and not args.sql:
         parser.print_help()
         print('\nEither -f or -d is required. Exiting')
         parser.exit()
@@ -160,6 +162,16 @@ def main():
                 print('Error: Remove trailing \ from directory.\nExample: --html "c:\\temp" ')
                 sys.exit()
 
+    if args.sql:
+        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
+        sql_find = re.findall(sql_dir, args.sql)
+        try:
+            name = f'{sql_find[0][0]}_{sql_find[0][1]}'
+        except Exception:
+            name = 'SQLite_DB'
+        df, rbin_df = parse_sql(args.sql, args.reghive)
+        output()
+
     if args.file:
         account = os.path.dirname(args.file.replace('/', '\\')).rsplit('\\', 1)[-1]
         df, name = parse_dat(args.file, args.reghive, args.RECYCLE_BIN, start, account)
@@ -186,6 +198,7 @@ def main():
         d = {}
         hive = re.compile(r'\\Users\\(?P<user>.*)?')
         dat = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\settings')
+        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
         log_dir = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\logs$')
         rootDir = args.dir
         spinner = spinning_cursor()
@@ -198,6 +211,7 @@ def main():
             hive_find = re.findall(hive, path)
             dat_find = re.findall(dat, path)
             log_find = re.findall(log_dir, path)
+            sql_find = re.findall(sql_dir, path)
             if path.endswith('$Recycle.Bin'):
                 args.RECYCLE_BIN = path
 
@@ -220,6 +234,10 @@ def main():
                 d.setdefault(log_find[0], {})
                 d[log_find[0]].setdefault('logs', []).append(path)
 
+            if sql_find:
+                d.setdefault(sql_find[0][0], {})
+                d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
+   
         for key, value in d.items():
             filenames = []
             for k, v in value.items():
@@ -241,6 +259,18 @@ def main():
                             logging.warning(f'Unable to parse {filename}.')
                         else:
                             output()
+
+                if k == 'sql':
+                    print(f'\n\nParsing {key} OneDrive\n')
+                    for account, sql_dir in v.items():
+                        name = f'{key}_{account}'
+                        df, rbin_df = parse_sql(sql_dir, args.reghive)
+                        if df.empty:
+                            print(f'Unable to parse {name} sqlite database.')
+                            logging.warning(f'Unable to parse {name} sqlite database.')
+                        else:
+                            output()
+                        
 
         if args.logs:
             load_cparser(args.cstructs)

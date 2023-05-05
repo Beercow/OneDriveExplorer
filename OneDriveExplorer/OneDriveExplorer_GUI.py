@@ -35,6 +35,7 @@ from ode.parsers.dat import parse_dat
 from ode.parsers.csv_file import parse_csv
 from ode.parsers.onedrive import parse_onedrive
 from ode.parsers.odl import parse_odl, load_cparser
+from ode.parsers.sqlite_db import parse_sql
 from ode.helpers.mft import live_hive
 from ode.helpers import pandastablepatch
 from ode.helpers import ScrollableNotebookpatch
@@ -67,7 +68,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.03.10"
+__version__ = "2023.05.05"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -407,8 +408,9 @@ class preferences:
 
 
 class hive:
-    def __init__(self, root):
+    def __init__(self, root, sql=False):
         self.root = root
+        self.sql = sql
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         self.win.title("Load User Hive")
@@ -475,7 +477,8 @@ class hive:
                                                          "*.dat"),))
         if reghive:
             self.win.destroy()
-            root.wait_window(rec_bin(root).win)
+            if not self.sql:
+                root.wait_window(rec_bin(root).win)
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
@@ -1126,7 +1129,7 @@ class about:
                                 foreground='#0563C1', cursor="hand2",
                                 justify="left", anchor='w')
         self.text = tk.Text(self.frame, width=27, height=8, wrap=tk.WORD)
-        line = "GUI based application for reconstructing the folder structure of OneDrive from <UserCid>.dat"
+        line = "GUI based application for reconstructing the folder structure of OneDrive"
         self.text.insert(tk.END, line)
         self.text.config(state='disable')
         self.scrollbv = ttk.Scrollbar(self.frame, orient="vertical",
@@ -1860,6 +1863,7 @@ def live_system(menu):
     btn.configure(state="disabled")
     d = {}
     dat = re.compile(r'/Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\settings')
+    sql_dir = re.compile(r'/Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
     log_dir = re.compile(r'/Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\logs$')
     rootDir = r'/'
     pb.configure(mode='indeterminate')
@@ -1868,16 +1872,23 @@ def live_system(menu):
     for path, subdirs, files in os.walk(rootDir):
         dat_find = re.findall(dat, path)
         log_find = re.findall(log_dir, path)
+        sql_find = re.findall(sql_dir, path)
         if path == '/$Recycle.Bin':
             recbin = path
+
         if dat_find:
             for name in files:
                 if '.dat' in name:
                     d.setdefault(dat_find[0], {})
                     d[dat_find[0]].setdefault('files', []).append(os.path.join(path, name))
+
         if log_find:
             d.setdefault(log_find[0], {})
             d[log_find[0]].setdefault('logs', []).append(path)
+
+        if sql_find:
+            d.setdefault(sql_find[0][0], {})
+            d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
 
     for key, value in d.items():
         filenames = []
@@ -1886,7 +1897,7 @@ def live_system(menu):
                 filenames = v
 
             if len(filenames) != 0:
-                logging.info(f'Parsing OneDrive data for {key}')
+                logging.info(f'Parsing OneDrive dat for {key}')
                 menubar.entryconfig("File", state="disabled")
                 menubar.entryconfig("Options", state="disabled")
                 menubar.entryconfig("View", state="disabled")
@@ -1902,6 +1913,26 @@ def live_system(menu):
                 for filename in filenames:
                     x = menu.entrycget(0, "label")
                     start_parsing(x, filename, reghive, recbin)
+
+            if k == 'sql':
+                logging.info(f'Parsing OneDrive SQLite for {key}')
+                menubar.entryconfig("File", state="disabled")
+                menubar.entryconfig("Options", state="disabled")
+                menubar.entryconfig("View", state="disabled")
+                menubar.entryconfig("Help", state="disabled")
+                search_entry.configure(state="disabled")
+                btn.configure(state="disabled")
+
+                if not reghive:
+                    value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
+                    pb.configure(mode='indeterminate')
+                    pb.start()
+                    reghive = live_hive(key)
+                    pb.configure(mode='determinate')
+
+                for account, sql_dir in v.items():
+                    x = 'Load from SQLite'
+                    start_parsing(x, sql_dir, reghive)
 
     if menu_data['odl'] is True:
         menubar.entryconfig("File", state="disabled")
@@ -1994,6 +2025,21 @@ def open_dat(menu):
     reghive = ''
     recbin = ''
 
+def read_sql(menu):
+    global reghive
+    folder_name = filedialog.askdirectory(initialdir="/", title="Open")
+    
+    if folder_name:
+        if keyboard.is_pressed('shift') or menu_data['hive']:
+            pass
+        else:
+            root.wait_window(hive(root, sql=True).win)
+
+        x = menu.entrycget(1, "label")
+        threading.Thread(target=start_parsing,
+                         args=(x, folder_name, reghive,),
+                         daemon=True).start()
+    reghive = ''
 
 def import_json(menu):
     filename = filedialog.askopenfile(initialdir="/",
@@ -2002,7 +2048,7 @@ def import_json(menu):
                                                   "*.json"),))
 
     if filename:
-        x = menu.entrycget(1, "label")
+        x = menu.entrycget(2, "label")
         threading.Thread(target=start_parsing,
                          args=(x, filename,),
                          daemon=True).start()
@@ -2015,7 +2061,7 @@ def import_csv(menu):
                                                   "*.csv"),))
 
     if filename:
-        x = menu.entrycget(2, "label")
+        x = menu.entrycget(3, "label")
         threading.Thread(target=start_parsing,
                          args=(x, filename,),
                          daemon=True).start()
@@ -2195,6 +2241,18 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
                                      pb=pb, value_label=value_label)
         dat = True
 
+    if x == 'Load from SQLite':
+        filename = filename.replace('/', '\\')
+        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
+        sql_find = re.findall(sql_dir, filename)
+        try:
+            name = f'{sql_find[0][0]}_{sql_find[0][1]}'
+        except Exception:
+            name = 'SQLite_DB'
+        df, rbin_df = parse_sql(filename, reghive)
+        
+        dat = True
+ 
     if x == 'Import JSON':
         cache = json.load(filename)
         df = pd.DataFrame()
@@ -2948,6 +3006,7 @@ file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow
 del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_trashcan.png'))
 load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/repeat_green.png'))
 live_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/computer_desktop.png'))
+sql_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/IDI_DB4S-1.png'))
 json_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded.png'))
 csv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table.png'))
 uaf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/delete_red.png'))
@@ -3148,6 +3207,9 @@ odsmenu.add_command(label="Load <UserCid>.dat" + (' '*10),
                     image=load_img, compound='left',
                     command=lambda: open_dat(odsmenu),
                     accelerator="Ctrl+O")
+odsmenu.add_command(label="Load from SQLite",
+                    image=sql_img, compound='left',
+                    command=lambda: read_sql(odsmenu))
 odsmenu.add_command(label="Import JSON", image=json_img,
                     compound='left', command=lambda: import_json(odsmenu))
 odsmenu.add_command(label="Import CSV", image=csv_img, compound='left',
