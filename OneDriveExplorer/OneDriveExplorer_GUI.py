@@ -40,7 +40,7 @@ from ode.helpers.mft import live_hive
 from ode.helpers import pandastablepatch
 from ode.helpers import ScrollableNotebookpatch
 from ode.utils import schema
-from ode.helpers.AnimatedGif import *
+from ode.helpers.AnimatedGif import AnimatedGif
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # Per monitor DPI aware. This app checks for the DPI when it is
@@ -68,7 +68,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.05.05"
+__version__ = "2023.07.05"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 found = []
@@ -1079,8 +1079,8 @@ class help:
         self.frame.grid(row=0, column=0)
         self.label1.grid(row=0, column=0, padx=(10, 30), pady=(5, 0), sticky='w')
         self.label2.grid(row=1, column=0, padx=(10, 30), sticky='w')
-        self.label3.grid(row=1, column=0, padx=(10, 30), sticky='w')
-        self.label4.grid(row=2, column=0, padx=(10, 30), pady=(0, 20), sticky='w')
+        self.label3.grid(row=2, column=0, padx=(10, 30), sticky='w')
+        self.label4.grid(row=3, column=0, padx=(10, 30), pady=(0, 20), sticky='w')
         self.sync_windows()
 
     def sync_windows(self, event=None):
@@ -1728,126 +1728,56 @@ def ff_count(f, folder_count=0, file_count=0):
 
 def parent_child(d, parent_id=None):
     if parent_id is None:
-        # This line is only for the first call of the function
-        parent_id = tv.insert("",
-                              "end",
-                              image=root_drive_img,
-                              text=d['Name'],
-                              values=('',
-                                      '',
-                                      d['ParentId'],
-                                      d['DriveItemId'],
-                                      d['eTag'],
-                                      d['Name'],
-                                      d['Type'],
-                                      d['Size'],
-                                      d['Hash'],
-                                      len(d['Children']),
-                                      d['Path']))
+        parent_values = (
+            '',
+            '',
+            d['ParentId'],
+            d['DriveItemId'],
+            d['eTag'],
+            d['Name'],
+            d['Type'],
+            d['Size'],
+            d['Hash'],
+            len(d['Children']),
+            d['Path']
+        )
+        parent_id = tv.insert("", "end", image=root_drive_img, text=d['Name'], values=parent_values)
 
     for c in d['Children']:
-        # Here we create a new row object in the TreeView and pass its return value for recursion
-        # The return value will be used as the argument for the first parameter of this same line of code after recursion
-        if c['Type'] == 'Folder':
+        if c['Type'] in type_mapping:
+            img, *values, tags, insert = type_mapping[c['Type']]
             folder_count, file_count = ff_count(c['Children'])
-            parent_child(c, tv.insert(parent_id,
-                                      0,
-                                      image=folder_img,
-                                      text=c['Name'],
-                                      values=(folder_count,
-                                              file_count,
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path'])))
-        elif c['Type'] == 'Root Default':
-            parent_child(c, tv.insert(parent_id,
-                                      0,
-                                      image=default_img,
-                                      text=c['Name'],
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path'])))
-        elif c['Type'] == 'Root Shared':
-            parent_child(c, tv.insert(parent_id,
-                                      "end",
-                                      image=shared_img,
-                                      text=c['Name'],
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path'])))
-        elif c['Type'] == 'Root Deleted':
-            parent_child(c, tv.insert(parent_id,
-                                      "end",
-                                      image=del_img,
-                                      text=c['Name'],
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path']),
-                                      tags='red'))
-        elif c['Type'] == 'File - deleted':
-            parent_child(c, tv.insert(parent_id,
-                                      "end",
-                                      image=file_img,
-                                      text=c['Name'],
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path'],
-                                              c['DeleteTimeStamp']),
-                                      tags='red'))
+            values = (
+                folder_count,
+                file_count,
+                c['ParentId'],
+                c['DriveItemId'],
+                c['eTag'],
+                c['Name'],
+                c['Type'],
+                c['Size'],
+                c['Hash'],
+                len(c['Children']),
+                c['Path'],
+                *values
+            )
+            parent_child(c, tv.insert(parent_id, insert, image=img, text=c['Name'], values=values, tags=tags))
         else:
-            parent_child(c, tv.insert(parent_id,
-                                      "end",
-                                      image=file_img,
-                                      text=c['Name'],
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path'])))
+            values = (
+                '',
+                '',
+                c['ParentId'],
+                c['DriveItemId'],
+                c['eTag'],
+                c['Name'],
+                c['Type'],
+                c['Size'],
+                c['Hash'],
+                len(c['Children']),
+                c['Path']
+            )
+            parent_child(c, tv.insert(parent_id, "end", image=file_img, text=c['Name'], values=values))
+
         root.update_idletasks()
 
 
@@ -3042,6 +2972,14 @@ desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_sort_
 
 pandastablepatch.asc_img = asc_img
 pandastablepatch.desc_img = desc_img
+
+type_mapping = {
+    'Folder': (folder_img, '', '', '', '', '', '', '', '', 0),
+    'Root Default': (default_img, '', '', '', '', '', '', '', '', 0),
+    'Root Shared': (shared_img, '', '', '', '', '', '', '', '', 'end'),
+    'Root Deleted': (del_img, '', '', '', '', '', '', '', 'red', 'end'),
+    'File - deleted': (file_img, '', '', '', '', '', '', '', 'red', 'end'),
+}
 
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)

@@ -6,11 +6,8 @@ Released under the terms of the MIT license (https://opensource.org/licenses/MIT
 """
 import sys
 import time
-try:
-    import Tkinter as tk  # for Python2
-except ImportError:
-    import tkinter as tk  # for Python3
-    from tkinter import ttk
+import tkinter as tk  # for Python3
+from tkinter import ttk
 
 
 class AnimatedGif(tk.Label):

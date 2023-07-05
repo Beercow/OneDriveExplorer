@@ -30,6 +30,7 @@ import urllib.request
 from zipfile import ZipFile
 import hashlib
 import logging
+from Registry import Registry
 from importlib.util import spec_from_loader, module_from_spec
 from importlib.machinery import SourceFileLoader
 
@@ -111,6 +112,18 @@ def update_from_repo(gui=False):
 
     if gui:
         input('\n\nPress any key to exit')
+
+
+def parse_reg(reghive, account, df):
+    reg_handle = Registry.Registry(reghive)
+    int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
+
+    od_keys = reg_handle.open(f'SOFTWARE\\Microsoft\\OneDrive\\Accounts\\{account}\\Tenants')
+
+    for providers in int_keys.subkeys():
+        df.loc[(df.DriveItemId == providers.name().split('+')[0]), ['Name']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
+
+    return df, od_keys
 
 
 def find_parent(x, id_name_dict, parent_dict):

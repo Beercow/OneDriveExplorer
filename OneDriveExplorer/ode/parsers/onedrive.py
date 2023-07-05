@@ -24,9 +24,8 @@
 
 import logging
 import pandas as pd
-from Registry import Registry
 import ode.parsers.recbin as find_deleted
-from ode.utils import find_parent
+from ode.utils import find_parent, parse_reg
 
 log = logging.getLogger(__name__)
 
@@ -58,13 +57,7 @@ def parse_onedrive(df, account=False, reghive=False, recbin=False, gui=False, pb
 
     if reghive:
         try:
-            reg_handle = Registry.Registry(reghive)
-            int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
-
-            od_keys = reg_handle.open(f'SOFTWARE\\Microsoft\\OneDrive\\Accounts\\{account}\\Tenants')
-
-            for providers in int_keys.subkeys():
-                df.loc[(df.DriveItemId == providers.name().split('+')[0]), ['Name']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
+            df, od_keys = parse_reg(reghive, account, df)
 
             if recbin:
                 rbin = find_deleted.find_deleted(recbin, od_keys, account,

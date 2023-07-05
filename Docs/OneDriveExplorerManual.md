@@ -314,6 +314,13 @@ A user registry hive can be supplied with the `-r` argument. This will resolve s
 # Creating CStructs
 
 # Version changes
+## v2023.07.05
+### Fixed 
+#### GUI
+* Help dialog
+#### GUI/commandline
+* SQL is now read-only (fixes errors and is more forensically sound)
+* Code clean up
 ## v2023.05.05
 ### Added
 #### commandline/GUI
