@@ -120,7 +120,7 @@ def getFileMetadata(iName, files, od_keys, account):
     fileHeader = int(str(struct.unpack_from('<q', fileRecord[0:])[0]))
 
     if (fileHeader == 2):
-        fileSize = int(str(struct.unpack_from('<q', fileRecord[8:])[0]))
+        fileSize = f"{int(str(struct.unpack_from('<q', fileRecord[8:])[0]))//1024 + 1:,} KB"
         deleteTimeStamp = int(str(struct.unpack_from('<q', fileRecord[16:])[0])[0:11]) - 11644473600
         fileNameLength = int(str(struct.unpack_from('<l', fileRecord[24:])[0]))
         nameLength = "<" + str(fileNameLength * 2) + "s"
@@ -129,7 +129,7 @@ def getFileMetadata(iName, files, od_keys, account):
         path = fileName.rsplit('\\', 1)[0]
 
     else:
-        fileSize = int(str(struct.unpack_from('<q', fileRecord[8:])[0]))
+        fileSize = f"{int(str(struct.unpack_from('<q', fileRecord[8:])[0]))//1024 + 1:,} KB"
         deleteTimeStamp = int(str(struct.unpack_from('<q', fileRecord[16:])[0])[0:11]) - 11644473600
         fileName = str(struct.unpack_from('<520s', fileRecord[24:])[0]).decode('utf-16').rstrip('\u0000')
         name = fileName.split('\\')[-1]
@@ -151,7 +151,7 @@ def getFileMetadata(iName, files, od_keys, account):
                              'eTag': '',
                              'Type': 'File - deleted',
                              'Name': name,
-                             'Size': fileSize.st_size,
+                             'Size': f'{fileSize.st_size//1024 +1} KB',
                              'Hash': hash,
                              'Path': f'{fileName}{path}',
                              'DeleteTimeStamp': from_unix_sec(deleteTimeStamp),

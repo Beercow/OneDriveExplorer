@@ -8,7 +8,7 @@ import uuid
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
-from ode.parsers.dat import parse_dat
+from ode.parsers.dat_new import parse_dat
 from ode.parsers.onedrive import parse_onedrive
 from ode.parsers.odl import parse_odl, load_cparser
 from ode.parsers.sqlite_db import parse_sql
@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.07.05"
+__version__ = "2023.09.07"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 
@@ -198,7 +198,7 @@ def main():
         d = {}
         hive = re.compile(r'\\Users\\(?P<user>.*)?')
         dat = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\settings')
-        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
+        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>Personal|Business[0-9])$')
         log_dir = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\logs$')
         rootDir = args.dir
         spinner = spinning_cursor()
@@ -237,7 +237,7 @@ def main():
             if sql_find:
                 d.setdefault(sql_find[0][0], {})
                 d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
-   
+        print(d)
         for key, value in d.items():
             filenames = []
             for k, v in value.items():
@@ -270,7 +270,6 @@ def main():
                             logging.warning(f'Unable to parse {name} sqlite database.')
                         else:
                             output()
-                        
 
         if args.logs:
             load_cparser(args.cstructs)

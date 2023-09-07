@@ -123,6 +123,11 @@ def parse_reg(reghive, account, df):
     for providers in int_keys.subkeys():
         df.loc[(df.DriveItemId == providers.name().split('+')[0]), ['Name']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
 
+    try:
+        reghive.seek(0)
+    except Exception:
+        pass
+
     return df, od_keys
 
 

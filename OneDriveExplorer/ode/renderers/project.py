@@ -63,16 +63,31 @@ def load_project(zip_name, q, stop_event):
     q.put(['done'])
 
 
-def save_project(tv, zip_name, user_logs, pb, value_label):
+def save_project(tv, file_items, zip_name, user_logs, pb, value_label):
     def find_children(item=''):
         children = tv.get_children(item)
         for child in children:
             row = tv.item(child)['values']
-            row.pop(0)
-            row.pop(0)
-            row.pop(7)
-            if row[4] != 'Root Deleted':
+            if row[6] == 'File - deleted':
+                row.pop(0)
+                row.pop(0)
+                row.pop(7)
+                row.insert(7, '')
+                row.insert(7, '')
+                row.insert(7, '')
                 csvwriter.writerow(row)
+            elif row[6] != 'Root Deleted':
+                row.pop(0)
+                row.pop(0)
+                row.pop(10)
+                csvwriter.writerow(row)
+            if child in file_items:
+                for i in file_items[child]:
+                    row = tv.item(i)['values']
+                    row.pop(0)
+                    row.pop(0)
+                    row.pop(10)
+                    csvwriter.writerow(row)
             find_children(item=child)
 
     pb.configure(mode='indeterminate')
@@ -85,12 +100,12 @@ def save_project(tv, zip_name, user_logs, pb, value_label):
             row = tv.item(i)['values']
             row.pop(0)
             row.pop(0)
-            row.pop(7)
+            row.pop(10)
             filename = row[3].split('\\')[-1].split('.')[0] + '_OneDrive.csv'
             value_label['text'] = f"Saving {filename} to {zip_name}. Please wait...."
             log.info(f'Saving {filename} to {zip_name}.')
             csvwriter = csv.writer(string_buffer, delimiter=',')
-            csvwriter.writerow(["ParentId", "DriveItemId", "eTag", "Name", "Type", "Size", "Hash", "Path", 'DeleteTimeStamp'])
+            csvwriter.writerow(["ParentId", "DriveItemId", "eTag", "Name", "Type", "Size", "Hash", "Status", "Date_modified", "Shared", "Path", 'DeleteTimeStamp'])
             find_children(item=i)
             archive.writestr(filename, string_buffer.getvalue())
             string_buffer.truncate(0)

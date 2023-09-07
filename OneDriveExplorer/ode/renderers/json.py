@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 
 def print_json(df, rbin_df, name, pretty, json_path):
-    log.info(f'Started writing JSON file')
+    log.info('Started writing JSON file')
 
     if not os.path.exists(json_path):
         os.makedirs(json_path)
@@ -46,16 +46,17 @@ def print_json(df, rbin_df, name, pretty, json_path):
     df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
 
     for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
-        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Children'))
-
+        file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Status', 'Date_modified', 'Shared', 'Children'))
         if row['Type'] == 'File':
             folder = cache.setdefault(row['ParentId'], {})
             folder.setdefault('Children', []).append(file)
+        elif row['Type'] == 'File - deleted':
+            file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'DeleteTimeStamp', 'Children'))
+            is_del.append(file)
         else:
             folder = cache.get(row['DriveItemId'], {})
             temp = {**file, **folder}
             folder_merge = cache.setdefault(row['ParentId'], {})
-
             if 'Root' in row['Type']:
                 final.insert(0, temp)
             else:
@@ -70,9 +71,12 @@ def print_json(df, rbin_df, name, pretty, json_path):
              'eTag': '',
              'Type': 'Root Drive',
              'Path': '',
-             'Name': name,
+             'Name': name.replace('/', '\\'),
              'Size': '',
              'Hash': '',
+             'Status': '',
+             'Date_modified': '',
+             'Shared': '',
              'Children': ''
              }
 
@@ -84,6 +88,7 @@ def print_json(df, rbin_df, name, pretty, json_path):
                'Name': 'Deleted Files',
                'Size': '',
                'Hash': '',
+               'DeleteTimeStamp': '',
                'Children': ''
                }
 
@@ -117,7 +122,7 @@ def print_json(df, rbin_df, name, pretty, json_path):
 
 
 def print_json_gui(cache, name, pretty, json_path):
-    log.info(f'Started writing JSON file')
+    log.info('Started writing JSON file')
 
     if not os.path.exists(json_path):
         os.makedirs(json_path)

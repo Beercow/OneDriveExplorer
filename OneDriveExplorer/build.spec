@@ -21,6 +21,7 @@ OneDriveExplorer_pyz = PYZ(OneDriveExplorer_a.pure, OneDriveExplorer_a.zipped_da
              cipher=block_cipher)
 
 OneDriveExplorer_a.datas += [('ode\\helpers\\schema', './ode\\helpers\\schema', 'DATA')]
+OneDriveExplorer_a.datas += [('ode\\helpers\\structures', './ode\\helpers\\structures', 'DATA')]
 
 OneDriveExplorer_exe = EXE(OneDriveExplorer_pyz,
           OneDriveExplorer_a.scripts,
@@ -68,6 +69,7 @@ OneDriveExplorer_GUI_splash = Splash('Images\\splashv.png',
 
 OneDriveExplorer_GUI_a.datas += Tree('./Images', prefix='Images')
 OneDriveExplorer_GUI_a.datas += [('ode\\helpers\\schema', './ode\\helpers\\schema', 'DATA')]
+OneDriveExplorer_GUI_a.datas += [('ode\\helpers\\structures', './ode\\helpers\\structures', 'DATA')]
 
 OneDriveExplorer_GUI_exe = EXE(OneDriveExplorer_GUI_pyz,
           OneDriveExplorer_GUI_a.scripts,

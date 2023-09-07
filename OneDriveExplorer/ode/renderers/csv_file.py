@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 
 def print_csv(df, rbin_df, name, csv_path, csv_name=False):
-    log.info(f'Started writing CSV file')
+    log.info('Started writing CSV file')
 
     if not os.path.exists(csv_path):
         os.makedirs(csv_path)

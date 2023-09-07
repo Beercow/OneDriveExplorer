@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 
 def print_html(df, rbin_df, name, html_path):
-    log.info(f'Started writing HTML file')
+    log.info('Started writing HTML file')
 
     if not os.path.exists(html_path):
         os.makedirs(html_path)
@@ -44,7 +44,6 @@ def print_html(df, rbin_df, name, html_path):
 
     if not rbin_df.empty:
         rbin_df = rbin_df.drop(['Children', 'Level'], axis=1)
-#        rbin_df['Name'] = rbin_df.apply(lambda row: row['Name'].encode('cp1252').decode('utf-8'), axis=1)
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
     df = df.fillna('')

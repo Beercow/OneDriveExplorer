@@ -1,0 +1,485 @@
+typedef struct _HEADER {
+    uint32    Version;
+    uint32    unknown;
+    uint32    unknown1;
+    char      syncTokenData[516]; // Applies to personal accounts only
+    uint32    syncTokenData_size;
+    uint32    unknown2;
+}  HEADER;
+
+typedef struct _DAT_BLOCK{
+    char data_block[BLOCK_CONSTANT];
+} DAT_BLOCK;
+
+typedef struct _DAT_FILE_v29{
+    uint32    header; // 01 = File
+    uint32    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint64    unknown3;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown5;
+    uint16    fileStatus;
+    char      unknown6[FILE_CONSTANT];
+} DAT_FILE_v29;
+
+typedef struct _DAT_FILE_v2a{
+    uint32    header; // 01 = File
+    uint32    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint64    unknown3;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown5;
+    uint16    fileStatus;
+    char      unknown6[FILE_CONSTANT];
+} DAT_FILE_v2a;
+
+typedef struct _DAT_FILE_v2b{
+    uint32    header; // 01 = File
+    uint32    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint64    unknown3;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown5;
+    uint16    fileStatus;
+    char      unknown6[FILE_CONSTANT];
+} DAT_FILE_v2b;
+
+typedef struct _DAT_FILE_v2c{
+    uint32    header; // 01 = File
+    uint32    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v2c;
+
+typedef struct _DAT_FILE_v2d{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v2d;
+
+typedef struct _DAT_FILE_v2e{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v2e;
+
+typedef struct _DAT_FILE_v2f{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v2f;
+
+typedef struct _DAT_FILE_v30{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v30;
+
+typedef struct _DAT_FILE_v31{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v31;
+
+typedef struct _DAT_FILE_v32{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v32;
+
+typedef struct _DAT_FILE_v33{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v33;
+
+typedef struct _DAT_FILE_v34{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    char      unknown7[FILE_CONSTANT];
+} DAT_FILE_v34;
+
+typedef struct _DAT_FILE_v35{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    uint8     unknown7;
+    uint32    unknown8;
+    uint64    serverSize;
+    uint64    serverLastChange;
+    char      serverHashDigest[20];
+    uint64    unknown9;
+    char      localWaterlineData[27];
+    char      unknown10[49];
+    uint32    spoPermissions;
+    char      localWriteValidationToken[20];
+    char      localCobaltHashAlgorithm[20];
+    char      localSyncTokenData[24];
+    char      unknown11[FILE_CONSTANT];
+    uint32    mediaDateTaken;
+    uint64    unknown12;
+    uint32    unknown13;
+    uint32    mediaWidth;
+    uint32    mediaHeight;
+} DAT_FILE_v35;
+
+typedef struct _DAT_FILE_v36{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint32    unknown3;
+    uint32    bitMask;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint8     unknown6;
+    uint16    fileStatus;
+    uint8     unknown7;
+    uint32    unknown8;
+    uint64    serverSize;
+    uint64    serverLastChange;
+    char      serverHashDigest[20];
+    uint64    unknown9;
+    char      localWaterlineData[27];
+    char      unknown10[49];
+    uint32    spoPermissions;
+    char      localWriteValidationToken[20];
+    char      localCobaltHashAlgorithm[20];
+    char      localSyncTokenData[24];
+    char      unknown11[FILE_CONSTANT];
+    uint32    mediaDateTaken;
+    uint64    unknown12;
+    uint32    unknown13;
+    uint32    mediaWidth;
+    uint32    mediaHeight;
+} DAT_FILE_v36;
+
+typedef struct _DAT_FILE{
+    uint64    header; // 01 = File
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint64    unknown3;
+    char      localHashDigest[20]; // quickXor, SHA1
+    uint32    unknown4;
+    uint32    lastChange;
+    uint32    unknown5;
+    uint64    size;
+    wchar     fileName[260];
+    uint16    fileStatus;
+    char      unknown6[50];
+    char      localWaterlineData[27];
+    char      unknown7[49];
+    uint32    spoPermissions;
+    char      localWriteValidationToken[20];
+    char      localCobaltHashAlgorithm[20];
+    char      unknown8[FILE_CONSTANT];
+} DAT_FILE;
+
+typedef struct _DAT_FOLDER_v29_v2c{
+    uint32    header; // 02 = Folder
+    uint32    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint64    unknown3;
+    wchar     folderName[260];
+    uint32    jumpLinkType;
+    char      parentScopeID[40];
+    uint8     folderStatus;
+    uint8     unknown4;
+    uint8     syncChildrenFiles;
+    uint8     unknown5;
+    uint8     spoPermissions;
+    uint8     unknown6;
+    uint8     unknown7;
+    uint8     unknown8;
+    uint8     unknown9;
+    char      unknown10[FOLDER_CONSTANT];
+} DAT_FOLDER_v29_v2c;
+
+typedef struct _DAT_FOLDER_v2d_v36{
+    uint64    header; // 02 = Folder
+    uint64    entry_offset;
+    uint64    unknown1;
+    char      resourceID[39];
+    char      parentResourceID[39];
+    char      eTag[56];
+    uint16    unknown2;
+    uint64    volumeID;
+    uint64    itemIndex;
+    uint64    unknown3;
+    wchar     folderName[260];
+    uint32    jumpLinkType;
+    char      parentScopeID[40];
+    uint8     folderStatus;
+    uint8     unknown4;
+    uint8     syncChildrenFiles;
+    uint8     unknown5;
+    uint8     spoPermissions;
+    uint8     unknown6;
+    uint8     unknown7;
+    uint8     unknown8;
+    uint8     unknown9;
+    char      unknown10[FOLDER_CONSTANT];
+} DAT_FOLDER_v2d_v36;
+
+typedef struct _DAT_DELETED{
+    uint64    header; // 03 = Deleted
+    uint64    entry_offset;
+    char      unknown[DELETE_CONSTANT];
+} DAT_DELETED;
+
+typedef struct _DAT_LIBRARY_SCOPE{
+    uint64    header; // 09 = LibraryScope
+    uint64    entry_offset;
+    uint32    unknown1;
+    uint32    unknown2;
+    char      scopeID[39];
+    char      unknown3[117];
+    uint32    unknown4;
+    char      siteID[39]; // The SiteId is the unique GUID for the site collection.
+    char      webID[39]; // The WebId is the ID for a site (or subsite) in a site collection.
+    char      listID[39]; // Document library
+    char      unknown5[15];
+    char      syncTokenData[516];
+    uint32    syncTokenData_size;
+    uint32    spoPermissions;
+    char      unknown6[LSCOPE_CONSTANT];
+} DAT_LIBRARY_SCOPE;
+
+typedef struct _DAT_LIBRARY_FOLDER{
+    uint64    header; // 0A = libraryFolder
+    uint64    entry_offset;
+    uint32    unknown1;
+    uint32    unknown2;
+    char      listID[38];
+    char      unknown4[122];
+    char      listID[39]; // Document library
+    char      unknown5[LFOLDER_CONSTANT];
+} DAT_LIBRARY_FOLDER;
+
+typedef struct _DAT_VAULT{
+    uint64    header; // 0B = Unknown
+    uint64    entry_offset;
+    uint32    unknown1;
+    uint32    unknown2;
+    char      resourceID[38];
+    char      unknown3[650];
+    uint64    shortcutVolumeID;
+    uint64    shortcutItemIndex;
+    char      unknown5[UNKNOWN_CONSTANT];
+} DAT_VAULT;

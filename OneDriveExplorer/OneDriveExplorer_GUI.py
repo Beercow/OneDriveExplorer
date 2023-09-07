@@ -14,6 +14,7 @@ import tkinter.font as tkFont
 import threading
 from queue import Queue
 from io import StringIO
+from collections import defaultdict
 import pandas as pd
 import numpy as np
 from pandastable import config
@@ -31,7 +32,7 @@ from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
 from ode.renderers.project import save_project
 from ode.renderers.project import load_project
-from ode.parsers.dat import parse_dat
+from ode.parsers.dat_new import parse_dat
 from ode.parsers.csv_file import parse_csv
 from ode.parsers.onedrive import parse_onedrive
 from ode.parsers.odl import parse_odl, load_cparser
@@ -68,11 +69,9 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.07.05"
+__version__ = "2023.09.07"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
-found = []
-detached_items = []
 user_logs = {}
 reghive = ''
 recbin = ''
@@ -238,7 +237,8 @@ class preferences:
                                      relief='groove',
                                      padding=5)
 
-        self.select_frame = ttk.LabelFrame(self.inner_frame, text="<UserCid>.dat output")
+        self.select_frame = ttk.LabelFrame(self.inner_frame,
+                                           text="<UserCid>.dat output")
         self.path_frame = ttk.Frame(self.inner_frame)
         self.hive_frame = ttk.Frame(self.inner_frame)
         self.odl_frame = ttk.LabelFrame(self.inner_frame,
@@ -927,7 +927,8 @@ class cstructs:
                                  pady=(0, 5), sticky='nw')
         self.function_list.grid(row=3, column=1, padx=(4, 0),
                                 pady=(0, 5), sticky='e')
-        self.fscrollbv.grid(row=3, column=2, padx=(0, 10), pady=(0, 5), sticky="nsew")
+        self.fscrollbv.grid(row=3, column=2,
+                            padx=(0, 10), pady=(0, 5), sticky="nsew")
         self.version_label.grid(row=4, column=0, padx=(10, 0),
                                 pady=(0, 5), sticky='w')
         self.entry3.grid(row=4, column=1, padx=(0, 10), columnspan=2,
@@ -945,9 +946,13 @@ class cstructs:
         self.sl.grid(row=0, column=1, sticky='ns')
         self.total.grid(row=0, column=2)
         self.sr.grid(row=0, column=3, sticky='ns')
-        self.btn.grid(row=7, column=1, columnspan=2, padx=10, pady=(0, 5), sticky='e')
+        self.btn.grid(row=7, column=1, columnspan=2,
+                      padx=10, pady=(0, 5), sticky='e')
 
-        ttk.Style().map('TEntry', foreground=[('disabled', ttk.Style().lookup('TEntry', 'foreground'))])
+        ttk.Style().map('TEntry',
+                        foreground=[('disabled',
+                                    ttk.Style().lookup('TEntry',
+                                                       'foreground'))])
 
         self.plugin_list.bind("<<ListboxSelect>>", self.selected_item)
         self.function_list.bind('<Button>', lambda a: "break")
@@ -1074,13 +1079,19 @@ class help:
         self.label1 = ttk.Label(self.frame, text="To load <UserCid>.dat, File -> OneDrive settings -> Load <UserCid>.dat", justify="left", anchor='w')
         self.label2 = ttk.Label(self.frame, text="Once <UserCid>.dat is loaded, OneDriveExplorer operates much like File Explorer.", justify="left", anchor='w')
         self.label3 = ttk.Label(self.frame, text="Context menu\nRight click on folder/file to export Name, Path, Details, etc.", justify="left", anchor='w')
-        self.label4 = ttk.Label(self.frame, text="For full details, see the included manual.", justify="left", anchor='w')
+        self.label4 = ttk.Label(self.frame, text="ODL logs\nTo enable parsing, Options -> Preferences -> Enable ODL log parsing.", justify="left", anchor='w')
+        self.label5 = ttk.Label(self.frame, text="Live System\nRun OneDriveExplorer as administrator to activate.", justify="left", anchor='w')
+        self.label6 = ttk.Label(self.frame, text="For full details, see the included manual.", justify="left", anchor='w')
 
         self.frame.grid(row=0, column=0)
-        self.label1.grid(row=0, column=0, padx=(10, 30), pady=(5, 0), sticky='w')
+        self.label1.grid(row=0, column=0,
+                         padx=(10, 30), pady=(5, 0), sticky='w')
         self.label2.grid(row=1, column=0, padx=(10, 30), sticky='w')
         self.label3.grid(row=2, column=0, padx=(10, 30), sticky='w')
-        self.label4.grid(row=3, column=0, padx=(10, 30), pady=(0, 20), sticky='w')
+        self.label4.grid(row=3, column=0, padx=(10, 30), sticky='w')
+        self.label5.grid(row=4, column=0, padx=(10, 30), sticky='w')
+        self.label6.grid(row=5, column=0,
+                         padx=(10, 30), pady=(0, 20), sticky='w')
         self.sync_windows()
 
     def sync_windows(self, event=None):
@@ -1182,7 +1193,6 @@ class sync_message:
         self.win.wm_transient(self.root)
         self.win.title("")
         self.win.iconbitmap(application_path + '/Images/favicon.ico')
-        self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.__callback)
@@ -1193,6 +1203,7 @@ class sync_message:
         new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
         #   setting new style
         set_window_long(hwnd, GWL_STYLE, new_style)
+        self.win.overrideredirect(1)
 
         reg_font = ("Segoe UI", 8, "normal")
         bold_font = ("Segoe UI", 16, "bold")
@@ -1213,7 +1224,8 @@ class sync_message:
         self.win.bind('<Configure>', self.sync_windows)
 
     def sync_windows(self, event=None):
-        if 'system' not in str(threading.enumerate()):
+        if len(threading.enumerate()) <= 3:
+            self.root.unbind("<Configure>")
             self.win.destroy()
         try:
             x = self.root.winfo_x()
@@ -1265,13 +1277,56 @@ class CustomText(tk.Text):
 
         count = tk.IntVar()
         while True:
-            index = self.search(pattern, "matchEnd","searchLimit",
+            index = self.search(pattern, "matchEnd", "searchLimit",
                                 count=count, regexp=regexp)
-            if index == "": break
-            if count.get() == 0: break # degenerate pattern which matches zero-length strings
+            if index == "":
+                break
+            if count.get() == 0:
+                break  # degenerate pattern which matches zero-length strings
             self.mark_set("matchStart", index)
             self.mark_set("matchEnd", "%s+%sc" % (index, count.get()))
             self.tag_add(tag, "matchStart", "matchEnd")
+
+
+class result:
+
+    def __init__(self, master, *args):
+        l = list(args[0])
+        l[0] = f'  Date modified: {args[0][0]}\n  Size: {args[0][1]}'
+        if args[0][6] == 'File - deleted':
+            l[0] = f'  DeleteTimeStamp: {args[0][11]}\n  Size: {args[0][1]}'
+        values = tuple(l)
+        if args[0][6] == 'File':
+            if args[0][9] == '2':
+                if args[0][11] == '1':
+                    tvr.insert("", "end", image=available_shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+                else:
+                    tvr.insert("", "end", image=available_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+            elif args[0][9] == '5':
+                if args[0][11] == '1':
+                    tvr.insert("", "end", image=excluded_shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+                else:
+                    tvr.insert("", "end", image=excluded_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+            elif args[0][9] == '8':
+                if args[0][11] == '1':
+                    tvr.insert("", "end", image=online_shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+                else:
+                    tvr.insert("", "end", image=online_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+
+            else:  # needs image big file
+                if args[0][11] == '1':
+                    tvr.insert("", "end", image=shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+                else:
+                    tvr.insert("", "end", image=file_big_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+
+        elif args[0][6] == 'File - deleted':
+            tvr.insert("", "end", image=file_del_big_img, text=f'  {args[0][5]}\n  {args[0][10]}', values=values, tags='red')
+
+        else:
+            if args[0][9] == '5':
+                tvr.insert("", "end", image=excluded_directory_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+            else:
+                tvr.insert("", "end", image=online_directory_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
 
 
 def showtip(text, widget, flip=False, single=False):
@@ -1455,7 +1510,7 @@ def ButtonNotebook():
         try:
             index = widget.index("@%d,%d" % (x, y))
             if index == 0:
- #               widget.state(['invalid'])
+                # widget.state(['invalid'])
                 return
         except Exception:
             return
@@ -1606,8 +1661,16 @@ def ButtonEntry(do_bind=False):
 
 def pane_config():
     bg = style.lookup('TFrame', 'background')
+    bgf = style.lookup('Treeview', 'background')
+    fgf = style.lookup('Treeview', 'foreground')
+
+    if not fgf:
+        fgf = 'black'
+
     pwv.config(background=bg, sashwidth=6)
-    pwh.config(background=bg, sashwidth=6)
+    pwh.config(background=bgf, sashwidth=2)
+    details.config(background=bgf, foreground=fgf)
+    style.configure('Result.Treeview', rowheight=40)
     ttk.Style().theme_use()
 
 
@@ -1628,6 +1691,10 @@ def fixed_map(option):
                  })]
                  )
 
+    style.layout("Treeview", [
+        ('Treeview.treearea', {'sticky': 'nswe'})
+    ])
+
     return [elm for elm in style.map("Treeview", query_opt=option)
             if elm[:2] != ("!disabled", "!selected")]
 
@@ -1635,55 +1702,55 @@ def fixed_map(option):
 def search(item=''):
     query = search_entry.get()
     if len(query) == 0:
-        found.append('0')
         return
+
     children = tv.get_children(item)
     for child in children:
-        for x in tv.item(child)['values']:
-            if query.lower() in str(x).lower():
-                tv.see(child)
-                tags = list(tv.item(child, 'tags'))
-                tags.append('yellow')
-                tv.item(child, tags=tags)
-                found.append(child)
+        if query.lower() in str(tv.item(child, 'values')).lower():
+            values = tv.item(child, 'values')
+            result(root, values)
+        if child in file_items:
+            for i in file_items[child]:
+                if query.lower() in str(tv.item(i, 'values')).lower():
+                    values = tv.item(i, 'values')
+                    result(root, values)
         search(item=child)
 
 
 def search_result():
-    if len(found) == 0:
-        d = tv.get_children()
-        for i in d:
-            detached_items.append(i)
-            tv.detach(i)
+    if len(search_entry.get()) == 0:
+        return
+    position = pwh.sash_coord(2)
+    pwh.remove(tv2)
+    pwh.remove(tab2)
+    pwh.add(result_frame, minsize=327, after=tv_pane_frame)
+    root.update_idletasks()
+    pwh.sash_place(1, x=position[0], y=position[1])
 
 
 def clear_search():
-    for item in infoFrame.winfo_children():
-        if '.!notebook2.!frame.' in str(item):
-            item.destroy()
-
-    root.update_idletasks()
-
-    for i in detached_items:
-        tv.reattach(i, '', "end")
-        close_children(i)
-    detached_items.clear()
-
-    for hit in found:
-        try:
-            tags = list(tv.item(hit, 'tags'))
-            tags = [x for x in tags if x == 'red']
-            tv.item(hit, tags=tags)
-        except Exception:
-            pass
-    found.clear()
-    if len(tv.selection()) > 0:
-        tv.selection_remove(tv.selection()[0])
+    position = None
+    children = tvr.get_children()
+    for child in children:
+        tvr.delete(child)
+    if len(pwh.panes()) == 3:
+        position = pwh.sash_coord(1)
+    pwh.remove(result_frame)
+    pwh.add(tv2, minsize=80, width=340, after=tv_pane_frame)
+    pwh.add(tab2, minsize=247, after=tv2)
+    if position:
+        pwh.sash_place(2, x=position[0], y=position[1])
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    details.config(state='disable')
 
 
 def clear_all():
     global proj_name
+    clear_search()
     tv.delete(*tv.get_children())
+    tv2.delete(*tv2.get_children())
+    tv3.delete(*tv3.get_children())
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
@@ -1710,6 +1777,15 @@ def json_count(item='', file_count=0, del_count=0, folder_count=0):
             file_count += 1
         if values[6] == 'File - deleted':
             del_count += 1
+        if child in file_items:
+            for i in file_items[child]:
+                values = tv.item(i, 'values')
+                if values[6] == 'Folder':
+                    folder_count += 1
+                if values[6] == 'File':
+                    file_count += 1
+                if values[6] == 'File - deleted':
+                    del_count += 1
         file_count, del_count, folder_count = json_count(item=child,
                                                          file_count=file_count,
                                                          del_count=del_count,
@@ -1726,64 +1802,155 @@ def ff_count(f, folder_count=0, file_count=0):
     return folder_count, file_count
 
 
+file_items = defaultdict(list)
+
+
 def parent_child(d, parent_id=None):
     if parent_id is None:
-        parent_values = (
-            '',
-            '',
-            d['ParentId'],
-            d['DriveItemId'],
-            d['eTag'],
-            d['Name'],
-            d['Type'],
-            d['Size'],
-            d['Hash'],
-            len(d['Children']),
-            d['Path']
-        )
-        parent_id = tv.insert("", "end", image=root_drive_img, text=d['Name'], values=parent_values)
+        # This line is only for the first call of the function
+        parent_id = tv.insert("",
+                              "end",
+                              image=root_drive_img,
+                              text=f" {d['Name']}",
+                              values=('',
+                                      '',
+                                      d['ParentId'],
+                                      d['DriveItemId'],
+                                      d['eTag'],
+                                      d['Name'],
+                                      d['Type'],
+                                      d['Size'],
+                                      d['Hash'],
+                                      d['Status'],
+                                      d['Date_modified'],
+                                      d['Shared'],
+                                      len(d['Children']),
+                                      d['Path']))
 
     for c in d['Children']:
-        if c['Type'] in type_mapping:
-            img, *values, tags, insert = type_mapping[c['Type']]
-            folder_count, file_count = ff_count(c['Children'])
-            values = (
-                folder_count,
-                file_count,
-                c['ParentId'],
-                c['DriveItemId'],
-                c['eTag'],
-                c['Name'],
-                c['Type'],
-                c['Size'],
-                c['Hash'],
-                len(c['Children']),
-                c['Path'],
-                *values
-            )
-            parent_child(c, tv.insert(parent_id, insert, image=img, text=c['Name'], values=values, tags=tags))
+        # Here we create a new row object in the TreeView and pass its return value for recursion
+        # The return value will be used as the argument for the first parameter of this same line of code after recursion
+        if c['Type'] == 'Folder':
+            parent_child(c, tv.insert(parent_id,
+                                      0,
+                                      image=folder_img,
+                                      text=f" {c['Name']}",
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              c['Status'],
+                                              c['Date_modified'],
+                                              c['Shared'],
+                                              len(c['Children']),
+                                              c['Path'])))
+        elif c['Type'] == 'Root Default':
+            parent_child(c, tv.insert(parent_id,
+                                      0,
+                                      image=default_img,
+                                      text=f" {c['Name']}",
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              c['Status'],
+                                              c['Date_modified'],
+                                              c['Shared'],
+                                              len(c['Children']),
+                                              c['Path'])))
+        elif c['Type'] == 'Root Shared':
+            parent_child(c, tv.insert(parent_id,
+                                      "end",
+                                      image=shared_img,
+                                      text=f" {c['Name']}",
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              c['Status'],
+                                              c['Date_modified'],
+                                              c['Shared'],
+                                              len(c['Children']),
+                                              c['Path'])))
+        elif c['Type'] == 'Root Deleted':
+            parent_child(c, tv.insert(parent_id,
+                                      "end",
+                                      image=del_img,
+                                      text=f" {c['Name']}",
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path']),
+                                      tags='red'))
+        elif c['Type'] == 'File - deleted':
+            parent_child(c, tv.insert(parent_id,
+                                      "end",
+                                      image=file_del_img,
+                                      text=f" {c['Name']}",
+                                      values=('',
+                                              '',
+                                              c['ParentId'],
+                                              c['DriveItemId'],
+                                              c['eTag'],
+                                              c['Name'],
+                                              c['Type'],
+                                              c['Size'],
+                                              c['Hash'],
+                                              len(c['Children']),
+                                              c['Path'],
+                                              c['DeleteTimeStamp']),
+                                      tags='red'))
         else:
-            values = (
-                '',
-                '',
-                c['ParentId'],
-                c['DriveItemId'],
-                c['eTag'],
-                c['Name'],
-                c['Type'],
-                c['Size'],
-                c['Hash'],
-                len(c['Children']),
-                c['Path']
-            )
-            parent_child(c, tv.insert(parent_id, "end", image=file_img, text=c['Name'], values=values))
-
+            iid = tv.insert(parent_id,
+                            "end",
+                            image=file_img,
+                            text=f" {c['Name']}",
+                            values=(c['Date_modified'],
+                                    c['Size'],
+                                    c['ParentId'],
+                                    c['DriveItemId'],
+                                    c['eTag'],
+                                    c['Name'],
+                                    c['Type'],
+                                    c['Size'],
+                                    c['Hash'],
+                                    c['Status'],
+                                    c['Date_modified'],
+                                    c['Shared'],
+                                    len(c['Children']),
+                                    c['Path']))
+            parent = tv.parent(iid)
+            file_items[parent].append(iid)
+            tv.detach(iid)
         root.update_idletasks()
 
 
 def live_system(menu):
     global reghive
     global recbin
+
     message.unbind('<Double-Button-1>', bind_id)
     menubar.entryconfig("File", state="disabled")
     menubar.entryconfig("Options", state="disabled")
@@ -1791,58 +1958,65 @@ def live_system(menu):
     menubar.entryconfig("Help", state="disabled")
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
-    d = {}
-    dat = re.compile(r'/Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\settings')
-    sql_dir = re.compile(r'/Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
-    log_dir = re.compile(r'/Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\logs$')
-    rootDir = r'/'
+
     pb.configure(mode='indeterminate')
     value_label['text'] = "Searching for OneDrive. Please wait..."
     pb.start()
-    for path, subdirs, files in os.walk(rootDir):
-        dat_find = re.findall(dat, path)
-        log_find = re.findall(log_dir, path)
-        sql_find = re.findall(sql_dir, path)
-        if path == '/$Recycle.Bin':
-            recbin = path
 
-        if dat_find:
-            for name in files:
-                if '.dat' in name:
-                    d.setdefault(dat_find[0], {})
-                    d[dat_find[0]].setdefault('files', []).append(os.path.join(path, name))
+    d = {}
+    users_folder = os.path.expandvars("%SystemDrive%\\Users\\")
+    rec_folder = os.path.expandvars("%SystemDrive%\\$Recycle.Bin\\")
+    user_folders = [folder for folder in os.listdir(users_folder) if os.path.isdir(os.path.join(users_folder, folder))]
 
-        if log_find:
-            d.setdefault(log_find[0], {})
-            d[log_find[0]].setdefault('logs', []).append(path)
+    settings_folders = []
+    logs_folders = []
 
-        if sql_find:
-            d.setdefault(sql_find[0][0], {})
-            d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
+    sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>Personal|Business[0-9])$')
+
+    if os.path.exists(rec_folder):
+        recbin = rec_folder
+
+    for user in user_folders:
+        settings_path = os.path.join(users_folder, user, "AppData\\Local\\Microsoft\\OneDrive\\settings")
+        logs_path = os.path.join(users_folder, user, "AppData\\Local\\Microsoft\\OneDrive\\logs")
+        if os.path.exists(settings_path):
+            for path, subdirs, files in os.walk(settings_path):
+                sql_find = re.findall(sql_dir, path)
+                if sql_find:
+                    d.setdefault(sql_find[0][0], {})
+                    d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
+                for name in files:
+                    if '.dat' in name:
+                        d.setdefault(user, {})
+                        d[user].setdefault('files', []).append(os.path.join(path, name))
+            settings_folders.append(settings_path)
+        if os.path.exists(logs_path):
+            d.setdefault(user, {})
+            d[user].setdefault('logs', []).append(logs_path)
+            logs_folders.append(logs_path)
 
     for key, value in d.items():
         filenames = []
+        value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
+        pb.configure(mode='indeterminate')
+        pb.start()
+        reghive = live_hive(key, os.path.splitdrive(os.path.join(users_folder, key))[1].replace('\\', '/'))
         for k, v in value.items():
             if k == 'files':
                 filenames = v
 
-            if len(filenames) != 0:
-                logging.info(f'Parsing OneDrive dat for {key}')
-                menubar.entryconfig("File", state="disabled")
-                menubar.entryconfig("Options", state="disabled")
-                menubar.entryconfig("View", state="disabled")
-                menubar.entryconfig("Help", state="disabled")
-                search_entry.configure(state="disabled")
-                btn.configure(state="disabled")
-                value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
-                pb.configure(mode='indeterminate')
-                pb.start()
-                reghive = live_hive(key)
-                pb.configure(mode='determinate')
+                if len(filenames) != 0:
+                    logging.info(f'Parsing OneDrive dat for {key}')
+                    menubar.entryconfig("File", state="disabled")
+                    menubar.entryconfig("Options", state="disabled")
+                    menubar.entryconfig("View", state="disabled")
+                    menubar.entryconfig("Help", state="disabled")
+                    search_entry.configure(state="disabled")
+                    btn.configure(state="disabled")
 
-                for filename in filenames:
-                    x = menu.entrycget(0, "label")
-                    start_parsing(x, filename, reghive, recbin)
+                    for filename in filenames:
+                        x = menu.entrycget(0, "label")
+                        start_parsing(x, filename, reghive, recbin)
 
             if k == 'sql':
                 logging.info(f'Parsing OneDrive SQLite for {key}')
@@ -1853,16 +2027,9 @@ def live_system(menu):
                 search_entry.configure(state="disabled")
                 btn.configure(state="disabled")
 
-                if not reghive:
-                    value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
-                    pb.configure(mode='indeterminate')
-                    pb.start()
-                    reghive = live_hive(key)
-                    pb.configure(mode='determinate')
-
                 for account, sql_dir in v.items():
                     x = 'Load from SQLite'
-                    start_parsing(x, sql_dir, reghive)
+                    start_parsing(x, sql_dir, reghive, recbin)
 
     if menu_data['odl'] is True:
         menubar.entryconfig("File", state="disabled")
@@ -1955,10 +2122,11 @@ def open_dat(menu):
     reghive = ''
     recbin = ''
 
+
 def read_sql(menu):
     global reghive
     folder_name = filedialog.askdirectory(initialdir="/", title="Open")
-    
+
     if folder_name:
         if keyboard.is_pressed('shift') or menu_data['hive']:
             pass
@@ -1970,6 +2138,7 @@ def read_sql(menu):
                          args=(x, folder_name, reghive,),
                          daemon=True).start()
     reghive = ''
+
 
 def import_json(menu):
     filename = filedialog.askopenfile(initialdir="/",
@@ -2179,10 +2348,11 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
             name = f'{sql_find[0][0]}_{sql_find[0][1]}'
         except Exception:
             name = 'SQLite_DB'
-        df, rbin_df = parse_sql(filename, reghive)
-        
+
+        df, rbin_df = parse_sql(filename, reghive, recbin, gui=True, pb=pb, value_label=value_label)
+
         dat = True
- 
+
     if x == 'Import JSON':
         cache = json.load(filename)
         df = pd.DataFrame()
@@ -2226,14 +2396,12 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
 
         for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
-            if 'DeleteTimeStamp' in df.columns:
-                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'DeleteTimeStamp', 'Children'))
-            else:
-                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Children'))
+            file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Status', 'Date_modified', 'Shared', 'Children'))
             if row['Type'] == 'File':
                 folder = cache.setdefault(row['ParentId'], {})
                 folder.setdefault('Children', []).append(file)
             elif row['Type'] == 'File - deleted':
+                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'DeleteTimeStamp', 'Children'))
                 is_del.append(file)
             else:
                 folder = cache.get(row['DriveItemId'], {})
@@ -2262,6 +2430,9 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
                  'Name': name.replace('/', '\\'),
                  'Size': '',
                  'Hash': '',
+                 'Status': '',
+                 'Date_modified': '',
+                 'Shared': '',
                  'Children': ''
                  }
 
@@ -2273,12 +2444,14 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
                    'Name': 'Deleted Files',
                    'Size': '',
                    'Hash': '',
+                   'DeleteTimeStamp': '',
                    'Children': ''
                    }
 
         if is_del:
             deleted['Children'] = is_del
             final.append(deleted)
+
         cache['Children'] = final
 
     if not df.empty or x == 'Import JSON':
@@ -2357,10 +2530,10 @@ def do_popup(event):
     exp_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hierarchy1_expanded.png'))
     col_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hierarchy1.png'))
     try:
-        curItem = tv.identify_row(event.y)
-        tv.selection_set(curItem)
-        opened = tv.item(curItem, 'open')
-        values = tv.item(curItem, 'values')
+        curItem = event.widget.identify_row(event.y)
+        event.widget.selection_set(curItem)
+        opened = event.widget.item(curItem, 'open')
+        values = event.widget.item(curItem, 'values')
         popup = tk.Menu(root, tearoff=0)
         copymenu = tk.Menu(root, tearoff=0)
 
@@ -2382,7 +2555,7 @@ def do_popup(event):
         copymenu.add_command(label="Path",
                              image=path_img,
                              compound='left',
-                             command=lambda: copy_path(values, curItem))
+                             command=lambda: copy_path(values))
         copymenu.add_command(label="Details",
                              image=details_img,
                              compound='left', command=lambda: copy_details())
@@ -2392,7 +2565,7 @@ def do_popup(event):
         else:
             popup.entryconfig("Copy", state='normal')
 
-        if values[6] == 'Folder' or 'Root' in values[6]:
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview' and (values[6] == 'Folder' or 'Root' in values[6]):
             popup.add_separator()
             popup.add_command(label="Expand folders",
                               image=exp_img, compound='left',
@@ -2416,6 +2589,7 @@ def do_popup(event):
 
 def del_folder(iid):
     global proj_name
+    clear_search()
     tv.delete(iid)
     details.config(state='normal')
     details.delete('1.0', tk.END)
@@ -2463,20 +2637,24 @@ def del_logs():
         proj_name = None
 
 
-def new_selection():
+def new_selection(event):
     global cur_sel
-    curItem = tv.selection()
-    selectItem()
+    curItem = event.widget.selection()
+
+    if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview':
+        file_pane()
+    selectItem(event)
 
     try:
-        if cur_sel == curItem[0]:
+        if cur_sel == f'{event.widget}{curItem[0]}':
             return
     except Exception:
         return
     else:
-        cur_sel = curItem[0]
+        cur_sel = f'{event.widget}{curItem[0]}'
 
         t1 = threading.Thread(target=get_info,
+                              args=(event,),
                               daemon=True)
 
         if 'get_info' not in str(threading.enumerate()):
@@ -2486,26 +2664,24 @@ def new_selection():
             stop.set()
 
 
-def selectItem():
-    curItem = tv.selection()
-    values = tv.item(curItem, 'values')
+def selectItem(event):
+    curItem = event.widget.selection()
+    values = event.widget.item(curItem, 'values')
     details.config(state='normal')
     details.delete('1.0', tk.END)
     try:
         if values[6] == 'Root Drive':
             line = f'Name: {values[5]}\nType: {values[6]}'
         elif values[6] == 'Root Shared' or values[6] == 'Root Default':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nDriveItemId: {values[3]}'
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[13]}\nDriveItemId: {values[3]}'
         elif values[6] == 'Folder':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[13]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag: {values[4]}'
         elif values[6] == 'Root Deleted':
             line = f'Name: {values[5]}\nType: {values[6]}'
         elif values[6] == 'File - deleted':
             line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nDeleteTimeStamp: {values[11]} UTC'
         else:
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag:{values[4]}'
-        if values[6] == 'Folder' or 'Root' in values[6]:
-            line += f'\n\n# Children: {values[9]}'
+            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[13]}\nSize: {values[7]}\nHash: {values[8]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag: {values[4]}'
         if 'deleted' in values[6].lower():
             details.insert(tk.END, line, 'red')
         else:
@@ -2517,10 +2693,76 @@ def selectItem():
     details.config(state='disable')
 
 
-def get_info():
-    df_list = []
+def file_pane():
     curItem = tv.selection()
-    values = tv.item(curItem, 'values')
+
+    for item in tv2.get_children():
+        tv2.delete(item)
+
+    for item in tv3.get_children():
+        tv3.delete(item)
+
+    for child in tv.get_children(curItem):
+        if tv.item(child)["tags"]:
+            tv2.insert("", "end", image=tv.item(child)["image"],
+                       text=f' {tv.item(child)["text"]}', values=tv.item(child)["values"], tags=tv.item(child)["tags"][0])
+        else:
+            tv2.insert("", "end", image=tv.item(child)["image"],
+                       text=f' {tv.item(child)["text"]}', values=tv.item(child)["values"])
+
+        if 'deleted' in tv.item(child, 'values')[6].lower():
+            tv3.insert("", "end", values=tv.item(child)["values"])
+
+        elif tv.item(child, 'values')[9] == '5':
+            tv3.insert("", "end", image=excluded_img, values=tv.item(child)["values"])
+
+        else:
+            tv3.insert("", "end", image=online_img, text=tv.item(child, 'values')[9], values=tv.item(child)["values"])
+    try:
+        if curItem[0] in file_items:
+            for i in file_items[curItem[0]]:
+                tv2.insert("", "end", image=tv.item(i)["image"],
+                           text=f' {tv.item(i)["text"]}', values=tv.item(i)["values"])
+
+                if tv.item(i, 'values')[9] == '2':
+                    if tv.item(i, "values")[11] == '1':
+                        tv3.insert("", "end", image=available_shared_img,
+                                   values=tv.item(i)["values"])
+                    else:
+                        tv3.insert("", "end", image=available_img,
+                                   values=tv.item(i)["values"])
+                elif tv.item(i, 'values')[9] == '5':
+                    if tv.item(i, "values")[11] == '1':
+                        tv3.insert("", "end", image=excluded_shared_img,
+                                   values=tv.item(i)["values"])
+                    else:
+                        tv3.insert("", "end", image=excluded_img,
+                                   values=tv.item(i)["values"])
+                elif tv.item(i, 'values')[9] == '8':
+                    if tv.item(i, "values")[11] == '1':
+                        tv3.insert("", "end", image=online_shared_img,
+                                   values=tv.item(i)["values"])
+                    else:
+                        tv3.insert("", "end", image=online_img,
+                                   values=tv.item(i)["values"])
+                else:
+                    if tv.item(i, "values")[11] == '1':
+                        tv3.insert("", "end", image=onedrive_shared_img, text=tv.item(i, 'values')[9],
+                                   values=tv.item(i)["values"])
+                    else:
+
+                        tv3.insert("", "end", text=tv.item(i, 'values')[9],
+                                   values=tv.item(i)["values"])
+    except Exception:
+        pass
+
+    root.update_idletasks()
+
+
+def get_info(event):
+    df_list = []
+    curItem = event.widget.selection()
+    values = event.widget.item(curItem, 'values')
     for item in root.winfo_children():
         for i in item.winfo_children():
             if '!mytable' in str(i):
@@ -2555,13 +2797,14 @@ def get_info():
 
     # find logs for files
     if f'{values[6]}' != 'File - deleted' and len(values[3]) != 0:
-        info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[3]}', case=False, na=False)] for df in df_list])
+        info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[3].split("+")[0]}', case=False, na=False)] for df in df_list])
 
     if len(info) == 0 or stop.is_set():
         infoNB.tab(infoFrame, text="Log Entries")
-        if tv.selection()[0] != curItem[0]:
+        if event.widget.selection()[0] != curItem[0]:
             stop.clear()
             threading.Thread(target=get_info,
+                             args=(event,),
                              daemon=True).start()
         return
 
@@ -2582,6 +2825,7 @@ def get_info():
         if tv.selection()[0] != curItem[0]:
             stop.clear()
             threading.Thread(target=get_info,
+                             args=(event,),
                              daemon=True).start()
     infoNB.tab(infoFrame, text="Log Entries")
 
@@ -2603,14 +2847,8 @@ def copy_details():
     root.clipboard_append(details.get("1.0", tk.END))
 
 
-def copy_path(values, curItem):
-    parentiid = tv.parent(curItem)
-    file_name = tv.item(curItem, 'text')
-    while parentiid != '':
-        file_name = tv.item(parentiid, 'text')
-        parentiid = tv.parent(parentiid)
-
-    line = f'{file_name}: {values[10]}\\{values[5]}'
+def copy_path(values):
+    line = f'{values[5]}: {values[13]}\\{values[5]}'
     root.clipboard_clear()
     root.clipboard_append(line)
 
@@ -2628,10 +2866,8 @@ def rebind():
 
 def log_tab():
     if tv_frame.index("current") != 0:
-        pwh.remove(tabControl)
         pwv.remove(infoNB)
     else:
-        pwh.add(tabControl, width=400)
         pwv.add(infoNB, minsize=100)
 
 
@@ -2743,7 +2979,7 @@ def saveAs_proj(filename=None):
     if filename:
         proj_name = filename
         threading.Thread(target=save_project,
-                         args=(tv, filename, user_logs, pb, value_label,),
+                         args=(tv, file_items, filename, user_logs, pb, value_label,),
                          daemon=True).start()
 
         projmenu.entryconfig("Unload", state='normal')
@@ -2809,8 +3045,48 @@ def click(event):
         clear_search()
 
 
+def handle_click(event):
+    if tv2.identify_region(event.x, event.y) == "separator":
+        return "break"
+
+
+def multiple_yview(*args):
+    tv2.yview(*args)
+    tv3.yview(*args)
+
+
+def multiple_yview_scroll(event):
+    if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame2.!treeview':
+        tv2.yview_scroll(-1 * int(event.delta / 120), "units")
+    if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!treeview':
+        tv3.yview_scroll(-1 * int(event.delta / 120), "units")
+
+
+def multiple_select(event):
+    try:
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!treeview':
+            curItem = tv2.selection()
+            curItem2 = tv3.selection()
+            if not curItem2:
+                curItem2 = ('0',)
+            if curItem[0] != curItem2[0]:
+                tv3.selection_set(curItem[0])
+
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame2.!treeview':
+            curItem = tv3.selection()
+            curItem2 = tv2.selection()
+            if not curItem2:
+                curItem2 = ('0',)
+            if curItem[0] != curItem2[0]:
+                tv2.selection_set(curItem[0])
+            new_selection(event)
+
+    except Exception:
+        pass
+
+
 def sync():
-    global cstruct_df
+#    global cstruct_df
     if getattr(sys, 'frozen', False):
         t1 = threading.Thread(target=os.system,
                               args=("OneDriveExplorer.exe --sync --gui",),
@@ -2821,20 +3097,34 @@ def sync():
                               daemon=True)
 
     t1.start()
-    sync_message(root)
+    root.after(200, check_if_ready, t1, "s")
 
-    while 'system' in str(threading.enumerate()):
-        root.update()
 
-    cstruct_df = load_cparser(args.cstructs)
+def check_if_ready(thread, t_string):
+    global cstruct_df
+    if thread.is_alive():
+        # not ready yet, run the check again soon
+        root.after(200, check_if_ready, thread, t_string)
+    else:
+        if t_string == "ts":
+            search_result()
+        if t_string == "s":
+            cstruct_df = load_cparser(args.cstructs)
+
+
+def thread_search():
+    clear_search()
+    t1 = threading.Thread(target=search, daemon=True)
+    t1.start()
+    root.after(200, check_if_ready, t1, "ts")
 
 
 root = ThemedTk()
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
 root.iconbitmap(application_path + '/Images/OneDrive.ico')
-root.geometry('835x600')
-root.minsize(835, 500)
+root.geometry('1440x880')
+root.minsize(40, 40)
 root.protocol("WM_DELETE_WINDOW", lambda: quit(root))
 
 default_font = str(menu_data['font'])
@@ -2846,12 +3136,16 @@ root.tk.call('tk', 'fontchooser', 'configure', '-font', default_font,
              '-command', root.register(font_changed))
 
 style = ttk.Style()
-
+style.configure('Result.Treeview', rowheight=40)
 style.map("Treeview",
           foreground=fixed_map("foreground"),
           background=fixed_map("background"))
 
 bg = style.lookup('TFrame', 'background')
+bgf = style.lookup('Treeview', 'background')
+fgf = style.lookup('Treeview', 'foreground')
+if not fgf:
+    fgf = 'black'
 
 images = (
     tk.PhotoImage("img_close", data='''
@@ -2933,6 +3227,7 @@ shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yell
 folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/directory_closed.png'))
 folderop_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/directory_open.png'))
 file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow.png'))
+file_del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_delete.png'))
 del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_trashcan.png'))
 load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/repeat_green.png'))
 live_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/computer_desktop.png'))
@@ -2966,20 +3261,30 @@ cstruct_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_co
 question_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question_small.png'))
 ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode.png'))
 ode_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode_small.png'))
-
+online_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online-8.png'))
+online_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_directory.png'))
+online_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_file.png'))
+online_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online-shared.png'))
+online_shared_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_shared_directory.png'))
+online_shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_shared_file.png'))
+available_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available-8.png'))
+available_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available-shared.png'))
+available_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available_file.png'))
+available_shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available_shared_file.png'))
+file_del_big_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_delete_big.png'))
+file_big_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_big.png'))
 asc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_sort_asc.png'))
 desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_sort_desc.png'))
+onedrive_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/shared-8.png'))
+shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/shared_file.png'))
+excluded_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded-10.png'))
+excluded_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_shared.png'))
+excluded_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_directory.png'))
+excluded_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_file.png'))
+excluded_shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_shared_file.png'))
 
 pandastablepatch.asc_img = asc_img
 pandastablepatch.desc_img = desc_img
-
-type_mapping = {
-    'Folder': (folder_img, '', '', '', '', '', '', '', '', 0),
-    'Root Default': (default_img, '', '', '', '', '', '', '', '', 0),
-    'Root Shared': (shared_img, '', '', '', '', '', '', '', '', 'end'),
-    'Root Deleted': (del_img, '', '', '', '', '', '', '', 'red', 'end'),
-    'File - deleted': (file_img, '', '', '', '', '', '', '', 'red', 'end'),
-}
 
 root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
@@ -3003,10 +3308,10 @@ main_frame.grid_columnconfigure(0, weight=1)
 bottom_frame.grid_rowconfigure(0, weight=1)
 bottom_frame.grid_columnconfigure(0, weight=1)
 
-pwv = tk.PanedWindow(main_frame, orient=tk.VERTICAL, background=bg, sashwidth=6)
-pwh = tk.PanedWindow(main_frame, orient=tk.HORIZONTAL, background=bg, sashwidth=6)
+pwv = tk.PanedWindow(main_frame, orient=tk.VERTICAL,
+                     background=bg, sashwidth=6)
 
-columns = ('folder_count', 'file_count')
+columns = ('Date_modified', 'Size')
 
 tv_frame = ScrollableNotebookpatch.MyScrollableNotebook(main_frame,
                                                         wheelscroll=True,
@@ -3016,36 +3321,58 @@ tv_frame.enable_traversal()
 tv_inner_frame = ttk.Frame(tv_frame)
 tv_frame.add(tv_inner_frame, text='OneDrive Folders  ')
 
-tv = ttk.Treeview(tv_inner_frame,
-                  columns=columns,
+pwh = tk.PanedWindow(tv_inner_frame, orient=tk.HORIZONTAL,
+                     background=bgf, sashwidth=2)
+
+tv_pane_frame = ttk.Frame(pwh)
+
+tv = ttk.Treeview(tv_pane_frame,
                   selectmode='browse',
                   takefocus='false')
 tv.heading('#0', text=' Path', anchor='w')
-tv.heading('folder_count', text=' # folders', anchor='w')
-tv.heading('file_count', text=' # files', anchor='w')
-tv.column('#0', minwidth=300, width=300, stretch=True, anchor='w')
-tv.column('folder_count', minwidth=60, width=60, stretch=False, anchor='e')
-tv.column('file_count', minwidth=55, width=55, stretch=False, anchor='e')
+tv.column('#0', minwidth=40, width=250, stretch=True, anchor='w')
+
 
 find_frame = ttk.Frame(tv_inner_frame)
 
 find_frame.grid_columnconfigure(0, weight=1)
 
-search_entry = ttk.Entry(find_frame, width=30, exportselection=0, style='CustomEntry')
+search_entry = ttk.Entry(find_frame, width=30,
+                         exportselection=0, style='CustomEntry')
 btn = ttk.Button(find_frame,
                  text="Find",
                  image=search_img,
                  takefocus=False,
                  compound='right',
-                 command=lambda: [clear_search(), search(), search_result()])
+                 command=lambda: [thread_search(), sync_message(root)])
 search_entry.configure(state="disabled")
 btn.configure(state="disabled")
 
-scrollbv = ttk.Scrollbar(tv_inner_frame, orient="vertical", command=tv.yview)
-scrollbh = ttk.Scrollbar(tv_inner_frame, orient="horizontal", command=tv.xview)
-tabControl = ttk.Notebook()
-tab1 = ttk.Frame(tabControl)
-tabControl.add(tab1, text='Details')
+scrollbv = ttk.Scrollbar(tv_pane_frame, orient="vertical", command=tv.yview)
+scrollbh = ttk.Scrollbar(tv_pane_frame, orient="horizontal", command=tv.xview)
+
+tv2 = ttk.Treeview(pwh,
+                   selectmode='browse',
+                   takefocus='false')
+tv2.heading('#0', text=' Name', anchor='w')
+tv2.column('#0', minwidth=80, width=340, stretch=True, anchor='w')
+
+tab2 = ttk.Frame(pwh)
+tv3 = ttk.Treeview(tab2,
+                   columns=columns,
+                   selectmode='browse',
+                   takefocus='false')
+tv3.heading('#0', text=' Status', anchor='w')
+tv3.heading('Date_modified', text=' Date_modified', anchor='w')
+tv3.heading('Size', text=' Size', anchor='w')
+tv3.column('#0', minwidth=80, width=100, stretch=False, anchor='w')
+tv3.column('Date_modified', minwidth=80, width=180, stretch=False, anchor='w')
+tv3.column('Size', minwidth=70, width=80, stretch=False, anchor='e')
+
+fscrollbv = ttk.Scrollbar(tab2, orient="vertical", command=multiple_yview)
+tv2.configure(yscrollcommand=fscrollbv.set)
+tv3.configure(yscrollcommand=fscrollbv.set)
+
 value_label = ttk.Label(bottom_frame, text='')
 pb = ttk.Progressbar(bottom_frame, orient='horizontal',
                      length=160, mode='determinate')
@@ -3055,39 +3382,62 @@ message = ttk.Label(bottom_frame, text=0, background='red',
 sr = ttk.Separator(bottom_frame, orient='vertical')
 sg = ttk.Sizegrip(bottom_frame)
 
-details = tk.Text(tab1, font=default_font, undo=False, width=50, state='disable')
+details = tk.Text(pwh, font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, width=50, state='disable')
 details.tag_configure('red', foreground="red")
 tv.configure(yscrollcommand=scrollbv.set, xscrollcommand=scrollbh.set)
 tv.tag_configure('yellow', background="yellow", foreground="black")
 tv.tag_configure('red', foreground="red")
+tv2.tag_configure('red', foreground="red")
 
-tabControl.grid_rowconfigure(0, weight=1)
-tabControl.grid_columnconfigure(0, weight=1)
-tab1.grid_rowconfigure(0, weight=1)
-tab1.grid_columnconfigure(0, weight=1)
+tv_pane_frame.grid_rowconfigure(0, weight=1)
+tv_pane_frame.grid_columnconfigure(0, weight=1)
+tab2.grid_rowconfigure(0, weight=1)
+tab2.grid_columnconfigure(0, weight=1)
 
 tv_inner_frame.grid_rowconfigure(1, weight=1)
 tv_inner_frame.grid_columnconfigure(0, weight=1)
 
-pwh.add(tv_frame, minsize=435)
-pwh.add(tabControl, minsize=400)
+result_frame = ttk.Frame(pwh)
+
+result_frame.grid_rowconfigure(0, weight=1)
+result_frame.grid_columnconfigure(0, weight=1)
+
+tvr = ttk.Treeview(result_frame,
+                   columns=('_'),
+                   selectmode='browse',
+                   takefocus='false',
+                   show="tree",
+                   style='Result.Treeview')
+tvr.heading('#0', text='', anchor='w')
+tvr.heading('_', text='', anchor='w')
+tvr.column('_', stretch=False)
+tvr.grid(row=0, column=0, sticky="nsew")
+tvr.tag_configure('red', foreground="red")
+rscrollbv = ttk.Scrollbar(result_frame, orient="vertical", command=tvr.yview)
+tvr.configure(yscrollcommand=rscrollbv.set)
+pwh.add(tv_pane_frame, minsize=40, width=250)
+pwh.add(tv2, minsize=80, width=340)
+pwh.add(tab2, minsize=247)
+pwh.add(details, minsize=20)
 
 infoNB = ttk.Notebook()
 infoFrame = ttk.Frame(infoNB)
 infoNB.add(infoFrame, text='Log Entries')
 
-pwv.add(pwh, minsize=100)
+pwv.add(tv_frame, minsize=100)
 pwv.add(infoNB, minsize=100)
 
 search_entry.grid(row=0, column=0, sticky="e", padx=5)
 btn.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 
 pwv.grid(row=0, column=0, sticky="nsew")
+pwh.grid(row=1, column=0, sticky="nsew")
 find_frame.grid(row=0, column=0, sticky='ew')
-tv.grid(row=1, column=0, sticky="nsew")
-scrollbv.grid(row=1, column=1, sticky="nsew")
-scrollbh.grid(row=2, column=0, sticky="nsew")
-details.grid(row=0, column=0, sticky="nsew")
+tv.grid(row=0, column=0, sticky="nsew")
+scrollbv.grid(row=0, column=1, sticky="nsew")
+tv3.grid(row=0, column=0, sticky="nsew")
+fscrollbv.grid(row=0, column=1, sticky="nsew")
+rscrollbv.grid(row=0, column=1, sticky="nsew")
 
 value_label.grid(row=0, column=0, sticky='se')
 pb.grid(row=0, column=1, padx=5, sticky='se')
@@ -3097,10 +3447,20 @@ sr.grid(row=0, column=4, padx=(1, 2), sticky='nse')
 sg.grid(row=0, column=5, sticky='se')
 
 
-tv.bind('<<TreeviewSelect>>', lambda event=None: new_selection())
+tv.bind('<<TreeviewSelect>>', new_selection)
+tv.bind('<Button-1>', lambda event=None: clear_search())
+tv2.bind('<<TreeviewSelect>>', multiple_select)
+tv3.bind('<<TreeviewSelect>>', multiple_select)
 tv.bind("<Button-3>", do_popup)
+tv2.bind("<Button-3>", do_popup)
+tv3.bind("<Button-3>", do_popup)
+tvr.bind('<<TreeviewSelect>>', new_selection)
 tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
 tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
+tv2.bind('<Button-1>', handle_click)
+tv2.bind('<Motion>', handle_click)
+tv2.bind('<MouseWheel>', multiple_yview_scroll)
+tv3.bind('<MouseWheel>', multiple_yview_scroll)
 root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
 root.bind('<Control-m>', lambda event=None: messages(root))
 root.bind('<Alt-KeyPress-0>', lambda event=None: clear_all())
@@ -3108,10 +3468,9 @@ root.bind('<Alt-KeyPress-2>', lambda event=None: load_proj())
 root.bind('<Alt-s>', lambda event=None: save_proj())
 root.bind('<<NotebookTabChanged>>', lambda event=None: log_tab())
 search_entry.bind('<Return>',
-                  lambda event=None: [clear_search(), search(), search_result()])
+                  lambda event=None: [thread_search(), sync_message(root)])
 search_entry.bind('<KeyRelease>', click)
 bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
-tabControl.bind('<Motion>', motion)
 infoNB.bind('<Motion>', motion)
 search_entry.bind('<Motion>', motion)
 root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', motion)
@@ -3214,7 +3573,7 @@ options_menu.add_cascade(label="Skins", image=skin_img,
                          compound='left', menu=submenu)
 options_menu.add_separator()
 options_menu.add_command(label="Sync with Github", image=sync_img,
-                         compound='left', command=lambda: sync())
+                         compound='left', command=lambda: [sync(), sync_message(root)])
 options_menu.add_separator()
 options_menu.add_command(label="Preferences", image=pref_img,
                          compound='left', command=lambda: preferences(root))

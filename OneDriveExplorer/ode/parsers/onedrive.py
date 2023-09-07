@@ -22,10 +22,12 @@
 # SOFTWARE.
 #
 
+#import ctypes
 import logging
 import pandas as pd
 import ode.parsers.recbin as find_deleted
 from ode.utils import find_parent, parse_reg
+#from ode.helpers.mft import live_hive
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +47,9 @@ def parse_onedrive(df, account=False, reghive=False, recbin=False, gui=False, pb
                  'Name': 'Shared with user',
                  'Size': '',
                  'Hash': '',
+                 'Status': '',
+                 'Date_modified': '',
+                 'Shared': '',
                  'Children': [],
                  'Level': 1
                  }
@@ -66,6 +71,12 @@ def parse_onedrive(df, account=False, reghive=False, recbin=False, gui=False, pb
                 rbin_df = pd.DataFrame.from_records(rbin)
 
         except Exception as e:
+#            if PermissionError and ctypes.windll.shell32.IsUserAnAdmin():
+#                value_label['text'] = f"Searching for {account}'s NTUSER.DAT. Please wait...."
+#                pb.configure(mode='indeterminate')
+#                pb.start()
+#                reghive = live_hive(account)
+#            else:
             log.warning(f'Unable to read registry hive! {e}')
             pass
 

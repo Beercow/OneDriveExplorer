@@ -143,8 +143,8 @@ def load_cparser(cstructs_dir=False, clist=False):
                 log.warning(f'Something went wrong loading {file}: {ex}')
                 continue
 
-    except Exception as ex:
-        log.warning(ex)
+    except Exception as e:
+        log.warning(f'{e}. Not needed but, to map ODL events, sync with GitHub to get cstruct files.')
 
     if not clist:
         try:

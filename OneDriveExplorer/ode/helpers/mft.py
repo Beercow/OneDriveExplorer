@@ -49,50 +49,38 @@ def directoryRecurse(directoryObject, parentPath, user, filedata=False):
 
             filepath = '/%s/%s' % ('/'.join(parentPath), entryObject.info.name.name.decode())
 
-            if f_type == pytsk3.TSK_FS_NAME_TYPE_DIR:
-                sub_directory = entryObject.as_directory()
-                parentPath.append(entryObject.info.name.name.decode())
-                filedata = directoryRecurse(sub_directory, parentPath, user, filedata=filedata)
-
-                if filedata:
-                    return filedata
-
-                parentPath.pop(-1)
-                if filepath == '//Users':
-                    break
-
-            elif f_type == pytsk3.TSK_FS_NAME_TYPE_REG and entryObject.info.meta.size != 0:
+            if f_type == pytsk3.TSK_FS_NAME_TYPE_REG and entryObject.info.meta.size != 0:
                 searchResult = re.match(b'NTUSER.DAT$', entryObject.info.name.name)
 
                 if not searchResult:
                     continue
 
-                if parentPath[0] == 'Users' and parentPath[1] == user:
-                    filepath = filepath.replace('/', '\\')
-                    log.info(f'File: {parentPath}, {filepath}, {entryObject.info.name.name.decode()}, {entryObject.info.meta.size}')
-                    filedata = entryObject.read_random(0, entryObject.info.meta.size)
-                    filedata = io.BytesIO(filedata)
-                    return filedata
-                    break
+                filepath = filepath.replace('/', '\\')
+                log.info(f'File: {parentPath}, {filepath}, {entryObject.info.name.name.decode()}, {entryObject.info.meta.size}')
+                filedata = entryObject.read_random(0, entryObject.info.meta.size)
+                filedata = io.BytesIO(filedata)
+                return filedata
+                break
 
             elif f_type == pytsk3.TSK_FS_NAME_TYPE_REG and entryObject.info.meta.size == 0:
                 pass
 
             else:
-                log.warning(f'This went wrong, {entryObject.info.name.name} {f_type}')
+                continue
+#                log.warning(f'This went wrong, {entryObject.info.name.name} {f_type}')
 
         except IOError as e:
             log.error(e)
             continue
 
 
-def live_hive(user):
+def live_hive(user, profile_path):
     for partition in partitionList:
         imagehandle = pytsk3.Img_Info('\\\\.\\'+partition.device.strip("\\"))
 
         if 'NTFS' in partition.fstype:
             log.info(partition)
             filesystemObject = pytsk3.FS_Info(imagehandle)
-            directoryObject = filesystemObject.open_dir(path=dirPath)
+            directoryObject = filesystemObject.open_dir(path=profile_path)
             data = directoryRecurse(directoryObject, [], user, filedata=filedata)
             return data

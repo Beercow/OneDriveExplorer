@@ -18,12 +18,13 @@ import codecs
 import pandas as pd
 import sqlite3
 from ode.utils import find_parent, parse_reg
+import ode.parsers.recbin as find_deleted
 
 
 log = logging.getLogger(__name__)
 
 
-def parse_sql(sql_dir, reghive=False):
+def parse_sql(sql_dir, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
     account = sql_dir.rsplit('\\', 1)[-1]
 
     log.info(f'Start parsing {account}. Registry hive: {reghive}')
@@ -35,21 +36,27 @@ def parse_sql(sql_dir, reghive=False):
             scope_df = pd.read_sql_query("SELECT scopeID FROM od_ScopeInfo_Records", SyncEngineDatabase)
             scope_df.rename(columns={"scopeID": "DriveItemId"}, inplace=True)
             scope_df.insert(0, 'ParentId', '')
-            scope_df.insert(2, 'eTage', '')
+            scope_df.insert(2, 'eTag', '')
             scope_df.insert(3, 'Type', 'Root Default')
             scope_df.insert(4, 'Name', 'User Folder')
             scope_df.insert(5, 'Size', '')
             scope_df.insert(6, 'Hash', '')
+            scope_df.insert(7, 'Status', '')
+            scope_df.insert(8, 'Date_modified', '')
+            scope_df.insert(9, 'Shared', '')
             scope_df['Children'] = [list() for x in range(len(scope_df.index))]
 
-            df_file = pd.read_sql_query("SELECT parentResourceID, resourceID, etag, fileName, size, localHashDigest FROM od_ClientFile_Records", SyncEngineDatabase)
+            df_file = pd.read_sql_query("SELECT parentResourceID, resourceID, etag, fileName, size, localHashDigest, fileStatus, lastChange, sharedItem FROM od_ClientFile_Records", SyncEngineDatabase)
 
             df_file.rename(columns={"parentResourceID": "ParentId",
                                     "resourceID": "DriveItemId",
                                     "etag": "eTag",
                                     "fileName": "Name",
                                     "size": "Size",
-                                    "localHashDigest": "Hash"
+                                    "localHashDigest": "Hash",
+                                    "fileStatus": "Status",
+                                    "lastChange": "Date_modified",
+                                    "sharedItem": "Shared"
                                     }, inplace=True)
 
             df_file.insert(3, 'Type', 'File')
@@ -60,20 +67,26 @@ def parse_sql(sql_dir, reghive=False):
             else:
                 df_file['Hash'] = df_file['Hash'].apply(lambda x: f'quickXor({codecs.encode(x, "base64").decode("utf-8").rstrip()})')
 
-            df_folder = pd.read_sql_query("SELECT parentResourceID, resourceID, etag, folderName FROM od_ClientFolder_Records", SyncEngineDatabase)
+            df_file['Size'] = df_file['Size'].apply(lambda x: f'{x//1024 + 1:,} KB')
+
+            df_folder = pd.read_sql_query("SELECT parentResourceID, resourceID, etag, folderName, folderStatus, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
 
             df_folder.rename(columns={"parentResourceID": "ParentId",
                                       "resourceID": "DriveItemId",
                                       "etag": "eTag",
-                                      "folderName": "Name"
+                                      "folderName": "Name",
+                                      "folderStatus": "Status",
+                                      "sharedItem": "Shared"
                                       }, inplace=True)
 
             df_folder.insert(3, 'Type', 'Folder')
             df_folder.insert(5, 'Size', '')
             df_folder.insert(6, 'Hash', '')
+            df_folder.insert(8, 'Date_modified', '')
             df_folder['Children'] = [list() for x in range(len(df_folder.index))]
 
             df = pd.concat([scope_df, df_folder, df_file], ignore_index=True, axis=0)
+            df['Date_modified'] = pd.to_datetime(df['Date_modified'], unit='s').astype(str)
 
         except Exception as e:
             log.warning(f'Unable to parse {sql_dir}\SyncEngineDatabase.db. {e}')
@@ -122,6 +135,14 @@ def parse_sql(sql_dir, reghive=False):
     if reghive:
         try:
             df, od_keys = parse_reg(reghive, account, df)
+
+            if recbin:
+                rbin = find_deleted.find_deleted(recbin, od_keys, account,
+                                                 gui=gui, pb=pb,
+                                                 value_label=value_label)
+                rbin_folder_df = pd.DataFrame.from_records(rbin)
+
+                rbin_df = pd.concat([rbin_df, rbin_folder_df], ignore_index=True, axis=0)
 
         except Exception as e:
             log.warning(f'Unable to read registry hive! {e}')

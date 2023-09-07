@@ -7,6 +7,7 @@
 2022-12-07 Rev. 2 - Updated for v2022.12.08  
 2023-03-10 Rev. 3 - Updated for v2023.03.10  
 2023-05-05 Rev. 4 - Updated for v2023.05.05  
+2023-09-07 Rev. 5 - Updated for v2023.09.07
 
 ## OneDriveExplorer GUI Introduction
 OneDriveExplorer GUI is used to view the contents of \<UserCid>.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.
@@ -18,10 +19,13 @@ After starting OneDriveExplorer, the main interface is displayed.
 Settings for themes, fonts, logs, output to csv, json, html are saved and reloaded between program executions. You can reset these options by deleting the ode.settings file.
 
 ### Interface sections
-There are four sections to the main interface.
+There are five sections to the main interface.
 
-#### OneDrive Folders
-On the left-hand side of the window is the OneDrive Folders tab. This tab displays the \<UserCid>.dat files that have been loaded and the folder structure of OneDrive. Once a \<UserCid>.dat file has been loaded and a folder/file has been selected, a context menu is available by right clicking on the folder/file. Context menu options will be discussed later.
+#### Navigation Pane
+On the left-hand side of the window is the navigation pane. This pane displays the \<UserCid>.dat and SQLite files that have been loaded and the folder structure of OneDrive. Once a \<UserCid>.dat and/or SQLite file has been loaded and a folder has been selected, a context menu is available by right clicking on the folder. Context menu options will be discussed later.
+
+#### File/Folder Pane
+The file/folder pane shows the contents of the folder selected in the navigation pane along with it's OneDrive status. Once a file/folder has been loaded and a folder has been selected, a context menu is available by right clicking on the file/folder. Context menu options will be discussed later.
 
 #### Details
 The Details pane shows detailed information about the folder/file selected. Information includes name, type, path, parentid, driveitemid, etag, and number of children.
@@ -160,7 +164,7 @@ Projects allow you to load one or more \<UserCid>.dat and log files; save the cu
 Selecting Folders/Files in OneDriveExplorer works much the same as it does in Windows Explorer. Clicking the small arrow to the left of the folder or double clicking the folder will expand that folder.
 
 ### Finding Folders/Files
-The top of the OneDrive Folders tab contains a simple entry box to enter text to find. If the text is found, the Folders/Files will be highlighted in yellow.
+The top of the OneDrive Folders tab contains a simple entry box to enter text to find. If the text is found, the Folders/Files will be populated in the middle pane.
 
 ![](.\manual\find.png)
 
@@ -314,13 +318,35 @@ A user registry hive can be supplied with the `-r` argument. This will resolve s
 # Creating CStructs
 
 # Version changes
+## v2023.09.07
+### Added
+#### GUI/commandline
+* New dat file parser
+* File/Folder status
+#### GUI
+* Updates to interface
+### Fixed 
+#### GUI
+* File count 0 on json import
+* NTUSER.DAT search performance
+* Double parsing dat file in live
+* Space missing from eTag in Details
+* Infinate loop when searching for logs in certain
+* Search box and details higlighting not taking
+* SQLite issues with live path variable messed up
+* Live Sysem does not need to be on the same drive as profiles
+#### GUI/commandline
+* Error handling for unknown dat version
+* cstruct warning clarified
+* Inconsistent size format with recbin
+* Convert SQLite timestamp to iso8601 format
 ## v2023.07.05
 ### Fixed 
 #### GUI
 * Help dialog
 #### GUI/commandline
 * SQL is now read-only (fixes errors and is more forensically sound)
-* Code clean up
+* Code cleanup
 ## v2023.05.05
 ### Added
 #### commandline/GUI
