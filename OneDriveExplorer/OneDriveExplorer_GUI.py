@@ -69,7 +69,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.09.07"
+__version__ = "2023.09.13"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -1944,7 +1944,7 @@ def parent_child(d, parent_id=None):
             parent = tv.parent(iid)
             file_items[parent].append(iid)
             tv.detach(iid)
-        root.update_idletasks()
+#        root.update_idletasks()
 
 
 def live_system(menu):
@@ -2459,7 +2459,9 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         pb.configure(mode='indeterminate')
         value_label['text'] = "Building tree. Please wait..."
         pb.start()
+        tv.grid_forget()
         parent_child(cache)
+        tv.grid(row=1, column=0, sticky="nsew")
         if x == 'Import JSON':
             curItem = tv.get_children()[-1]
             file_count, del_count, folder_count = json_count(item=curItem)
@@ -3326,7 +3328,10 @@ pwh = tk.PanedWindow(tv_inner_frame, orient=tk.HORIZONTAL,
 
 tv_pane_frame = ttk.Frame(pwh)
 
+tv_lable = ttk.Label(tv_pane_frame, text="Path",
+                     justify="left", anchor='w')
 tv = ttk.Treeview(tv_pane_frame,
+                  show="tree",
                   selectmode='browse',
                   takefocus='false')
 tv.heading('#0', text=' Path', anchor='w')
@@ -3389,7 +3394,7 @@ tv.tag_configure('yellow', background="yellow", foreground="black")
 tv.tag_configure('red', foreground="red")
 tv2.tag_configure('red', foreground="red")
 
-tv_pane_frame.grid_rowconfigure(0, weight=1)
+tv_pane_frame.grid_rowconfigure(1, weight=1)
 tv_pane_frame.grid_columnconfigure(0, weight=1)
 tab2.grid_rowconfigure(0, weight=1)
 tab2.grid_columnconfigure(0, weight=1)
@@ -3433,8 +3438,10 @@ btn.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 pwv.grid(row=0, column=0, sticky="nsew")
 pwh.grid(row=1, column=0, sticky="nsew")
 find_frame.grid(row=0, column=0, sticky='ew')
-tv.grid(row=0, column=0, sticky="nsew")
-scrollbv.grid(row=0, column=1, sticky="nsew")
+tv_lable.grid(row=0, column=0, sticky="nw")
+tv.grid(row=1, column=0, sticky="nsew")
+scrollbv.grid(row=0, column=1, rowspan=2, sticky="nsew")
+scrollbh.grid(row=2, column=0, sticky="nsew")
 tv3.grid(row=0, column=0, sticky="nsew")
 fscrollbv.grid(row=0, column=1, sticky="nsew")
 rscrollbv.grid(row=0, column=1, sticky="nsew")

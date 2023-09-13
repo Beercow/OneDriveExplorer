@@ -428,7 +428,11 @@ def process_odl(filename, map):
             odl['Timestamp'] = timestamp
             data = cparser.Data(f.read(data_block.data_len))
             params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
-            f.seek(- params_len, io.SEEK_CUR)
+            try:
+                f.seek(- params_len, io.SEEK_CUR)
+            except Exception:
+                log.error(f'Unable to parse {basename}. Something went wrong!')
+                return pd.DataFrame()
 
             if params_len:
                 try:
