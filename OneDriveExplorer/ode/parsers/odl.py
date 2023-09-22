@@ -59,7 +59,7 @@ headers = '''
 
 typedef struct _Odl_header{
     char    signature[8];  // EBFGONED
-    uint32    unk_version;
+    uint32    odl_version;
     uint32    unk1;
     uint64    unk2;
     uint32    unk3;
@@ -68,7 +68,7 @@ typedef struct _Odl_header{
     char      reserved[0x64];
 } Odl_header;
 
-typedef struct _Data_block{
+typedef struct _Data_block_V2{
     uint64    signature;  // CCDDEEFF00000000
     uint64    timestamp;
     uint32    unk1;
@@ -78,22 +78,43 @@ typedef struct _Data_block{
     uint32    unk5;
     uint32    data_len;
     uint32    unk6;
-} Data_block;
+    // followed by Data
+} Data_block_V2;
 
-typedef struct _Data{
+typedef struct _Data_block_V3{
+    uint64    signature;  // CCDDEEFF00000000
+    uint64    timestamp;
+    uint32    unk1;
+    uint32    unk2;
+    uint32    data_len;
+    uint32    unk3;
+    // followed by Data
+} Data_block_V3;
+
+typedef struct _Data_v2{
     uint32    code_file_name_len;
     char      code_file_name[code_file_name_len];
-    uint32    unknown;
+    uint32    flags;
     uint32    code_function_name_len;
     char      code_function_name[code_function_name_len];
-} Data;
+} Data_v2;
+
+typedef struct _Data_v3{
+    char      unk1_guid[16];
+    uint32    unk2;
+    uint32    unk3;
+    uint32    code_file_name_len;
+    char      code_file_name[code_file_name_len];
+    uint32    flags;
+    uint32    code_function_name_len;
+    char      code_function_name[code_function_name_len];
+} Data_v3;
 
 '''
 
 
 def load_cparser(cstructs_dir=False, clist=False):
     global cparser
-#    cparser = ''
     cparser = cstruct.cstruct()
     cparser.load(headers)
     yaml = YAML()
@@ -393,7 +414,11 @@ def process_odl(filename, map):
             return pd.DataFrame()
         else:
             f.seek(-8, 1)
-            data_block = f.read(56)  # odl complete header is 56 bytes
+            if header.odl_version == 3:
+                db_size = 32
+            else:
+                db_size = 56
+            data_block = f.read(db_size)  # odl complete header is 56 bytes
         while data_block:
             description = ''
             odl = {
@@ -421,13 +446,22 @@ def process_odl(filename, map):
                 'Param12': '',
                 'Param13': ''
             }
-            data_block = cparser.Data_block(data_block)
-            if data_block.data_len == 0 or data_block.signature != 0xffeeddcc:
+            if header.odl_version == 2:
+                data_block = cparser.Data_block_V2(data_block)
+            elif header.odl_version == 3:
+                data_block = cparser.Data_block_V3(data_block)
+            else:
+                log.error(f'Unknown odl_version = {header.odl_version}')
+            if data_block.signature != 0xffeeddcc:
                 return pd.DataFrame()
             timestamp = ReadUnixMsTime(data_block.timestamp)
             odl['Timestamp'] = timestamp
-            data = cparser.Data(f.read(data_block.data_len))
-            params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
+            if header.odl_version == 3:
+                data = cparser.Data_v3(f.read(data_block.data_len))
+                params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 36)
+            else:
+                data = cparser.Data_v2(f.read(data_block.data_len))
+                params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
             try:
                 f.seek(- params_len, io.SEEK_CUR)
             except Exception:
@@ -436,7 +470,7 @@ def process_odl(filename, map):
 
             if params_len:
                 try:
-                    structure = getattr(cparser, f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.unknown}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
+                    structure = getattr(cparser, f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
                     try:
                         params = structure(f.read(params_len))
                         if len(params) == 0:
@@ -461,9 +495,9 @@ def process_odl(filename, map):
                             except Exception:
                                 pass
                             params = ', '.join(params)
-                        description = ''.join([v for (k, v) in cparser.consts.items() if k == f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.unknown}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}_des"])
+                        description = ''.join([v for (k, v) in cparser.consts.items() if k == f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}_des"])
                     except EOFError:
-                        log.error(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.unknown}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
+                        log.error(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
                         f.seek(- params_len, 1)
                         params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map, dkey)
                 except AttributeError:
@@ -472,13 +506,13 @@ def process_odl(filename, map):
             else:
                 params = ''
             odl['Code_File'] = data.code_file_name.decode('utf8')
-            odl['Flags'] = data.unknown
+            odl['Flags'] = data.flags
             odl['Function'] = data.code_function_name.decode('utf8')
             odl['Description'] = description
             odl['Params'] = params
             odl_rows.append(odl)
             i += 1
-            data_block = f.read(56)
+            data_block = f.read(db_size)
     return pd.DataFrame.from_records(odl_rows)
 
 
