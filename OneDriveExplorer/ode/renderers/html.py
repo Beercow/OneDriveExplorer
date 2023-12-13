@@ -35,15 +35,12 @@ def print_html(df, rbin_df, name, html_path):
     if not os.path.exists(html_path):
         os.makedirs(html_path)
 
-    df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
+    df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+            ascending=[False, False, False, True, False, False])
 
-    try:
-        df = df.drop(['Children', 'Level', 'FileSort', 'FolderSort'], axis=1)
-    except KeyError:
-        df = df.drop(['Children', 'Level'], axis=1)
+    df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
 
     if not rbin_df.empty:
-        rbin_df = rbin_df.drop(['Children', 'Level'], axis=1)
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
     df = df.fillna('')

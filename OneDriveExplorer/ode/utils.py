@@ -134,7 +134,7 @@ def parse_reg(reghive, account, df):
 def find_parent(x, id_name_dict, parent_dict):
     value = parent_dict.get(x, None)
     if value is None:
-        return x
+        return x # may need to change to ''
     else:
         # Incase there is a id without name.
         if id_name_dict.get(value, None) is None:

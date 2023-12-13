@@ -35,15 +35,21 @@ def print_csv(df, rbin_df, name, csv_path, csv_name=False):
     if not os.path.exists(csv_path):
         os.makedirs(csv_path)
 
-    df = df.sort_values(by=['Level', 'ParentId', 'Type'], ascending=[True, False, False])
+    convert = {'fileStatus': 'Int64',
+               'volumeID': 'Int64',
+               'itemIndex': 'Int64',
+               'sharedItem': 'Int64',
+               'folderStatus': 'Int64'
+              }
 
-    try:
-        df = df.drop(['Children', 'Level', 'FileSort', 'FolderSort'], axis=1)
-    except KeyError:
-        df = df.drop(['Children', 'Level'], axis=1)
+    df = df.astype(convert)
+
+    df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+            ascending=[False, False, False, True, False, False])
+
+    df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
 
     if not rbin_df.empty:
-        rbin_df = rbin_df.drop(['Children', 'Level'], axis=1)
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"

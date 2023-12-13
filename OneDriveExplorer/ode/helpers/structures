@@ -28,7 +28,10 @@ typedef struct _DAT_FILE_v29{
     wchar     fileName[260];
     uint8     unknown5;
     uint16    fileStatus;
-    char      unknown6[FILE_CONSTANT];
+    uint8     unknown6;
+    char      unknown7[308];
+    uint32    spoPermissions;
+    char      unknown8[4];
 } DAT_FILE_v29;
 
 typedef struct _DAT_FILE_v2a{
@@ -48,7 +51,10 @@ typedef struct _DAT_FILE_v2a{
     wchar     fileName[260];
     uint8     unknown5;
     uint16    fileStatus;
-    char      unknown6[FILE_CONSTANT];
+    uint8     unknown6;
+    char      unknown7[308];
+    uint32    spoPermissions;
+    char      unknown8[36];
 } DAT_FILE_v2a;
 
 typedef struct _DAT_FILE_v2b{
@@ -68,7 +74,10 @@ typedef struct _DAT_FILE_v2b{
     wchar     fileName[260];
     uint8     unknown5;
     uint16    fileStatus;
-    char      unknown6[FILE_CONSTANT];
+    uint8     unknown6;
+    char      unknown7[308];
+    uint32    spoPermissions;
+    char      unknown8[36];
 } DAT_FILE_v2b;
 
 typedef struct _DAT_FILE_v2c{
@@ -91,7 +100,10 @@ typedef struct _DAT_FILE_v2c{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[44];
 } DAT_FILE_v2c;
 
 typedef struct _DAT_FILE_v2d{
@@ -114,7 +126,10 @@ typedef struct _DAT_FILE_v2d{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[44];
 } DAT_FILE_v2d;
 
 typedef struct _DAT_FILE_v2e{
@@ -137,7 +152,10 @@ typedef struct _DAT_FILE_v2e{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[68];
 } DAT_FILE_v2e;
 
 typedef struct _DAT_FILE_v2f{
@@ -160,7 +178,10 @@ typedef struct _DAT_FILE_v2f{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[68];
 } DAT_FILE_v2f;
 
 typedef struct _DAT_FILE_v30{
@@ -183,7 +204,10 @@ typedef struct _DAT_FILE_v30{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[92];
 } DAT_FILE_v30;
 
 typedef struct _DAT_FILE_v31{
@@ -206,7 +230,10 @@ typedef struct _DAT_FILE_v31{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[100];
 } DAT_FILE_v31;
 
 typedef struct _DAT_FILE_v32{
@@ -229,7 +256,10 @@ typedef struct _DAT_FILE_v32{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[100];
 } DAT_FILE_v32;
 
 typedef struct _DAT_FILE_v33{
@@ -252,7 +282,10 @@ typedef struct _DAT_FILE_v33{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[100];
 } DAT_FILE_v33;
 
 typedef struct _DAT_FILE_v34{
@@ -275,7 +308,10 @@ typedef struct _DAT_FILE_v34{
     wchar     fileName[260];
     uint8     unknown6;
     uint16    fileStatus;
-    char      unknown7[FILE_CONSTANT];
+    uint8     unknown7;
+    char      unknown8[308];
+    uint32    spoPermissions;
+    char      unknown9[100];
 } DAT_FILE_v34;
 
 typedef struct _DAT_FILE_v35{
@@ -308,9 +344,9 @@ typedef struct _DAT_FILE_v35{
     char      unknown10[49];
     uint32    spoPermissions;
     char      localWriteValidationToken[20];
-    char      localCobaltHashAlgorithm[20];
+    char      localCobaltHashDigest[20];
     char      localSyncTokenData[24];
-    char      unknown11[FILE_CONSTANT];
+    char      unknown11[212];
     uint32    mediaDateTaken;
     uint64    unknown12;
     uint32    unknown13;
@@ -348,9 +384,9 @@ typedef struct _DAT_FILE_v36{
     char      unknown10[49];
     uint32    spoPermissions;
     char      localWriteValidationToken[20];
-    char      localCobaltHashAlgorithm[20];
+    char      localCobaltHashDigest[20];
     char      localSyncTokenData[24];
-    char      unknown11[FILE_CONSTANT];
+    char      unknown11[268];
     uint32    mediaDateTaken;
     uint64    unknown12;
     uint32    unknown13;
@@ -381,7 +417,7 @@ typedef struct _DAT_FILE{
     char      unknown7[49];
     uint32    spoPermissions;
     char      localWriteValidationToken[20];
-    char      localCobaltHashAlgorithm[20];
+    char      localCobaltHashDigest[20];
     char      unknown8[FILE_CONSTANT];
 } DAT_FILE;
 
@@ -395,7 +431,8 @@ typedef struct _DAT_FOLDER_v29_v2c{
     uint16    unknown2;
     uint64    volumeID;
     uint64    itemIndex;
-    uint64    unknown3;
+    uint32    unknown3;
+    uint32    bitMask;
     wchar     folderName[260];
     uint32    jumpLinkType;
     char      parentScopeID[40];
@@ -421,7 +458,8 @@ typedef struct _DAT_FOLDER_v2d_v36{
     uint16    unknown2;
     uint64    volumeID;
     uint64    itemIndex;
-    uint64    unknown3;
+    uint32    unknown3;
+    uint32    bitMask;
     wchar     folderName[260];
     uint32    jumpLinkType;
     char      parentScopeID[40];
@@ -450,15 +488,18 @@ typedef struct _DAT_LIBRARY_SCOPE{
     uint32    unknown2;
     char      scopeID[39];
     char      unknown3[117];
-    uint32    unknown4;
+    uint32    flags;
     char      siteID[39]; // The SiteId is the unique GUID for the site collection.
     char      webID[39]; // The WebId is the ID for a site (or subsite) in a site collection.
     char      listID[39]; // Document library
-    char      unknown5[15];
+    char      unknown4[3];
+    uint32    libraryType;
+    uint32    unknown5;
+    uint32    unknown6;
     char      syncTokenData[516];
     uint32    syncTokenData_size;
     uint32    spoPermissions;
-    char      unknown6[LSCOPE_CONSTANT];
+    char      unknown7[LSCOPE_CONSTANT];
 } DAT_LIBRARY_SCOPE;
 
 typedef struct _DAT_LIBRARY_FOLDER{
@@ -466,8 +507,8 @@ typedef struct _DAT_LIBRARY_FOLDER{
     uint64    entry_offset;
     uint32    unknown1;
     uint32    unknown2;
-    char      listID[38];
-    char      unknown4[122];
+    char      scopeID[39];
+    char      unknown4[121];
     char      listID[39]; // Document library
     char      unknown5[LFOLDER_CONSTANT];
 } DAT_LIBRARY_FOLDER;
@@ -477,9 +518,29 @@ typedef struct _DAT_VAULT{
     uint64    entry_offset;
     uint32    unknown1;
     uint32    unknown2;
-    char      resourceID[38];
-    char      unknown3[650];
+    char      scopeID[39];
+    char      unknown3[649];
     uint64    shortcutVolumeID;
     uint64    shortcutItemIndex;
-    char      unknown5[UNKNOWN_CONSTANT];
+    char      unknown5[VAULT_CONSTANT];
 } DAT_VAULT;
+
+typedef struct _DAT_ADDED_SCOPE{
+    uint64    header; // 0C = LibraryScope
+    uint64    entry_offset;
+    uint32    unknown1;
+    uint32    unknown2;
+    char      scopeID[39];
+    char      unknown3[117];
+    uint32    flags;
+    char      siteID[39]; // The SiteId is the unique GUID for the site collection.
+    char      webID[39]; // The WebId is the ID for a site (or subsite) in a site collection.
+    char      listID[39]; // Document library
+    char      sourceResourceID[39]; // Document library
+    uint32    libraryType;
+    uint32    unknown5;
+    char      syncTokenData[516];
+    uint32    syncTokenData_size;
+    uint32    spoPermissions;
+    char      unknown6[ASCOPE_CONSTANT];
+} DAT_ADDED_SCOPE;

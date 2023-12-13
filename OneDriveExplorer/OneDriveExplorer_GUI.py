@@ -6,6 +6,7 @@ import json
 import ctypes
 import webbrowser
 import argparse
+import hashlib
 import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
@@ -13,7 +14,7 @@ from tkinter import filedialog
 import tkinter.font as tkFont
 import threading
 from queue import Queue
-from io import StringIO
+from io import StringIO, BytesIO
 from collections import defaultdict
 import pandas as pd
 import numpy as np
@@ -27,22 +28,27 @@ from io import StringIO as StringBuffer
 from datetime import datetime
 from cerberus import Validator
 import warnings
-from ode.renderers.json import print_json_gui
+from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
 from ode.renderers.project import save_project
 from ode.renderers.project import load_project
-from ode.parsers.dat_new import parse_dat
+import ode.parsers.dat as dat_parser
 from ode.parsers.csv_file import parse_csv
-from ode.parsers.onedrive import parse_onedrive
+import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
-from ode.parsers.sqlite_db import parse_sql
+import ode.parsers.sqlite_db as sqlite_parser
 from ode.helpers.mft import live_hive
 from ode.helpers import pandastablepatch
 from ode.helpers import ScrollableNotebookpatch
 from ode.utils import schema
 from ode.helpers.AnimatedGif import AnimatedGif
+
 warnings.filterwarnings("ignore", category=UserWarning)
+
+DATParser = dat_parser.DATParser()
+OneDriveParser = onedrive_parser.OneDriveParser()
+SQLiteParser = sqlite_parser.SQLiteParser()
 
 # Per monitor DPI aware. This app checks for the DPI when it is
 # created and adjusts the scale factor whenever the DPI changes.
@@ -69,7 +75,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.09.22"
+__version__ = "2023.12.13"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -84,6 +90,7 @@ menu_data = None
 delay = None
 cstruct_df = ''
 v = Validator()
+file_items = defaultdict(list)
 
 if getattr(sys, 'frozen', False):
     # If the application is run as a bundle, the PyInstaller bootloader
@@ -139,47 +146,41 @@ if menu_data is None:
         json.dump(menu_data, jsonfile)
 
 
-class quit:
+class QuitDialog:
     def __init__(self, root):
         self.root = root
+        self.create_dialog()
+
+    def create_dialog(self):
         self.win = tk.Toplevel(self.root)
-        self.win.wm_transient(self.root)
+        self.setup_window()
+        self.create_widgets()
+
+    def setup_window(self):
         self.win.title("Please confirm")
-        self.win.iconbitmap(application_path + '/Images/favicon.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/favicon.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.__callback)
+        self.setup_window_style()
+
+    def setup_window_style(self):
         hwnd = get_parent(self.win.winfo_id())
-        #   getting the old style
         old_style = get_window_long(hwnd, GWL_STYLE)
-        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
         new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
-        #   setting new style
         set_window_long(hwnd, GWL_STYLE, new_style)
 
+    def create_widgets(self):
         self.frame = ttk.Frame(self.win, relief='groove')
-
-        self.inner_frame = ttk.Frame(self.frame,
-                                     relief='groove',
-                                     padding=5)
+        self.inner_frame = ttk.Frame(self.frame, relief='groove', padding=5)
 
         self.frame.grid(row=0, column=0)
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5)
 
-        self.label = ttk.Label(self.inner_frame,
-                               text="Are you sure you want to exit?",
-                               padding=5)
-
-        self.yes = ttk.Button(self.inner_frame,
-                              text="Yes",
-                              takefocus=False,
-                              command=lambda: self.btn1(root))
-
-        self.no = ttk.Button(self.inner_frame,
-                             text="No",
-                             takefocus=False,
-                             command=self.btn2)
+        self.label = ttk.Label(self.inner_frame, text="Are you sure you want to exit?", padding=5)
+        self.yes = ttk.Button(self.inner_frame, text="Yes", takefocus=False, command=self.btn1)
+        self.no = ttk.Button(self.inner_frame, text="No", takefocus=False, command=self.btn2)
 
         self.label.grid(row=0, column=0, columnspan=2)
         self.yes.grid(row=1, column=0, padx=5, pady=5)
@@ -190,7 +191,7 @@ class quit:
         self.root.bind('<Configure>', self.sync_windows)
         self.win.bind('<Configure>', self.sync_windows)
 
-    def btn1(self, root):
+    def btn1(self):
         sys.exit()
 
     def btn2(self):
@@ -210,18 +211,13 @@ class quit:
         self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
 
 
-class preferences:
+class Preferences:
     def __init__(self, root):
         self.root = root
-        self.win = tk.Toplevel(self.root)
-        self.win.wm_transient(self.root)
-        self.win.title("Preferences")
-        self.win.iconbitmap(application_path + '/Images/controls.ico')
-        self.win.grab_set()
-        self.win.focus_force()
-        self.win.resizable(False, False)
-        self.win.protocol("WM_DELETE_WINDOW", self.__callback)
+        self.load_menu_data()
+        self.create_preferences_window()
 
+    def load_menu_data(self):
         self.json_save = tk.BooleanVar(value=menu_data['json'])
         self.json_pretty = tk.BooleanVar(value=menu_data['pretty'])
         self.csv_save = tk.BooleanVar(value=menu_data['csv'])
@@ -231,22 +227,46 @@ class preferences:
         self.odl = tk.BooleanVar(value=menu_data['odl'])
         self.odl_save = tk.BooleanVar(value=menu_data['odl_save'])
 
+    def create_preferences_window(self):
+        self.win = tk.Toplevel(self.root)
+        self.setup_window()
+        self.create_widgets()
+
+    def setup_window(self):
+        self.win.wm_transient(self.root)
+        self.win.title("Preferences")
+        self.win.iconbitmap(application_path + '/Images/titles/controls.ico')
+        self.win.grab_set()
+        self.win.focus_force()
+        self.win.resizable(False, False)
+        self.win.protocol("WM_DELETE_WINDOW", self.__callback)
+
+    def create_widgets(self):
         self.frame = ttk.Frame(self.win)
-
-        self.inner_frame = ttk.Frame(self.frame,
-                                     relief='groove',
-                                     padding=5)
-
-        self.select_frame = ttk.LabelFrame(self.inner_frame,
-                                           text="<UserCid>.dat output")
+        self.inner_frame = ttk.Frame(self.frame, relief='groove', padding=5)
+        self.select_frame = ttk.LabelFrame(self.inner_frame, text="<UserCid>.dat output")
         self.path_frame = ttk.Frame(self.inner_frame)
         self.hive_frame = ttk.Frame(self.inner_frame)
-        self.odl_frame = ttk.LabelFrame(self.inner_frame,
-                                        text="ODL settings")
+        self.odl_frame = ttk.LabelFrame(self.inner_frame, text="ODL settings")
         self.exit_frame = ttk.Frame(self.inner_frame)
 
-        self.exit_frame.grid_rowconfigure(0, weight=1)
-        self.exit_frame.grid_columnconfigure(0, weight=1)
+        self.setup_grid_layout()
+
+        self.create_checkbuttons()
+        self.create_path_entry()
+        self.create_buttons()
+
+        self.disable_widgets()
+
+        self.sync_windows()
+
+        self.root.bind('<Configure>', self.sync_windows)
+        self.win.bind('<Configure>', self.sync_windows)
+
+    def setup_grid_layout(self):
+        for i in range(5):
+            self.inner_frame.grid_rowconfigure(i, weight=1)
+            self.inner_frame.grid_columnconfigure(i, weight=1)
 
         self.frame.grid(row=0, column=0, sticky="nsew")
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
@@ -256,98 +276,44 @@ class preferences:
         self.hive_frame.grid(row=3, column=0, pady=(0, 25), sticky="nsew")
         self.exit_frame.grid(row=4, column=0, sticky="nsew")
 
-        self.auto_json = ttk.Checkbutton(self.select_frame,
-                                         text="Auto Save to JSON",
-                                         var=self.json_save,
-                                         offvalue=False,
-                                         onvalue=True,
-                                         takefocus=False,
-                                         command=self.pretty_config
-                                         )
-        self.pretty = ttk.Checkbutton(self.select_frame,
-                                      text="--pretty",
-                                      var=self.json_pretty,
-                                      offvalue=False,
-                                      onvalue=True,
-                                      takefocus=False
-                                      )
-        self.auto_csv = ttk.Checkbutton(self.select_frame,
-                                        text="Auto Save to CSV",
-                                        var=self.csv_save,
-                                        offvalue=False,
-                                        onvalue=True,
-                                        takefocus=False
-                                        )
-        self.auto_html = ttk.Checkbutton(self.select_frame,
-                                         text="Auto Save to HTML",
-                                         var=self.html_save,
-                                         offvalue=False,
-                                         onvalue=True,
-                                         takefocus=False
-                                         )
-
-        self.label = ttk.Label(self.path_frame, text="Auto Save Path")
-        self.save_path = ttk.Entry(self.path_frame, width=30,
-                                   textvariable=self.auto_path,
-                                   exportselection=0)
-        self.btn = ttk.Button(self.path_frame, text='...', width=3,
-                              takefocus=False, command=self.select_dir)
-
-        self.reghive = ttk.Checkbutton(self.hive_frame,
-                                       text="Disable loading user hive dialog",
-                                       var=self.skip_hive,
-                                       offvalue=False,
-                                       onvalue=True,
-                                       takefocus=False
-                                       )
-
-        self.en_odl = ttk.Checkbutton(self.odl_frame,
-                                      text="Enable ODL log parsing",
-                                      var=self.odl,
-                                      offvalue=False,
-                                      onvalue=True,
-                                      takefocus=False,
-                                      command=self.odl_config
-                                      )
-
-        self.auto_odl = ttk.Checkbutton(self.odl_frame,
-                                        text="Auto Save ODL",
-                                        var=self.odl_save,
-                                        offvalue=False,
-                                        onvalue=True,
-                                        takefocus=False
-                                        )
-
-        self.save = ttk.Button(self.exit_frame, text="Save",
-                               takefocus=False, command=self.save_pref)
-        self.cancel = ttk.Button(self.exit_frame, text="Cancel",
-                                 takefocus=False, command=self.close_pref)
+    def create_checkbuttons(self):
+        self.auto_json = ttk.Checkbutton(self.select_frame, text="Auto Save to JSON", var=self.json_save, offvalue=False, onvalue=True, takefocus=False, command=self.pretty_config)
+        self.pretty = ttk.Checkbutton(self.select_frame, text="--pretty", var=self.json_pretty, offvalue=False, onvalue=True, takefocus=False)
+        self.auto_csv = ttk.Checkbutton(self.select_frame, text="Auto Save to CSV", var=self.csv_save, offvalue=False, onvalue=True, takefocus=False)
+        self.auto_html = ttk.Checkbutton(self.select_frame, text="Auto Save to HTML", var=self.html_save, offvalue=False, onvalue=True, takefocus=False)
+        self.reghive = ttk.Checkbutton(self.hive_frame, text="Disable loading user hive dialog", var=self.skip_hive, offvalue=False, onvalue=True, takefocus=False)
+        self.en_odl = ttk.Checkbutton(self.odl_frame, text="Enable ODL log parsing", var=self.odl, offvalue=False, onvalue=True, takefocus=False, command=self.odl_config)
+        self.auto_odl = ttk.Checkbutton(self.odl_frame, text="Auto Save ODL", var=self.odl_save, offvalue=False, onvalue=True, takefocus=False)
 
         self.auto_json.grid(row=0, column=0, padx=5)
         self.pretty.grid(row=0, column=1, sticky="w")
         self.auto_csv.grid(row=1, column=0, columnspan=2, padx=5, sticky="w")
         self.auto_html.grid(row=2, column=0, columnspan=2, padx=5, sticky="w")
-        self.label.grid(row=0, column=0, padx=5, sticky="w")
-        self.save_path.grid(row=0, column=1)
-        self.btn.grid(row=0, column=2, padx=5)
         self.reghive.grid(row=0, column=2, padx=5)
         self.en_odl.grid(row=0, column=0, padx=5, sticky="w")
         self.auto_odl.grid(row=1, column=0, padx=5, sticky="w")
+
+    def create_path_entry(self):
+        self.label = ttk.Label(self.path_frame, text="Auto Save Path")
+        self.save_path = ttk.Entry(self.path_frame, width=30, textvariable= self.auto_path, exportselection=0)
+        self.btn = ttk.Button(self.path_frame, text='...', width=3, takefocus=False, command=self.select_dir)
+
+        self.label.grid(row=0, column=0, padx=5, sticky="w")
+        self.save_path.grid(row=0, column=1)
+        self.btn.grid(row=0, column=2, padx=5)
+
+    def create_buttons(self):
+        self.save = ttk.Button(self.exit_frame, text="Save", takefocus=False, command=self.save_pref)
+        self.cancel = ttk.Button(self.exit_frame, text="Cancel", takefocus=False, command=self.close_pref)
+
         self.save.grid(row=0, column=0, pady=5, sticky="e")
         self.cancel.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 
-        if self.json_save.get() is False:
+    def disable_widgets(self):
+        if not menu_data['json']:
             self.pretty.configure(state="disabled")
-            self.json_pretty.set(False)
-
-        if self.odl.get() is False:
+        if not menu_data['odl']:
             self.auto_odl.configure(state="disabled")
-            self.odl_save.set(False)
-
-        self.sync_windows()
-
-        self.root.bind('<Configure>', self.sync_windows)
-        self.win.bind('<Configure>', self.sync_windows)
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
@@ -374,12 +340,13 @@ class preferences:
             self.odl_save.set(False)
 
     def select_dir(self):
-        dir_path = filedialog.askdirectory(initialdir="\\",
-                                           title="Auto Save Location")
+        dir_path = filedialog.askdirectory(initialdir="\\", title="Auto Save Location")
 
         if dir_path:
             dir_path = dir_path.replace('/', '\\')
-            self.auto_path.set(dir_path)
+            menu_data['path'] = dir_path
+            self.save_path.delete(0, tk.END)
+            self.save_path.insert(tk.END, dir_path)
 
     def save_pref(self):
         menu_data['json'] = self.json_save.get()
@@ -390,14 +357,18 @@ class preferences:
         menu_data['hive'] = self.skip_hive.get()
         menu_data['odl'] = self.odl.get()
         menu_data['odl_save'] = self.odl_save.get()
-        if menu_data['odl'] is True:
+
+        if menu_data['odl']:
             file_menu.entryconfig("OneDrive logs", state='normal')
         else:
             file_menu.entryconfig("OneDrive logs", state='disable')
+
         if not os.path.exists(menu_data['path']):
             os.makedirs(menu_data['path'])
+
         with open("ode.settings", "w") as jsonfile:
             json.dump(menu_data, jsonfile)
+
         self.win.destroy()
 
     def __callback(self):
@@ -414,7 +385,7 @@ class hive:
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         self.win.title("Load User Hive")
-        self.win.iconbitmap(application_path + '/Images/question.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/question.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
@@ -497,7 +468,7 @@ class rec_bin:
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         self.win.title("$Recycle.Bin")
-        self.win.iconbitmap(application_path + '/Images/trashcan.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/trashcan.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
@@ -563,36 +534,37 @@ class rec_bin:
             pass
 
 
-class messages:
+class Messages:
     def __init__(self, root):
         self.root = root
+        self.initialize_window()
+
+    def initialize_window(self):
         self.win = tk.Toplevel(self.root)
         self.win.title("Messages")
-        self.win.iconbitmap(application_path + '/Images/language_blue.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/language_blue.ico')
         self.win.minsize(400, 300)
         self.win.grab_set()
         self.win.focus_force()
         self.win.protocol("WM_DELETE_WINDOW", self.close_mess)
-        hwnd = get_parent(self.win.winfo_id())
-        #   getting the old style
-        old_style = get_window_long(hwnd, GWL_STYLE)
-        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
-        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
-        #   setting new style
-        set_window_long(hwnd, GWL_STYLE, new_style)
         message['background'] = ''
         message['foreground'] = ''
-        self.columns = ('Message Date', 'Message Type', 'Message')
 
         self.frame = ttk.Frame(self.win)
+        self.inner_frame = ttk.Frame(self.frame, relief='groove', padding=5)
+        self.create_widgets()
+        self.restore_tree_messages()
 
-        self.inner_frame = ttk.Frame(self.frame,
-                                     relief='groove',
-                                     padding=5)
+    def create_widgets(self):
+        self.create_frames()
+        self.create_treeview()
+        self.create_textbox()
+        self.create_labels_buttons()
+        self.tree.bind('<<TreeviewSelect>>', self.select)
 
+    def create_frames(self):
         self.frame.grid(row=0, column=0, sticky='nsew')
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
-
         self.win.grid_rowconfigure(0, weight=1)
         self.win.grid_columnconfigure(0, weight=1)
         self.frame.grid_rowconfigure(0, weight=1)
@@ -600,64 +572,128 @@ class messages:
         self.inner_frame.grid_rowconfigure(0, weight=1)
         self.inner_frame.grid_columnconfigure(0, weight=1)
 
+    def create_treeview(self):
+        self.columns = ('Message Date', 'Message Type', 'Message')
         self.tree_scroll = ttk.Scrollbar(self.inner_frame)
-        self.tree = ttk.Treeview(self.inner_frame,
-                                 columns=self.columns,
-                                 yscrollcommand=self.tree_scroll.set)
-        self.tb_scroll = ttk.Scrollbar(self.inner_frame)
-        self.tb = tk.Text(self.inner_frame,
-                          undo=False,
-                          height=10,
-                          width=87,
-                          yscrollcommand=self.tb_scroll.set)
-        self.total = ttk.Label(self.inner_frame, text='Total messages:')
-        self.value_label = ttk.Label(self.inner_frame, text='')
-        self.pb = ttk.Progressbar(self.inner_frame, orient='horizontal',
-                                  length=160, mode='indeterminate')
-        self.clear = ttk.Button(self.inner_frame, text='Clear messages',
-                                takefocus=False, command=self.clear)
-        self.export = ttk.Button(self.inner_frame, text='Export messages',
-                                 takefocus=False,
-                                 command=lambda: threading.Thread(target=self.exportmessage,
-                                                                  daemon=True).start())
-        self.sg = ttk.Sizegrip(self.inner_frame)
-
+        self.tree = ttk.Treeview(self.inner_frame, columns=self.columns, yscrollcommand=self.tree_scroll.set)
         self.tree.heading('Message Date', text='Message Date', anchor='w')
         self.tree.heading('Message Type', text='Message Type', anchor='w')
         self.tree.heading('Message', text='Message', anchor='w')
         self.tree.column('#0', minwidth=0, width=50, stretch=False, anchor='w')
-        self.tree.column('Message Date', minwidth=0, width=150,
-                         stretch=False, anchor='w')
-        self.tree.column('Message Type', minwidth=0, width=100,
-                         stretch=False, anchor='w')
-
+        self.tree.column('Message Date', minwidth=0, width=150, stretch=False, anchor='w')
+        self.tree.column('Message Type', minwidth=0, width=100, stretch=False, anchor='w')
         self.tree_scroll.config(command=self.tree.yview)
+        self.tree.grid(row=0, column=0, columnspan=5, padx=(10, 0), pady=(10, 0), sticky='nsew')
+        self.tree_scroll.grid(row=0, column=5, padx=(0, 10), pady=(10, 0), sticky="nsew")
+
+    def create_textbox(self):
+        self.tb_scroll = ttk.Scrollbar(self.inner_frame)
+        self.tb = tk.Text(self.inner_frame, undo=False, height=10, width=87, yscrollcommand=self.tb_scroll.set)
         self.tb_scroll.config(command=self.tb.yview)
         self.tb.config(state='disable')
+        self.tb.grid(row=1, column=0, columnspan=5, padx=(10, 0), pady=(5, 10), sticky='nsew')
+        self.tb_scroll.grid(row=1, column=5, padx=(0, 10), pady=(5, 10), sticky="nsew")
 
-        self.tree.grid(row=0, column=0, columnspan=5, padx=(10, 0),
-                       pady=(10, 0), sticky='nsew')
-        self.tree_scroll.grid(row=0, column=5, padx=(0, 10),
-                              pady=(10, 0), sticky="nsew")
-        self.tb.grid(row=1, column=0, columnspan=5, padx=(10, 0),
-                     pady=(5, 10), sticky='nsew')
-        self.tb_scroll.grid(row=1, column=5, padx=(0, 10),
-                            pady=(5, 10), sticky="nsew")
+    def create_labels_buttons(self):
+        self.total = ttk.Label(self.inner_frame, text='Total messages:')
+        self.value_label = ttk.Label(self.inner_frame, text='')
+        self.pb = ttk.Progressbar(self.inner_frame, orient='horizontal', length=160, mode='indeterminate')
+        self.clear = ttk.Button(self.inner_frame, text='Clear messages', takefocus=False, command=self.clear)
+        self.export = ttk.Button(self.inner_frame, text='Export messages', takefocus=False, command=self.export_message)
+        self.sg = ttk.Sizegrip(self.inner_frame)
+
         self.total.grid(row=2, column=0, padx=(10, 0), pady=(0, 5), stick='w')
         self.value_label.grid(row=2, column=1, padx=5, pady=(0, 5))
         self.pb.grid(row=2, column=2, pady=(0, 5))
         self.clear.grid(row=2, column=3, padx=5, pady=(0, 5), stick='e')
         self.export.grid(row=2, column=4, pady=(0, 5), stick='e')
         self.sg.grid(row=2, column=5, stick='se')
-        self.sync_windows()
-        self.tree.bind('<<TreeviewSelect>>', self.select)
-        self.mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
-        self.total['text'] = f'Total messages: {self.mcount}'
-        self.value_label.grid_remove()
         self.pb.grid_remove()
 
-        data = log_capture_string.getvalue().split('\n')
+    def clear(self):
+        self.tb.config(state='normal')
+        self.tb.delete('1.0', tk.END)
+        self.tb.config(state='disable')
+        log_capture_string.truncate(0)
+        log_capture_string.seek(0)
+        self.tree.delete(*self.tree.get_children())
+        mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
+        self.total['text'] = f'Total messages: {mcount}'
+        message['text'] = mcount
+        message['background'] = ''
+        message['foreground'] = ''
 
+    def export_message(self, event=None):
+        path = filedialog.askdirectory(initialdir="/")
+
+        if path:
+            self.disable_export_buttons()
+
+            self.value_label['text'] = "Exporting messages. Please wait..."
+            self.pb.start()
+            self.show_export_status()
+
+            ids = self.tree.get_children()
+            excel_name = self.generate_excel_name(path)
+
+            try:
+                with pd.ExcelWriter(excel_name) as writer:
+                    self.write_dataframe_to_excel(writer)
+            
+                self.pb.stop()
+                ExportResult(self.win, excel_name)
+
+            except Exception as e:
+                logging.error(e)
+                ExportResult(self.win, e, failed=True)
+                self.restore_tree_messages()
+        
+            self.hide_export_status()
+            self.enable_export_buttons()
+
+    def disable_export_buttons(self):
+        self.clear.config(state='disable')
+        self.export.config(state='disable')
+
+    def enable_export_buttons(self):
+        self.clear.config(state='normal')
+        self.export.config(state='normal')
+
+    def show_export_status(self):
+        self.value_label.grid(row=2, column=1, pady=(0, 5))
+        self.pb.grid(row=2, column=2, pady=(0, 5))
+
+    def hide_export_status(self):
+        self.value_label.grid_forget()
+        self.pb.grid_forget()
+
+    def generate_excel_name(self, path):
+        return path + '\\OneDriveExplorerMessages_' + datetime.now().strftime("%Y-%m-%dT%H%M%S.xlsx")
+
+    def write_dataframe_to_excel(self, writer):
+        ids = self.tree.get_children()
+        lst = []
+
+        for id in ids:
+            row = self.tree.item(id, 'values')
+            lst.append(row)
+
+        df = pd.DataFrame.from_records(lst, columns=['Message Data', 'Message Type', 'Message'])
+
+        row_count = len(df.index)
+
+        if row_count > 1048576:
+            groups = df.groupby(np.arange(len(df.index))//1048575)
+
+            for (frameno, frame) in groups:
+                frame.to_excel(writer, f'OneDriveExplorer Messages {frameno}', index=False)
+        else:
+            df.to_excel(writer, 'OneDriveExplorer Messages', index=False)
+
+    def restore_tree_messages(self):
+        self.tree.delete(*self.tree.get_children())
+        data = log_capture_string.getvalue().split('\n')
+    
         for m in data:
             m = m.split(', ', 2)
             try:
@@ -673,78 +709,19 @@ class messages:
                 self.tree.insert("", "end", values=m, image=image)
             except Exception:
                 break
-            self.win.update()
 
-    def select(self, event=None):
-        self.tb.config(state='normal')
-        self.tb.delete('1.0', tk.END)
-        curItem = self.tree.selection()
-        values = self.tree.item(curItem, 'values')
-        self.tb.insert(tk.END,
-                       re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
-        self.tb.config(state='disable')
-
-    def clear(self):
-        self.tb.config(state='normal')
-        self.tb.delete('1.0', tk.END)
-        self.tb.config(state='disable')
-        log_capture_string.truncate(0)
-        log_capture_string.seek(0)
-        self.tree.delete(*self.tree.get_children())
         mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
         self.total['text'] = f'Total messages: {mcount}'
         message['text'] = mcount
-        message['background'] = ''
-        message['foreground'] = ''
 
-    def exportmessage(self, event=None):
-        path = filedialog.askdirectory(initialdir="/")
-        if path:
-            self.clear.config(state='disable')
-            self.export.config(state='disable')
-            self.value_label['text'] = "Exporting messages. Please wait..."
-            self.pb.start()
-            self.value_label.grid(row=2, column=1, pady=(0, 5))
-            self.pb.grid(row=2, column=2, pady=(0, 5))
-            ids = self.tree.get_children()
-            excel_name = path + '\\OneDriveExplorerMessages_' + datetime.now().strftime("%Y-%m-%dT%H%M%S.xlsx")
-            lst = []
-            for id in ids:
-                row = self.tree.item(id, 'values')
-                lst.append(row)
-            df = pd.DataFrame.from_records(lst, columns=['Message Data',
-                                                         'Message Type',
-                                                         'Message'])
-
-            try:  # need to thread
-                with pd.ExcelWriter(excel_name) as writer:
-                    row_count = len(df.index)
-                    if row_count > 1048576:
-                        groups = df.groupby(np.arange(len(df.index))//1048575)
-                        for (frameno, frame) in groups:
-                            frame.to_excel(writer,
-                                           f'OneDriveExplorer Messages {frameno}',
-                                           index=False)
-                    else:
-                        df.to_excel(writer,
-                                    'OneDriveExplorer Messages',
-                                    index=False)
-                self.pb.stop()
-                export_result(self.win, excel_name)
-            except Exception as e:
-                logging.error(e)
-                export_result(self.win, e, failed=True)
-                self.tree.delete(*self.tree.get_children())
-                data = log_capture_string.getvalue().split('\n')
-                for m in data:
-                    self.tree.insert("", "end", values=m.split(', '))
-                mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
-                self.total['text'] = f'Total messages: {mcount}'
-                message['text'] = mcount
-            self.value_label.grid_forget()
-            self.pb.grid_forget()
-            self.clear.config(state='normal')
-            self.export.config(state='normal')
+    def select(self, event=None):
+            self.tb.config(state='normal')
+            self.tb.delete('1.0', tk.END)
+            curItem = self.tree.selection()
+            values = self.tree.item(curItem, 'values')
+            self.tb.insert(tk.END,
+                           re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
+            self.tb.config(state='disable')
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
@@ -758,55 +735,55 @@ class messages:
         self.update()
 
 
-class export_result:
+class ExportResult:
     def __init__(self, root, excel_name, failed=False):
         self.root = root
         self.failed = failed
+        self.excel_name = excel_name.replace('/', '\\') if not failed else excel_name
+        self.create_result_window()
+
+    def create_result_window(self):
+        title = "Export failed!" if self.failed else "Export successful!"
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
-        if self.failed:
-            self.win.title("Export failed!")
-            self.excel_name = excel_name
-        else:
-            self.win.title("Export successful!")
-            self.excel_name = excel_name.replace('/', '\\')
-        self.win.iconbitmap(application_path + '/Images/OneDrive.ico')
+        self.win.title(title)
+        self.win.iconbitmap(application_path + '/Images/titles/OneDrive.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
 
         self.frame = ttk.Frame(self.win)
 
-        self.inner_frame = ttk.Frame(self.frame,
-                                     relief='groove',
-                                     padding=5)
+        self.inner_frame = ttk.Frame(self.frame, relief='groove', padding=5)
 
-        self.win.grid_rowconfigure(0, weight=1)
-        self.win.grid_columnconfigure(0, weight=1)
-        self.frame.grid_rowconfigure(0, weight=1)
-        self.frame.grid_columnconfigure(0, weight=1)
-        self.inner_frame.grid_rowconfigure(0, weight=1)
-        self.inner_frame.grid_columnconfigure(0, weight=1)
-
-        self.frame.grid(row=0, column=0)
-        self.inner_frame.grid(row=0, column=0, padx=5, pady=5)
-
-        self.label_i = ttk.Label(self.inner_frame, image=info_img)
-        self.label = ttk.Label(self.inner_frame,
-                               text=f'Messages exported to:\n\n{self.excel_name}')
-        if self.failed:
-            self.label_i['image'] = error_img
-            self.label['text'] = f'Messages failed to export.\n\n{self.excel_name}'
-        self.btn = ttk.Button(self.inner_frame, text='OK',
-                              takefocus=False, command=self.ok)
-
-        self.label_i.grid(row=0, column=0)
-        self.label.grid(row=0, column=1, padx=(0, 5))
-        self.btn.grid(row=1, column=0, columnspan=2, pady=5)
+        self.configure_grid_weights()
+        self.configure_frames()
+        self.create_widgets()
 
         self.sync_windows()
         self.root.bind('<Configure>', self.sync_windows)
         self.win.bind('<Configure>', self.sync_windows)
+
+    def configure_grid_weights(self):
+        for widget in [self.win, self.frame, self.inner_frame]:
+            widget.grid_rowconfigure(0, weight=1)
+            widget.grid_columnconfigure(0, weight=1)
+
+    def configure_frames(self):
+        self.frame.grid(row=0, column=0)
+        self.inner_frame.grid(row=0, column=0, padx=5, pady=5)
+
+    def create_widgets(self):
+        info_image = error_img if self.failed else info_img
+        label_text = f'Messages {"failed to" if self.failed else "exported to"}:\n\n{self.excel_name}'
+
+        self.label_i = ttk.Label(self.inner_frame, image=info_image)
+        self.label = ttk.Label(self.inner_frame, text=label_text)
+        self.btn = ttk.Button(self.inner_frame, text='OK', takefocus=False, command=self.ok)
+
+        self.label_i.grid(row=0, column=0)
+        self.label.grid(row=0, column=1, padx=(0, 5))
+        self.btn.grid(row=1, column=0, columnspan=2, pady=5)
 
     def ok(self):
         self.win.destroy()
@@ -816,8 +793,9 @@ class export_result:
         y = self.root.winfo_y()
         w = self.root.winfo_width()
         h = self.root.winfo_height()
+
         try:
-            self.win.geometry("+%d+%d" % (x + w/2, y + h/2))
+            self.win.geometry("+%d+%d" % (x + w / 2, y + h / 2))
         except Exception:
             pass
 
@@ -828,7 +806,7 @@ class cstructs:
         self.df = df
         self.win = tk.Toplevel(self.root)
         self.win.title("CStructs")
-        self.win.iconbitmap(application_path + '/Images/cstruct.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/cstruct.ico')
         self.win.grab_set()
         self.win.focus_force()
         self.win.resizable(False, False)
@@ -988,7 +966,7 @@ class cstructs:
     def more_info(self):
         self.info = tk.Toplevel(self.win)
         self.info.title("CStructs")
-        self.info.iconbitmap(application_path + '/Images/cstruct.ico')
+        self.info.iconbitmap(application_path + '/Images/titles/cstruct.ico')
         self.info.grab_set()
         self.info.focus_force()
         self.info.resizable(False, False)
@@ -1057,42 +1035,45 @@ class cstructs:
         self.win.destroy()
 
 
-class help:
+class Help:
     def __init__(self, root):
         self.root = root
         self.win = tk.Toplevel(self.root)
         self.win.title("Help")
-        self.win.iconbitmap(application_path + '/Images/question.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/question.ico')
         self.win.focus_force()
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.close_help)
-
-        hwnd = get_parent(self.win.winfo_id())
-        #   getting the old style
-        old_style = get_window_long(hwnd, GWL_STYLE)
-        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
-        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
-        #   setting new style
-        set_window_long(hwnd, GWL_STYLE, new_style)
+        self.configure_window()
 
         self.frame = ttk.Frame(self.win)
-        self.label1 = ttk.Label(self.frame, text="To load <UserCid>.dat, File -> OneDrive settings -> Load <UserCid>.dat", justify="left", anchor='w')
-        self.label2 = ttk.Label(self.frame, text="Once <UserCid>.dat is loaded, OneDriveExplorer operates much like File Explorer.", justify="left", anchor='w')
-        self.label3 = ttk.Label(self.frame, text="Context menu\nRight click on folder/file to export Name, Path, Details, etc.", justify="left", anchor='w')
-        self.label4 = ttk.Label(self.frame, text="ODL logs\nTo enable parsing, Options -> Preferences -> Enable ODL log parsing.", justify="left", anchor='w')
-        self.label5 = ttk.Label(self.frame, text="Live System\nRun OneDriveExplorer as administrator to activate.", justify="left", anchor='w')
-        self.label6 = ttk.Label(self.frame, text="For full details, see the included manual.", justify="left", anchor='w')
+        self.create_labels()
 
         self.frame.grid(row=0, column=0)
-        self.label1.grid(row=0, column=0,
-                         padx=(10, 30), pady=(5, 0), sticky='w')
-        self.label2.grid(row=1, column=0, padx=(10, 30), sticky='w')
-        self.label3.grid(row=2, column=0, padx=(10, 30), sticky='w')
-        self.label4.grid(row=3, column=0, padx=(10, 30), sticky='w')
-        self.label5.grid(row=4, column=0, padx=(10, 30), sticky='w')
-        self.label6.grid(row=5, column=0,
-                         padx=(10, 30), pady=(0, 20), sticky='w')
-        self.sync_windows()
+        self.place_labels()
+
+    def configure_window(self):
+        hwnd = get_parent(self.win.winfo_id())
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        new_style = old_style & ~WS_MAXIMIZEBOX & ~WS_MINIMIZEBOX
+        set_window_long(hwnd, GWL_STYLE, new_style)
+
+    def create_labels(self):
+        self.label_texts = [
+            "To load <UserCid>.dat, File -> OneDrive settings -> Load <UserCid>.dat",
+            "Once <UserCid>.dat is loaded, OneDriveExplorer operates much like File Explorer.",
+            "Context menu\nRight-click on folder/file to export Name, Path, Details, etc.",
+            "ODL logs\nTo enable parsing, Options -> Preferences -> Enable ODL log parsing.",
+            "Live System\nRun OneDriveExplorer as an administrator to activate.",
+            "For full details, see the included manual."
+        ]
+        self.labels = [ttk.Label(self.frame, text=text, justify="left", anchor='w') for text in self.label_texts]
+
+    def place_labels(self):
+        for i, label in enumerate(self.labels):
+            pady_top = 5 if i == 0 else 0
+            pady_bottom = 20 if i == len(self.labels) - 1 else 0
+            label.grid(row=i, column=0, padx=(10, 30), pady=(pady_top, pady_bottom), sticky='w')
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
@@ -1107,67 +1088,62 @@ class help:
         self.win.destroy()
 
 
-class about:
+
+class About:
     def __init__(self, root):
         self.root = root
+        self.create_window()
+        self.configure_window()
+        self.create_widgets()
+
+    def create_window(self):
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         self.win.title("About OneDriveExplorer")
-        self.win.iconbitmap(application_path + '/Images/favicon.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/favicon.ico')
         self.win.focus_force()
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.close_about)
 
+    def configure_window(self):
         hwnd = get_parent(self.win.winfo_id())
-        #   getting the old style
         old_style = get_window_long(hwnd, GWL_STYLE)
-        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
-        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
-        #   setting new style
+        new_style = old_style & ~WS_MAXIMIZEBOX & ~WS_MINIMIZEBOX
         set_window_long(hwnd, GWL_STYLE, new_style)
 
+    def create_widgets(self):
         self.frame = ttk.Frame(self.win)
         self.label = ttk.Label(self.frame, image=ode_img, anchor='n')
-        self.label1 = ttk.Label(self.frame, text="OneDriveExplorer",
-                                justify="left", anchor='w')
-        self.label2 = ttk.Label(self.frame, text=f"Version {__version__}",
-                                justify="left", anchor='w')
-        self.label3 = ttk.Label(self.frame, text=f"Copyright © {__version__[:4]}",
-                                justify="left", anchor='w')
-        self.label4 = ttk.Label(self.frame, text="Brian Maloney",
-                                justify="left", anchor='w')
-        self.label5 = ttk.Label(self.frame, text="L̲a̲t̲e̲s̲t̲_R̲e̲l̲e̲a̲s̲e̲",
-                                foreground='#0563C1', cursor="hand2",
-                                justify="left", anchor='w')
+        self.label1 = ttk.Label(self.frame, text="OneDriveExplorer", justify="left", anchor='w')
+        self.label2 = ttk.Label(self.frame, text=f"Version {__version__}", justify="left", anchor='w')
+        self.label3 = ttk.Label(self.frame, text=f"Copyright © {__version__[:4]}", justify="left", anchor='w')
+        self.label4 = ttk.Label(self.frame, text="Brian Maloney", justify="left", anchor='w')
+        self.label5 = ttk.Label(self.frame, text="L̲a̲t̲e̲s̲t̲_R̲e̲l̲e̲a̲s̲e̲", foreground='#0563C1', cursor="hand2", justify="left", anchor='w')
         self.text = tk.Text(self.frame, width=27, height=8, wrap=tk.WORD)
-        line = "GUI based application for reconstructing the folder structure of OneDrive"
-        self.text.insert(tk.END, line)
+        self.text.insert(tk.END, "GUI based application for reconstructing the folder structure of OneDrive")
         self.text.config(state='disable')
-        self.scrollbv = ttk.Scrollbar(self.frame, orient="vertical",
-                                      command=self.text.yview)
+        self.scrollbv = ttk.Scrollbar(self.frame, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=self.scrollbv.set)
+        self.ok = ttk.Button(self.frame, text="OK", takefocus=False, command=self.close_about)
 
-        self.ok = ttk.Button(self.frame,
-                             text="OK",
-                             takefocus=False,
-                             command=self.close_about)
+        self.bind_events()
 
         self.frame.grid(row=0, column=0)
-        self.label.grid(row=0, column=0, rowspan=6,
-                        padx=10, pady=(10, 0), sticky='n')
-        self.label1.grid(row=0, column=1,
-                         padx=(0, 10), pady=(10, 0), sticky='w')
+        self.place_widgets()
+
+    def bind_events(self):
+        self.label5.bind("<Double-Button-1>", self.callback)
+
+    def place_widgets(self):
+        self.label.grid(row=0, column=0, rowspan=6, padx=10, pady=(10, 0), sticky='n')
+        self.label1.grid(row=0, column=1, padx=(0, 10), pady=(10, 0), sticky='w')
         self.label2.grid(row=1, column=1, sticky='w')
         self.label3.grid(row=2, column=1, sticky='w')
         self.label4.grid(row=3, column=1, sticky='w')
-        self.label5.grid(row=4, column=1,
-                         padx=(0, 10), pady=(0, 10), sticky='w')
+        self.label5.grid(row=4, column=1, padx=(0, 10), pady=(0, 10), sticky='w')
         self.text.grid(row=5, column=1, sticky='w')
         self.scrollbv.grid(row=5, column=2, padx=(0, 10), sticky="nsew")
         self.ok.grid(row=6, column=1, padx=(0, 10), pady=10, sticky='e')
-
-        self.label5.bind("<Double-Button-1>", self.callback)
-        self.sync_windows()
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
@@ -1186,40 +1162,43 @@ class about:
         self.win.destroy()
 
 
-class sync_message:
+class SyncMessage:
     def __init__(self, root):
         self.root = root
+        self.create_window()
+        self.configure_window()
+        self.create_widgets()
+        self.bind_events()
+
+    def create_window(self):
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
         self.win.title("")
-        self.win.iconbitmap(application_path + '/Images/favicon.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/favicon.ico')
         self.win.focus_force()
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.__callback)
         hwnd = get_parent(self.win.winfo_id())
-        #   getting the old style
         old_style = get_window_long(hwnd, GWL_STYLE)
-        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
-        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
-        #   setting new style
+        new_style = old_style & ~WS_MAXIMIZEBOX & ~WS_MINIMIZEBOX
         set_window_long(hwnd, GWL_STYLE, new_style)
         self.win.overrideredirect(1)
 
+    def configure_window(self):
         reg_font = ("Segoe UI", 8, "normal")
         bold_font = ("Segoe UI", 16, "bold")
 
-        self.lbl_with_my_gif = AnimatedGif(self.win, application_path + '/Images/load.gif', 0.1)
+        self.lbl_with_my_gif = AnimatedGif(self.win, application_path + '/Images/gui/load.gif', 0.1)
         self.label = ttk.Label(self.win, text="Please wait           ", font=bold_font)
         self.label1 = ttk.Label(self.win, text="Working...", font=reg_font)
 
+    def create_widgets(self):
         self.lbl_with_my_gif.grid(row=0, column=0, rowspan=2)
         self.label.grid(row=0, column=1, sticky="nsew")
         self.label1.grid(row=1, column=1, sticky="nsew")
-
         self.lbl_with_my_gif.start()
 
-        self.sync_windows()
-
+    def bind_events(self):
         self.root.bind('<Configure>', self.sync_windows)
         self.win.bind('<Configure>', self.sync_windows)
 
@@ -1247,28 +1226,10 @@ class sync_message:
 
 
 class CustomText(tk.Text):
-    '''A text widget with a new method, highlight_pattern()
-
-    example:
-
-    text = CustomText()
-    text.tag_configure("red", foreground="#ff0000")
-    text.highlight_pattern("this should be red", "red")
-
-    The highlight_pattern method is a simplified python
-    version of the tcl code at http://wiki.tcl.tk/3246
-    '''
     def __init__(self, *args, **kwargs):
-        tk.Text.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-    def highlight_pattern(self, pattern, tag, start="1.0", end="end",
-                          regexp=False):
-        '''Apply the given tag to all text that matches the given pattern
-
-        If 'regexp' is set to True, pattern will be treated as a regular
-        expression according to Tcl's regular expression syntax.
-        '''
-
+    def highlight_pattern(self, pattern, tag, start="1.0", end="end", regexp=False):
         start = self.index(start)
         end = self.index(end)
         self.mark_set("matchStart", start)
@@ -1276,172 +1237,668 @@ class CustomText(tk.Text):
         self.mark_set("searchLimit", end)
 
         count = tk.IntVar()
+
         while True:
-            index = self.search(pattern, "matchEnd", "searchLimit",
-                                count=count, regexp=regexp)
+            index = self.search(pattern, "matchEnd", "searchLimit", count=count, regexp=regexp)
             if index == "":
                 break
             if count.get() == 0:
                 break  # degenerate pattern which matches zero-length strings
             self.mark_set("matchStart", index)
-            self.mark_set("matchEnd", "%s+%sc" % (index, count.get()))
+            self.mark_set("matchEnd", f"{index}+{count.get()}c")
             self.tag_add(tag, "matchStart", "matchEnd")
 
+s_image = {}
 
-class result:
+class Result:
 
-    def __init__(self, master, *args):
-        l = list(args[0])
-        l[0] = f'  Date modified: {args[0][0]}\n  Size: {args[0][1]}'
-        if args[0][6] == 'File - deleted':
-            l[0] = f'  DeleteTimeStamp: {args[0][11]}\n  Size: {args[0][1]}'
+    def __init__(self, master, *args, folder=True, tags=''):
+        self.master = master
+        self.args = args
+        self.folder = folder
+        self.tags = tags
+        self.status = []
+        self.sha1 = hashlib.sha1()
+        self.process_args()
+
+    def process_args(self):
+        l = list(self.args[0])
+        text = ''
+        
+        if len(l) == 3:
+            text = f'  {self.args[0][1]}\n  {self.args[0][2]}'
+            self.status.append(hdd_big_img)
+            self.folder = False
+        elif len(l) == 13:
+            if '+' in self.args[0][2]:
+                self.status.append(building_big_img)
+            else:
+                self.status.append(cloud_big_img)
+            text = f'  {self.args[0][2]}\n  {self.args[0][8]}'
+        else:
+            text = f'  {self.args[0][6]}\n  {self.args[0][5]}'
+            self.process_folder_status(l)
+            
         values = tuple(l)
-        if args[0][6] == 'File':
-            if args[0][9] == '2':
-                if args[0][11] == '1':
-                    tvr.insert("", "end", image=available_shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
-                else:
-                    tvr.insert("", "end", image=available_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
-            elif args[0][9] == '5':
-                if args[0][11] == '1':
-                    tvr.insert("", "end", image=excluded_shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
-                else:
-                    tvr.insert("", "end", image=excluded_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
-            elif args[0][9] == '8':
-                if args[0][11] == '1':
-                    tvr.insert("", "end", image=online_shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
-                else:
-                    tvr.insert("", "end", image=online_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+        output_image = self.create_output_image()
+        self.update_image_dictionary(output_image)
+        self.insert_into_treeview(text, values)
 
-            else:  # needs image big file
-                if args[0][11] == '1':
-                    tvr.insert("", "end", image=shared_file_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
-                else:
-                    tvr.insert("", "end", image=file_big_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+    def process_folder_status(self, l):
+        if self.folder:
+            self.status.append(directory_big_img)
 
-        elif args[0][6] == 'File - deleted':
-            tvr.insert("", "end", image=file_del_big_img, text=f'  {args[0][5]}\n  {args[0][10]}', values=values, tags='red')
+            for num in ['5', '7', '9', '10', '11']:
+                if num in self.args[0][7]:
+                    self.handle_folder_status(num, l)
 
         else:
-            if args[0][9] == '5':
-                tvr.insert("", "end", image=excluded_directory_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+            self.process_non_folder_status(l)
+
+    def handle_folder_status(self, num, l):
+        if num == '7' and len(l) > 11:
+            if self.args[0][14].split(' ')[1] == '' and '+' not in self.args[0][11]:
+                self.status.clear()
+                self.status.append(vault_big_img) if self.args[0][10] == 'itemIndex: 0' else self.status.append(vault_open_big_img)
             else:
-                tvr.insert("", "end", image=online_directory_img, text=f'  {args[0][5]}\n  {args[0][13]}', values=values)
+                self.status.append(lync_big_img)
+        elif num == '7':
+            pass
+        else:
+            self.status.append(self.get_status_image(num))
 
 
-def showtip(text, widget, flip=False, single=False):
-    global tipwindow
-    matches = ["start_parsing", "live_system", "odl", "load_project", "proj_parse"]
+    def process_non_folder_status(self, l):
+        if len(l) != 3:
+            self.status.append(file_del_big_img) if self.tags == 'red' else self.status.append(file_yellow_big_img)
+            l[0] = f'  Date modified: {self.args[0][0]}\n  Size: {self.args[0][1]}'
+            
+            for num in ['2', '5', '6', '7', '8', '1']:
+                if num in self.args[0][7]:
+                    self.status.append(self.get_status_image(num))
+                if num in self.args[0][12]:
+                    self.status.append(self.get_status_image(num))
+                
 
-    "Display text in tooltip window"
-    if tipwindow or not text:
-        return
+    def get_status_image(self, num):
+        status_dict = {
+            '1': shared_big_img,
+            '2': available_big_img,
+            '5': excluded_big_img,
+            '6': not_sync_big_img,
+            '7': not_lync_big_img,
+            '8': online_big_img,
+            '9': sync_big_img,
+            '10': not_sync_big_img,
+            '11': not_lync_big_img
+        }
+        return status_dict[num]
 
-    # disables tooltip if parsing data
-    if any(x in str(threading.enumerate()) for x in matches):
-        return
+    def create_output_image(self):
+        output_image = self.status[0].copy()
+        self.status.pop(0)
+        for s in self.status:
+            output_image.paste(s, (0, 0), s)
+        return output_image
 
-    x, y, cx, cy = widget.bbox(1)
-    if flip:
-        x = x + widget.winfo_pointerx() - 330
-        y = y + cy + widget.winfo_pointery() + 20 - 90
-    elif single:
-        x = x + widget.winfo_pointerx()
-        y = y + cy + widget.winfo_pointery()
-    else:
-        x = x + widget.winfo_pointerx()
-        y = y + cy + widget.winfo_pointery() + 20
+    def update_image_dictionary(self, output_image):
+        fp = BytesIO()
+        output_image.save(fp, 'png')
+        fp.seek(0)
+        self.sha1.update(fp.read())
+        image = ImageTk.PhotoImage(Image.open(fp))
+        if self.sha1.hexdigest() not in s_image:
+            s_image[self.sha1.hexdigest()] = image
 
-    tipwindow = tw = tk.Toplevel(widget)
-    tw.wm_overrideredirect(1)
-    tw.wm_geometry("+%d+%d" % (x, y))
-
-    text = text.split('\n', 1)
-    h = (text[1].count('\n') + 2)
-    if single:
-        h = 1
-    reg_font = ("Segoe UI", 8, "normal")
-    w = tkFont.Font(family="Segoe UI", size=8, weight="normal").measure(max(text[1].split('\n'), key=len))
-    w2 = tkFont.Font(family="Segoe UI", size=8, weight="normal").metrics('linespace')
-    h2 = w2 * (text[1].count('\n') + 2)
-
-    if single:
-        frame = tk.Frame(tw, width=w+20, height=h2-1, background="grey81", padx=1, pady=1)
-    else:
-        frame = tk.Frame(tw, width=w+20, height=h2+12, background="grey81", padx=1, pady=1)
-    textbox = tk.Text(frame, height=h, font=reg_font, padx=8, relief="flat",
-                      bd=0, pady=5)
-
-    bold_font = ("Segoe UI", 8, "bold")
-    textbox.tag_configure("bold", font=bold_font)
-    textbox.tag_configure("regular", font=reg_font)
-    textbox.insert('end', text[0] + '\n', 'bold')
-    textbox.insert('end', text[1], 'regular')
-    textbox.configure(state='disable')
-
-    frame.pack()
-    frame.pack_propagate(0)
-    textbox.pack()
-
-    widget.after(5000, lambda: tw.destroy())
+    def insert_into_treeview(self, text, values):
+        tvr.insert("", "end", image=s_image[self.sha1.hexdigest()], text=text, values=values, tags=self.tags)
 
 
-def hidetip():
-    global tipwindow
-    tw = tipwindow
-    tipwindow = None
-    if tw:
-        tw.destroy()
+class PopupManager:
+    def __init__(self, root, tv, application_path, details):
+        self.root = root
+        self.tv = tv
+        self.application_path = application_path
+        self.details = details
+
+        self.rof_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon11.ico'))
+        self.copy_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/copy.png'))
+        self.name_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/file_yellow_empty_new.png'))
+        self.path_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/file_yellow_open.png'))
+        self.details_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/language_window.png'))
+        self.exp_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/hierarchy1_expanded.png'))
+        self.col_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/hierarchy1.png'))
+
+    def do_popup(self, event):
+        try:
+            curItem = event.widget.identify_row(event.y)
+            event.widget.selection_set(curItem)
+            opened = event.widget.item(curItem, 'open')
+            values = event.widget.item(curItem, 'values')
+            image = event.widget.item(curItem, 'image')
+            popup = tk.Menu(self.root, tearoff=0)
+            copymenu = tk.Menu(self.root, tearoff=0)
+            
+            if image[0] == str(root_drive_img):
+                popup.add_command(label="Remove OneDrive Folder",
+                                  image=self.rof_img,
+                                  compound='left',
+                                  command=lambda: self.del_folder(curItem))
+                popup.add_separator()
+
+            if image[0] != str(del_img):
+                popup.add_cascade(label="Copy",
+                                  image=self.copy_img,
+                                  compound='left',
+                                  menu=copymenu)
+
+                if image[0] != str(tenant_sync_img) and image[0] != str(od_folder_img):
+                    copymenu.add_command(label="Name",
+                                         image=self.name_img,
+                                         compound='left',
+                                         command=lambda: self.copy_name(values))
+                    copymenu.add_command(label="Path",
+                                         image=self.path_img,
+                                         compound='left',
+                                         command=lambda: self.copy_path(values))
+                copymenu.add_command(label="Details",
+                                     image=self.details_img,
+                                     compound='left', command=lambda: self.copy_details())
+
+            if image[0] == str(root_drive_img):
+                popup.entryconfig("Copy", state='disable')
+            else:
+                if image[0] != str(del_img):
+                    popup.entryconfig("Copy", state='normal')
+
+            if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview':
+                if image[0] != str(del_img):
+                    popup.add_separator()
+                popup.add_command(label="Expand folders",
+                                  image=self.exp_img, compound='left',
+                                  command=lambda: self.open_children(curItem),
+                                  accelerator="Alt+Down")
+                popup.add_command(label="Collapse folders",
+                                  image=self.col_img,
+                                  compound='left',
+                                  command=lambda: self.close_children(curItem),
+                                  accelerator="Alt+Up")
+                if opened:
+                    popup.entryconfig("Collapse folders", state='normal')
+                else:
+                    popup.entryconfig("Collapse folders", state='disable')
+            popup.tk_popup(event.x_root, event.y_root)
+        except IndexError:
+            pass
+        finally:
+            popup.grab_release()
+
+    def open_children(self, parent):
+        self.tv.item(parent, open=True)  # open parent
+        for child in self.tv.get_children(parent):
+            self.open_children(child)  # recursively open children
+
+    def close_children(self, parent):
+        self.tv.item(parent, open=False)  # close parent
+        for child in self.tv.get_children(parent):
+            self.close_children(child)  # recursively close children
+
+    def copy_details(self):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.details.get("1.0", tk.END))
+
+    def copy_path(self, values):
+        line = f'{values[6].split("Name: ")[1]}: {values[5].split("Path: ")[1]}\\{values[6].split("Name: ")[1]}'
+        self.root.clipboard_clear()
+        self.root.clipboard_append(line)
+
+    def copy_name(self, values):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(values[6].split("Name: ")[1])
+
+    def del_folder(self, iid):
+        global proj_name
+        clear_search()
+        self.tv.delete(iid)
+        self.details.config(state='normal')
+        self.details.delete('1.0', tk.END)
+        self.details.config(state='disable')
+        if len(self.tv.get_children()) == 0:
+            odsmenu.entryconfig("Unload all files", state='disable')
+            file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
+            search_entry.delete(0, 'end')
+            search_entry.configure(state="disabled")
+            btn.configure(state="disabled")
+            if len(tv_frame.tabs()) == 1:
+                projmenu.entryconfig("Save", state='disable')
+                root.unbind('<Alt-s>')
+                projmenu.entryconfig("SaveAs", state='disable')
+                projmenu.entryconfig("Unload", state='disable')
+                proj_name = None
 
 
-def CreateToolTip(widget, text, flip=False, single=False, motion=False):
-    def enter(event, motion=False):
-        showtip(text, widget, flip, single)
+class ToolTipManager:
+    def __init__(self):
+        self.tipwindow = None
+        self.current_tab = None
 
-    def leave(event):
-        hidetip()
+    def create_tooltip(self, widget, text, flip=False, single=False, motion=False):
+        def enter(event, motion=False):
+            self.show_tip(text, widget, flip, single)
 
-    if motion:
-        enter(None, motion=True)
+        def leave(event):
+            self.hide_tip()
 
-    else:
-        widget.bind('<Enter>', enter)
+        if motion:
+            widget.after(500, enter(None, motion=True))
+        else:
+            widget.bind('<Enter>', lambda event: widget.after(500, enter(event)))
 
-    widget.bind('<Leave>', leave)
+        widget.bind('<Leave>', leave)
 
+    def motion(self, event):
+        if event.widget.identify(event.x, event.y) == 'label':
+            index = event.widget.index("@%d,%d" % (event.x, event.y))
+            if index != 0:
+                return
+            if self.current_tab != event.widget.tab(index, 'text'):
+                self.current_tab = event.widget.tab(index, 'text')
+                if event.widget.tab(index, 'text') == 'Details':
+                    text = 'Details\n  Displays detailed information of the file/folder selected.'
+                elif event.widget.tab(index, 'text') == 'Log Entries':
+                    text = 'Log Entries\n  Displays related logs to the file/folder selected. This\n  will only be populated if OneDrive logs are parsed\n  along with the <userCid>.dat file.'
+                elif event.widget.tab(index, 'text') == 'OneDrive Folders  ':
+                    text = 'OneDrive Folders\n  Displays the <UserCid>.dat files that have been loaded\n  and the folder structure of OneDrive.'
+                self.create_tooltip(event.widget, text, flip=False, single=False, motion=True)
+        elif event.widget.identify(event.x, event.y) == 'clear':
+            if 'invalid' not in search_entry.state():
+                search_entry.config(cursor='arrow')
+                text = 'Clear\n        '
+                self.create_tooltip(event.widget, text, flip=False, single=True, motion=True)
+        else:
+            search_entry.config(cursor='xterm')
+            self.hide_tip()
+            self.current_tab = None
 
-def motion(event):
-    global current_tab
-    if event.widget.identify(event.x, event.y) == 'label':
-        index = event.widget.index("@%d,%d" % (event.x, event.y))
-        if index != 0:
+    def show_tip(self, text, widget, flip=False, single=False):
+        matches = ["start_parsing", "live_system", "odl", "load_project", "proj_parse"]
+
+        if self.tipwindow or not text:
             return
-        if current_tab != event.widget.tab(index, 'text'):
-            current_tab = event.widget.tab(index, 'text')
-            if event.widget.tab(index, 'text') == 'Details':
-                text = 'Details\n  Displays detailed information of the file/folder selected.'
-            if event.widget.tab(index, 'text') == 'Log Entries':
-                text = 'Log Entries\n  Displays related logs to the file/folder selected. This\n  will only be populated if OneDrive logs are parsed\n  along with the <userCid>.dat file.'
-            if event.widget.tab(index, 'text') == 'OneDrive Folders  ':
-                text = 'OneDrive Folders\n  Displays the <UserCid>.dat files that have been loaded\n  and the folder structure of OneDrive.'
-            CreateToolTip(event.widget, text, flip=False, single=False, motion=True)
 
-    elif event.widget.identify(event.x, event.y) == 'clear':
-        if 'invalid' not in search_entry.state():
-            search_entry.config(cursor='arrow')
-            text = 'Clear\n        '
-            CreateToolTip(event.widget, text, flip=False, single=True, motion=True)
+        if any(x in str(threading.enumerate()) for x in matches):
+            return
 
-    else:
-        search_entry.config(cursor='xterm')
-        hidetip()
-        current_tab = None
+        x, y, cx, cy = widget.bbox(1)
+        if flip:
+            x = x + widget.winfo_pointerx() - 330
+            y = y + cy + widget.winfo_pointery() + 20 - 90
+        elif single:
+            x = x + widget.winfo_pointerx()
+            y = y + cy + widget.winfo_pointery()
+        else:
+            x = x + widget.winfo_pointerx()
+            y = y + cy + widget.winfo_pointery() + 20
+
+        self.tipwindow = tw = tk.Toplevel(widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry("+%d+%d" % (x, y))
+
+        text = text.split('\n', 1)
+        h = (text[1].count('\n') + 2)
+        if single:
+            h = 1
+        reg_font = ("Segoe UI", 8, "normal")
+        w = tkFont.Font(family="Segoe UI", size=8, weight="normal").measure(max(text[1].split('\n'), key=len))
+        w2 = tkFont.Font(family="Segoe UI", size=8, weight="normal").metrics('linespace')
+        h2 = w2 * (text[1].count('\n') + 2)
+
+        if single:
+            frame = tk.Frame(tw, width=w + 20, height=h2 - 1, background="grey81", padx=1, pady=1)
+        else:
+            frame = tk.Frame(tw, width=w + 20, height=h2 + 12, background="grey81", padx=1, pady=1)
+        textbox = tk.Text(frame, height=h, font=reg_font, padx=8, relief="flat", bd=0, pady=5)
+
+        bold_font = ("Segoe UI", 8, "bold")
+        textbox.tag_configure("bold", font=bold_font)
+        textbox.tag_configure("regular", font=reg_font)
+        textbox.insert('end', text[0] + '\n', 'bold')
+        textbox.insert('end', text[1], 'regular')
+        textbox.configure(state='disable')
+
+        frame.pack()
+        frame.pack_propagate(0)
+        textbox.pack()
+
+        widget.after(5000, lambda: tw.destroy())
+
+    def hide_tip(self):
+        tw = self.tipwindow
+        self.tipwindow = None
+        if tw:
+            tw.destroy()
+
+
+class FileManager:
+    def __init__(self, tv, parent, cur_sel, columns=('Date_modified', 'Size')):
+        self.tv = tv
+        self.parent = parent
+        self.columns = columns
+        self.cur_sel = cur_sel
+        self.stop = threading.Event()
+
+        # Treeview for the current directory
+        self.tv2 = ttk.Treeview(parent, selectmode='browse', takefocus='false')
+        self.tv2.heading('#0', text=' Name', anchor='w')
+        self.tv2.column('#0', minwidth=80, width=340, stretch=True, anchor='w')
+
+        # Treeview for the detailed information in a separate tab
+        self.tab2 = ttk.Frame(parent)
+        self.tv3 = ttk.Treeview(self.tab2, columns=columns, selectmode='browse', takefocus='false')
+
+        self.fscrollbv = ttk.Scrollbar(self.tab2, orient="vertical", command=self.multiple_yview)
+        self.tv2.configure(yscrollcommand=self.fscrollbv.set)
+        self.tv3.configure(yscrollcommand=self.fscrollbv.set)
+
+        self.configure_treeview()
+        self.configure_tags()
+        self.configure_bindings()
+
+    def configure_treeview(self):
+        self.tv3.heading('#0', text=' Status', anchor='w')
+        self.tv3.heading('Date_modified', text=' Date_modified', anchor='w')
+        self.tv3.heading('Size', text=' Size', anchor='w')
+        self.tv3.column('#0', minwidth=80, width=100, stretch=False, anchor='w')
+        self.tv3.column('Date_modified', minwidth=80, width=180, stretch=False, anchor='w')
+        self.tv3.column('Size', minwidth=70, width=80, stretch=False, anchor='e')
+
+        self.tv3.grid(row=0, column=0, sticky="nsew")
+        self.fscrollbv.grid(row=0, column=1, sticky="nsew")
+
+        self.tab2.grid_rowconfigure(0, weight=1)
+        self.tab2.grid_columnconfigure(0, weight=1)
+
+    def configure_tags(self):
+        self.tv2.tag_configure('red', foreground="red")
+        self.tv3.tag_configure('red', foreground="red")
+
+    def configure_bindings(self):
+        for tv in [self.tv2, self.tv3]:
+            tv.bind('<<TreeviewSelect>>', self.multiple_select)
+            tv.bind("<Button-3>", popup_manager.do_popup)
+            tv.bind('<MouseWheel>', self.multiple_yview_scroll)
+
+        self.tv2.bind('<Button-1>', self.handle_click)
+        self.tv2.bind('<Motion>', self.handle_click)
+
+    def handle_click(self, event):
+        if self.tv2.identify_region(event.x, event.y) == "separator":
+            return "break"
+
+    def multiple_yview(self, *args):
+        self.tv2.yview(*args)
+        self.tv3.yview(*args)
+
+    def multiple_yview_scroll(self, event):
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame4.!treeview':
+            self.tv2.yview_scroll(-1 * int(event.delta / 120), "units")
+        elif str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!treeview':
+            self.tv3.yview_scroll(-1 * int(event.delta / 120), "units")
+
+    def multiple_select(self, event):
+        try:
+            if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!treeview':
+                cur_item = self.tv2.selection()
+                cur_item2 = self.tv3.selection()
+                if not cur_item2:
+                    cur_item2 = ('0',)
+                if cur_item[0] != cur_item2[0]:
+                    self.tv3.selection_set(cur_item[0])
+
+            elif str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame4.!treeview':
+                cur_item = self.tv3.selection()
+                cur_item2 = self.tv2.selection()
+                if not cur_item2:
+                    cur_item2 = ('0',)
+                if cur_item[0] != cur_item2[0]:
+                    self.tv2.selection_set(cur_item[0])
+                self.new_selection(event)
+
+        except Exception:
+            pass
+
+    def new_selection(self, event):
+        cur_item = event.widget.selection()
+
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview':
+            self.file_pane()
+        self.select_item(event)
+
+        try:
+            if self.cur_sel == f'{event.widget}{cur_item[0]}':
+                return
+        except Exception:
+            return
+        else:
+            self.cur_sel = f'{event.widget}{cur_item[0]}'
+
+            t1 = threading.Thread(target=self.get_info,
+                                  args=(event,),
+                                  daemon=True)
+
+            if 'get_info' not in str(threading.enumerate()):
+                self.stop.clear()
+                t1.start()
+            else:
+                self.stop.set()
+
+    def select_item(self, event):
+        cur_item = event.widget.selection()
+        values = list(event.widget.item(cur_item, 'values'))
+        if len(values) > 4:
+            if values[0] != '':
+                if 'inRecycleBin' in values[7]:
+                    values[0] = f'DeleteTimeStamp: {values[0]}'
+                else:
+                    values[0] = f'lastChange: {values[0]}'
+                values[1] = f'size: {values[1]}'
+        try:
+            tags = event.widget.item(cur_item, 'tags')[0]
+        except:
+            tags = ''
+        details.config(state='normal')
+        details.delete('1.0', tk.END)
+        try:
+            for line in values:
+                if line == '':
+                    continue
+                details.insert(tk.END, f'{line}\n', tags)
+        except IndexError:
+            pass
+
+        details.config(state='disable')
+
+    def get_info(self, event):  # need to finish testing on deleted files
+        df_list = []
+        curItem = event.widget.selection()
+        values = event.widget.item(curItem, 'values')
+        #print(f'values: {values}')
+
+        for item in root.winfo_children():
+            for i in item.winfo_children():
+                if '!mytable' in str(i):
+                    df_list.append(i.model.df)
+
+        if len(df_list) == 0:
+            return
+
+        for item in infoFrame.winfo_children():
+            if '.!notebook2.!frame.' in str(item):
+                item.destroy()
+
+        self.parent.update_idletasks()
+
+        if len(values) <= 3:
+            return
+
+        infoNB.tab(infoFrame, text="Loading... ")
+        root.update_idletasks()
+
+        info = []
+
+        # find logs for deleted files
+        if 'inRecycleBin' in values[7]:
+            rid = values[3].split(" ")[1].split("+")[0]
+            try:
+                file_hash = values[10].split("(")[1].strip(")")
+            except:
+                file_hash = ''
+            #print(rid)
+            #print(f'hash: {file_hash}')
+            if len(rid) != 0:
+                info = pd.concat([df.loc[df.Params.astype('string').str.contains(rid, case=False, na=False)] for df in df_list])
+            elif len(file_hash) != 0:
+                if 'SHA1' in values[10]:
+                    info = pd.concat([df.loc[df.Params.astype('string').str.contains(file_hash, case=False, na=False)] for df in df_list])
+                if 'quickXor' in values[10]:
+                    data = ''.join(['{:02x}'.format(i) for i in base64.b64decode(file_hash)])
+                    info = pd.concat([df.loc[df.Params.astype('string').str.contains(data, case=False, na=False)] for df in df_list])
+            else:
+                return
+
+        # find logs for files/folders
+        if 'Status' in values[7]:
+            info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[3].split(" ")[1].split("+")[0]}', case=False, na=False)] for df in df_list])
+
+        if len(info) == 0 or stop.is_set():
+            infoNB.tab(infoFrame, text="Log Entries")
+            if event.widget.selection()[0] != curItem[0]:
+                stop.clear()
+                threading.Thread(target=get_info,
+                                 args=(event,),
+                                 daemon=True).start()
+            return
+
+        pt = pandastablepatch.MyTable(infoFrame,
+                                      dataframe=info,
+                                      maxcellwidth=900,
+                                      showtoolbar=False,
+                                      showstatusbar=False,
+                                      enable_menus=True,
+                                      editable=False)
+        pt.adjustColumnWidths()
+        pt.show()
+        pt.redraw()
+        if stop.is_set():
+            for item in infoFrame.winfo_children():
+                if '.!notebook2.!frame.' in str(item):
+                    item.destroy()
+            if tv.selection()[0] != curItem[0]:
+                stop.clear()
+                threading.Thread(target=get_info,
+                                 args=(event,),
+                                 daemon=True).start()
+        infoNB.tab(infoFrame, text="Log Entries")
+
+    def file_pane(self):
+        cur_item = self.tv.selection()
+
+        for item in self.tv2.get_children():
+            self.tv2.delete(item)
+
+        for item in self.tv3.get_children():
+            self.tv3.delete(item)
+
+        image_mapping = {
+            '2': available_img,
+            '5': excluded_img,
+            '6': online_not_sync_img,
+            '7': online_not_link_img,
+            '8': online_img,
+            '9': online_sync_img,
+            '10': online_not_sync_img,
+            '11': online_not_link_img
+        }
+
+        share_image_mapping = {
+            '2': available_shared_img,
+            '5': excluded_shared_img,
+            '6': not_sync_share_img,
+            '7': not_link_share_img,
+            '8': online_shared_img
+        }
+
+        for child in self.tv.get_children(cur_item):
+            item_data = self.tv.item(child)
+            image_key = item_data["image"][0]
+            text = f' {item_data["text"]}'
+            values = item_data["values"]
+            tags = item_data["tags"][0] if item_data["tags"] else ''
+
+            self.tv2.insert("", "end", image=image_key, text=text, values=values, tags=tags)
+
+            values_7 = values[7].split(' ')[1] if len(values) > 7 and len(values[7].split(' ')) > 1 else ''
+            if values_7 == '7':
+                if image_key == str(link_folder_img):
+                    image_value = online_link_img
+                else:
+                    image_value = online_img
+            else:
+                image_value = image_mapping.get(values_7, online_img)
+            self.tv3.insert("", "end", image=image_value, values=values, tags=tags)
+
+        try:
+            if cur_item[0] in file_items:
+                for i in file_items[cur_item[0]]:
+                    item_data_i = self.tv.item(i)
+                    image_key_i = item_data_i["image"][0]
+                    text_i = f' {item_data_i["text"]}'
+                    values_i = item_data_i["values"]
+                    tags_i = item_data_i["tags"][0] if item_data_i["tags"] else ''
+
+                    heading_text = ' Date deleted' if tags_i else ' Date modified'
+                    self.tv3.heading('Date_modified', text=heading_text, anchor='w')
+
+                    self.tv2.insert("", "end", image=image_key_i, text=text_i, values=values_i, tags=tags_i)
+
+                    values_i_7 = values_i[7].split(' ')[1] if len(values_i) > 7 and len(values_i[7].split(' ')) > 1 else ''
+                    values_i_12 = values_i[12].split(' ')[1] if 'sharedItem' in values_i[12] else ''
+
+                    if values_i_12 == '1':
+                        image_value_i = share_image_mapping.get(values_i_7, onedrive_shared_img)
+                    else:
+                        image_value_i = image_mapping.get(values_i_7, online_img)
+
+                    self.tv3.insert("", "end", image=image_value_i, values=values_i, tags=tags_i)
+        except Exception as e:
+            print(e)
+            pass
+
+        self.parent.update_idletasks()
+
+
+class TreeviewHeaderWidget(ttk.Frame):
+    def __init__(self, master=None, columns=None, **kwargs):
+        super().__init__(master, **kwargs)
+        
+        # Create TreeView widget
+        self.treeview = ttk.Treeview(self, columns=columns, show="headings")
+        
+        # Add headers to the TreeView
+        for col in columns:
+            self.treeview.heading(col, text=col, anchor="w")
+
+        # Set the height of the treeview to 0 to hide rows
+        self.treeview["height"] = 0
+
+        # Pack the TreeView inside the custom widget
+        self.treeview.pack(fill=tk.BOTH, expand=True)
 
 
 def ButtonNotebook():
 
-    test = style.map('TNotebook.Tab')
-    style.map('CustomNotebook.Tab', **test)
+    TNotebook_map = style.map('TNotebook.Tab')
+    style.map('CustomNotebook.Tab', **TNotebook_map)
 
     try:
         style.element_create("close", "image", "img_close",
@@ -1580,8 +2037,8 @@ def ButtonNotebook():
 
 def ButtonEntry(do_bind=False):
 
-    test = style.map('TEntry')
-    style.map('CustomEntry', **test)
+    TEntry_map = style.map('TEntry')
+    style.map('CustomEntry', **TEntry_map)
 
     try:
         style.element_create("clear", "image", "img_blank",
@@ -1668,9 +2125,10 @@ def pane_config():
         fgf = 'black'
 
     pwv.config(background=bg, sashwidth=6)
-    pwh.config(background=bgf, sashwidth=2)
+    pwh.config(background=bgf, sashwidth=6)
     details.config(background=bgf, foreground=fgf)
     style.configure('Result.Treeview', rowheight=40)
+    tv_pane_frame.configure(background=bgf)
     ttk.Style().theme_use()
 
 
@@ -1708,12 +2166,15 @@ def search(item=''):
     for child in children:
         if query.lower() in str(tv.item(child, 'values')).lower():
             values = tv.item(child, 'values')
-            result(root, values)
+            Result(root, values)
         if child in file_items:
             for i in file_items[child]:
                 if query.lower() in str(tv.item(i, 'values')).lower():
+                    tags = ''
+                    if tv.item(i, 'tags'):
+                        tags='red'
                     values = tv.item(i, 'values')
-                    result(root, values)
+                    Result(root, values, folder=False, tags=tags)
         search(item=child)
 
 
@@ -1721,14 +2182,16 @@ def search_result():
     if len(search_entry.get()) == 0:
         return
     position = pwh.sash_coord(2)
-    pwh.remove(tv2)
-    pwh.remove(tab2)
+    pwh.remove(file_manager.tv2)
+    pwh.remove(file_manager.tab2)
     pwh.add(result_frame, minsize=327, after=tv_pane_frame)
     root.update_idletasks()
     pwh.sash_place(1, x=position[0], y=position[1])
 
 
 def clear_search():
+    global s_image
+    s_image.clear()
     position = None
     children = tvr.get_children()
     for child in children:
@@ -1736,8 +2199,8 @@ def clear_search():
     if len(pwh.panes()) == 3:
         position = pwh.sash_coord(1)
     pwh.remove(result_frame)
-    pwh.add(tv2, minsize=80, width=340, after=tv_pane_frame)
-    pwh.add(tab2, minsize=247, after=tv2)
+    pwh.add(file_manager.tv2, minsize=80, width=340, after=tv_pane_frame)
+    pwh.add(file_manager.tab2, minsize=247, after=file_manager.tv2)
     if position:
         pwh.sash_place(2, x=position[0], y=position[1])
     details.config(state='normal')
@@ -1769,40 +2232,27 @@ def clear_all():
 
 def json_count(item='', file_count=0, del_count=0, folder_count=0):
     children = tv.get_children(item)
+    
     for child in children:
         values = tv.item(child, 'values')
-        if values[6] == 'Folder':
-            folder_count += 1
-        if values[6] == 'File':
-            file_count += 1
-        if values[6] == 'File - deleted':
-            del_count += 1
+        
+        folder_count += 'folder' in values[7]
+        
         if child in file_items:
             for i in file_items[child]:
                 values = tv.item(i, 'values')
-                if values[6] == 'Folder':
-                    folder_count += 1
-                if values[6] == 'File':
-                    file_count += 1
-                if values[6] == 'File - deleted':
-                    del_count += 1
-        file_count, del_count, folder_count = json_count(item=child,
-                                                         file_count=file_count,
-                                                         del_count=del_count,
-                                                         folder_count=folder_count)
+                
+                file_count += 'file' in values[7]
+                del_count += 'inRecycleBin' in values[7]
+                
+        file_count, del_count, folder_count = json_count(
+            item=child,
+            file_count=file_count,
+            del_count=del_count,
+            folder_count=folder_count
+        )
+    
     return file_count, del_count, folder_count
-
-
-def ff_count(f, folder_count=0, file_count=0):
-    for c in f:
-        if c['Type'] == 'Folder':
-            folder_count += 1
-        if c['Type'] == 'File':
-            file_count += 1
-    return folder_count, file_count
-
-
-file_items = defaultdict(list)
 
 
 def parent_child(d, parent_id=None):
@@ -1812,139 +2262,111 @@ def parent_child(d, parent_id=None):
                               "end",
                               image=root_drive_img,
                               text=f" {d['Name']}",
-                              values=('',
-                                      '',
-                                      d['ParentId'],
-                                      d['DriveItemId'],
-                                      d['eTag'],
-                                      d['Name'],
-                                      d['Type'],
-                                      d['Size'],
-                                      d['Hash'],
-                                      d['Status'],
-                                      d['Date_modified'],
-                                      d['Shared'],
-                                      len(d['Children']),
-                                      d['Path']))
+                              values=([f'{k}: {v}' for k, v in d.items() if 'Data' not in k]))
 
-    for c in d['Children']:
-        # Here we create a new row object in the TreeView and pass its return value for recursion
-        # The return value will be used as the argument for the first parameter of this same line of code after recursion
-        if c['Type'] == 'Folder':
-            parent_child(c, tv.insert(parent_id,
-                                      0,
-                                      image=folder_img,
-                                      text=f" {c['Name']}",
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              c['Status'],
-                                              c['Date_modified'],
-                                              c['Shared'],
-                                              len(c['Children']),
-                                              c['Path'])))
-        elif c['Type'] == 'Root Default':
-            parent_child(c, tv.insert(parent_id,
-                                      0,
-                                      image=default_img,
-                                      text=f" {c['Name']}",
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              c['Status'],
-                                              c['Date_modified'],
-                                              c['Shared'],
-                                              len(c['Children']),
-                                              c['Path'])))
-        elif c['Type'] == 'Root Shared':
-            parent_child(c, tv.insert(parent_id,
-                                      "end",
-                                      image=shared_img,
-                                      text=f" {c['Name']}",
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              c['Status'],
-                                              c['Date_modified'],
-                                              c['Shared'],
-                                              len(c['Children']),
-                                              c['Path'])))
-        elif c['Type'] == 'Root Deleted':
-            parent_child(c, tv.insert(parent_id,
+    if 'Data' in d:
+        for c in d['Data']:
+            if 'Children' in c:
+                z = ('', '', '', '', '', '', '', '', '')
+                parent_id = tv.insert(parent_id,
                                       "end",
                                       image=del_img,
-                                      text=f" {c['Name']}",
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path']),
-                                      tags='red'))
-        elif c['Type'] == 'File - deleted':
-            parent_child(c, tv.insert(parent_id,
-                                      "end",
-                                      image=file_del_img,
-                                      text=f" {c['Name']}",
-                                      values=('',
-                                              '',
-                                              c['ParentId'],
-                                              c['DriveItemId'],
-                                              c['eTag'],
-                                              c['Name'],
-                                              c['Type'],
-                                              c['Size'],
-                                              c['Hash'],
-                                              len(c['Children']),
-                                              c['Path'],
-                                              c['DeleteTimeStamp']),
-                                      tags='red'))
-        else:
+                                      text=' Deleted',
+                                      values=(z),
+                                      tags='red')
+                for b in c['Children']:
+                    w = (b['DeleteTimeStamp'], b['size'])
+                    x = ('', '', '', '', '', '')
+                    y = [f'{k}: {v}' for k, v in b.items() if 'DeleteTimeStamp' not in k and 'size' not in k]
+                    z = w + tuple(y) + x
+                    iid = tv.insert(parent_id,
+                                    "end",
+                                    image=file_del_img,
+                                    text=f" {b['Name']}",
+                                    values=(z),
+                                    tags='red')
+                    parent = tv.parent(iid)
+                    file_items[parent].append(iid)
+                    tv.detach(iid)
+            else:
+                w = ('', '')
+                x = ('', '', '')
+                y = [f'{k}: {v}' if v is not None else f'{k}: ' for k, v in c.items() if 'Files' not in k and 'Folders' not in k and 'Scope' not in k]
+                z = w + tuple(y) + x
+                if '+' in c['scopeID']:
+                    image = tenant_sync_img
+                else:
+                    image = od_folder_img
+                text = f" {c['MountPoint']}" if c['MountPoint'] != '' else f" {c['scopeID']}"
+                parent_child(c, tv.insert(parent_id,
+                                 "end",
+                                 image=image,
+                                 text=text,
+                                 values=(z)))
+
+    if 'Files' in d:
+        for c in d['Files']:
+            x = (c['lastChange'], c['size'])
+            y = [f'{k}: {v}' for k, v in c.items() if 'lastChange' not in k and 'size' not in k]
+            z = x + tuple(y)
+            if c['fileStatus'] == 6:
+                image = not_sync_file_img
+            elif c['fileStatus'] == 7:
+                image = not_link_file_img
+            else:
+                image = file_img
             iid = tv.insert(parent_id,
                             "end",
-                            image=file_img,
+                            image=image,
                             text=f" {c['Name']}",
-                            values=(c['Date_modified'],
-                                    c['Size'],
-                                    c['ParentId'],
-                                    c['DriveItemId'],
-                                    c['eTag'],
-                                    c['Name'],
-                                    c['Type'],
-                                    c['Size'],
-                                    c['Hash'],
-                                    c['Status'],
-                                    c['Date_modified'],
-                                    c['Shared'],
-                                    len(c['Children']),
-                                    c['Path']))
+                            values=(z))
             parent = tv.parent(iid)
             file_items[parent].append(iid)
             tv.detach(iid)
-#        root.update_idletasks()
+    
+    
+    if 'Folders' in d:
+        for c in d['Folders']:
+            x = ('', '')
+            y = [f'{k}: {v}' for k, v in c.items() if 'Files' not in k and 'Folders' not in k and 'Scope' not in k]
+            z = x + tuple(y)
+            if c['folderStatus'] == 9:
+                image = sync_directory_img
+            elif c['folderStatus'] == 10:
+                image = not_sync_directory_img
+            elif c['folderStatus'] == 11:
+                image = not_link_folder_img
+            else:
+                image = folder_img
+            parent_child(c, tv.insert(parent_id,
+                             0,
+                             image=image,
+                             text=f" {c['Name']}",
+                             values=(z)))    
+    
+    if 'Scope' in d:
+        for c in d['Scope']:
+            image = link_folder_img
+            if c['listID'] == '' and '+' not in c['scopeID']:
+                image = vault_closed_img
+            if c['siteID'] == '' and '+' in c['scopeID']:
+                image = sync_directory_img
+                
+            x = ('', '')
+            y = [f'{k}: {v}' if v is not None else f'{k}: ' for k, v in c.items() if 'Links' not in k]
+
+
+            for b in c['Links']:
+                w = [f'{k}: {v}' for k, v in b.items() if 'Files' not in k and 'Folders' not in k]
+                z = x + tuple(w) + tuple(y)
+
+                if ('Folders' in b or 'Files' in b) and str(image) == str(vault_closed_img):
+                    image = vault_open_img
+                parent_child(b, tv.insert(parent_id,
+                                 0,
+                                 image=image,
+                                 text=f" {b['Name']}",
+                                 values=(z))) 
 
 
 def live_system(menu):
@@ -2125,17 +2547,18 @@ def open_dat(menu):
 
 def read_sql(menu):
     global reghive
+    global recbin
     folder_name = filedialog.askdirectory(initialdir="/", title="Open")
 
     if folder_name:
         if keyboard.is_pressed('shift') or menu_data['hive']:
             pass
         else:
-            root.wait_window(hive(root, sql=True).win)
+            root.wait_window(hive(root).win)
 
         x = menu.entrycget(1, "label")
         threading.Thread(target=start_parsing,
-                         args=(x, folder_name, reghive,),
+                         args=(x, folder_name, reghive, recbin,),
                          daemon=True).start()
     reghive = ''
 
@@ -2143,7 +2566,7 @@ def read_sql(menu):
 def import_json(menu):
     filename = filedialog.askopenfile(initialdir="/",
                                       title="Import JSON",
-                                      filetypes=(("OneDrive dat file",
+                                      filetypes=(("OneDrive json file",
                                                   "*.json"),))
 
     if filename:
@@ -2156,7 +2579,7 @@ def import_json(menu):
 def import_csv(menu):
     filename = filedialog.askopenfile(initialdir="/",
                                       title="Import CSV",
-                                      filetypes=(("OneDrive dat file",
+                                      filetypes=(("OneDrive csv file",
                                                   "*.csv"),))
 
     if filename:
@@ -2232,7 +2655,8 @@ def odl(folder_name, csv=False):
         pb.configure(mode='indeterminate')
         value_label['text'] = f'Parsing log files for {key}. Please wait....'
         pb.start()
-        odl = pd.read_csv(folder_name, dtype=str)
+        file = open(folder_name.name, 'r', encoding='utf-8')
+        odl = pd.read_csv(file, dtype=str)
         import_headers = odl.axes[1]
         if list(set(import_headers) - set(header_list)):
             odl = pd.DataFrame()
@@ -2324,20 +2748,17 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
     start = time.time()
     dat = False
 
-    if x == 'Live system':
-        account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
-        df, name = parse_dat(filename, reghive, recbin, start, account,
-                             gui=True, pb=pb, value_label=value_label)
-        df, rbin_df = parse_onedrive(df, account, reghive, recbin, gui=True,
-                                     pb=pb, value_label=value_label)
-        dat = True
-
     if x == 'Load <UserCid>.dat' + (' '*10):
         account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
-        df, name = parse_dat(filename, reghive, recbin, start, account,
+        name = os.path.split(filename)[1]
+
+        df, rbin_df, df_scope, scopeID = DATParser.parse_dat(filename, account,
                              gui=True, pb=pb, value_label=value_label)
-        df, rbin_df = parse_onedrive(df, account, reghive, recbin, gui=True,
-                                     pb=pb, value_label=value_label)
+
+        if not df.empty:
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename,  rbin_df, account, reghive, recbin, gui=True,
+                                                  pb=pb, value_label=value_label)
+        
         dat = True
 
     if x == 'Load from SQLite':
@@ -2349,110 +2770,33 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         except Exception:
             name = 'SQLite_DB'
 
-        df, rbin_df = parse_sql(filename, reghive, recbin, gui=True, pb=pb, value_label=value_label)
+        df, rbin_df, df_scope, scopeID, account = SQLiteParser.parse_sql(filename)
 
+        if not df.empty:
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename, rbin_df, account, reghive, recbin, gui=True,
+                                                  pb=pb, value_label=value_label)
         dat = True
 
     if x == 'Import JSON':
         cache = json.load(filename)
         df = pd.DataFrame()
+        rbin_df = pd.DataFrame()
 
     if x == 'Import CSV':
-        df, name = parse_csv(filename)
+        account = ''
+        df, rbin_df, df_scope, scopeID = parse_csv(filename)
         if not df.empty:
-            df, rbin_df = parse_onedrive(df)
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename.name, rbin_df, account, reghive, recbin, gui=True,
+                                                  pb=pb, value_label=value_label)
+
 
     if x == 'Project':
         name = filename
         pass
 
-    if not df.empty:
-        try:
-            file_count = df.Type.value_counts()['File']
-
-        except KeyError:
-            file_count = 0
-
-        try:
-            del_count = df.Type.value_counts()['File - deleted']
-
-        except KeyError:
-            del_count = 0
-
-        try:
-            folder_count = df.Type.value_counts()['Folder']
-
-        except KeyError:
-            folder_count = 0
-
-        def subset(dict_, keys):
-            return {k: dict_[k] for k in keys}
-
-        cache = {}
-        final = []
-        is_del = []
-
-        df.loc[df.Type == 'File', ['FileSort']] = df['Name'].str.lower()
-        df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
-
-        for row in df.sort_values(by=['Level', 'ParentId', 'Type', 'FileSort', 'FolderSort'], ascending=[False, False, False, True, False]).to_dict('records'):
-            file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'Status', 'Date_modified', 'Shared', 'Children'))
-            if row['Type'] == 'File':
-                folder = cache.setdefault(row['ParentId'], {})
-                folder.setdefault('Children', []).append(file)
-            elif row['Type'] == 'File - deleted':
-                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'DeleteTimeStamp', 'Children'))
-                is_del.append(file)
-            else:
-                folder = cache.get(row['DriveItemId'], {})
-                temp = {**file, **folder}
-                folder_merge = cache.setdefault(row['ParentId'], {})
-                if 'Root' in row['Type']:
-                    final.insert(0, temp)
-                else:
-                    folder_merge.setdefault('Children', []).append(temp)
-
-        if dat:
-            for row in rbin_df.to_dict('records'):
-                file = subset(row, keys=('ParentId', 'DriveItemId', 'eTag', 'Type', 'Path', 'Name', 'Size', 'Hash', 'DeleteTimeStamp', 'Children'))
-                is_del.append(file)
-            try:
-                del_count = rbin_df.Type.value_counts()['File - deleted']
-
-            except (KeyError, AttributeError):
-                del_count = 0
-
-        cache = {'ParentId': '',
-                 'DriveItemId': '',
-                 'eTag': '',
-                 'Type': 'Root Drive',
-                 'Path': '',
-                 'Name': name.replace('/', '\\'),
-                 'Size': '',
-                 'Hash': '',
-                 'Status': '',
-                 'Date_modified': '',
-                 'Shared': '',
-                 'Children': ''
-                 }
-
-        deleted = {'ParentId': '',
-                   'DriveItemId': '',
-                   'eTag': '',
-                   'Type': 'Root Deleted',
-                   'Path': '',
-                   'Name': 'Deleted Files',
-                   'Size': '',
-                   'Hash': '',
-                   'DeleteTimeStamp': '',
-                   'Children': ''
-                   }
-
-        if is_del:
-            deleted['Children'] = is_del
-            final.append(deleted)
-
-        cache['Children'] = final
+    file_count = df.Type.value_counts().get('File', 0) if not df.empty else 0
+    folder_count = df.Type.value_counts().get('Folder', 0) if not df.empty else 0
+    del_count = len(rbin_df) if not rbin_df.empty else 0
 
     if not df.empty or x == 'Import JSON':
 
@@ -2462,24 +2806,46 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         tv.grid_forget()
         parent_child(cache)
         tv.grid(row=1, column=0, sticky="nsew")
+
         if x == 'Import JSON':
             curItem = tv.get_children()[-1]
             file_count, del_count, folder_count = json_count(item=curItem)
-        if x != 'Live system':
-            pb.stop()
-            pb.configure(mode='determinate')
+
+        pb.stop()
+        pb.configure(mode='determinate')
 
         if menu_data['json'] and dat:
-            print_json_gui(cache, name, menu_data['pretty'], menu_data['path'])
+            value_label['text'] = f"Saving JSON. Please wait...."
+            pb.configure(mode='indeterminate')
+            pb.start()
+            try:
+                print_json(cache, name, menu_data['pretty'], menu_data['path'])
+            except Exception as e:
+                logging.warning(f'Unable to save json. {e}')
+            pb.stop()
 
         if menu_data['csv'] and dat:
-            print_csv(df, rbin_df, name, menu_data['path'])
+            value_label['text'] = f"Saving CSV. Please wait...."
+            pb.configure(mode='indeterminate')
+            pb.start()
+            try:
+                print_csv(df, rbin_df, name, menu_data['path'])
+            except Exception as e:
+                logging.warning(f'Unable to save csv. {e}')
+            pb.stop()
 
         if menu_data['html'] and dat:
-            print_html(df, rbin_df, name, menu_data['path'])
+            value_label['text'] = f"Saving HTML. Please wait...."
+            pb.configure(mode='indeterminate')
+            pb.start()
+            try:
+                print_html(df, rbin_df, name, menu_data['path'])
+            except Exception as e:
+                logging.warning(f'Unable to save html. {e}')
+            pb.stop()
 
-        if x != 'Live system':
-            pb['value'] = 0
+        pb['value'] = 0
+        pb.configure(mode='determinate')
         value_label['text'] = f'{file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
         try:
             filename = filename.replace('/', '\\')
@@ -2519,95 +2885,8 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
     if "ERROR," in log_capture_string.getvalue():
         message['background'] = 'red'
         message['foreground'] = ''
-    if x != 'Live system':
-        rebind()
 
-
-def do_popup(event):
-    rof_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/Icon11.ico'))
-    copy_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/copy.png'))
-    name_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_empty_new.png'))
-    path_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_open.png'))
-    details_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/language_window.png'))
-    exp_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hierarchy1_expanded.png'))
-    col_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hierarchy1.png'))
-    try:
-        curItem = event.widget.identify_row(event.y)
-        event.widget.selection_set(curItem)
-        opened = event.widget.item(curItem, 'open')
-        values = event.widget.item(curItem, 'values')
-        popup = tk.Menu(root, tearoff=0)
-        copymenu = tk.Menu(root, tearoff=0)
-
-        if values[6] == 'Root Drive':
-            popup.add_command(label="Remove OneDrive Folder",
-                              image=rof_img,
-                              compound='left',
-                              command=lambda: del_folder(curItem))
-            popup.add_separator()
-
-        popup.add_cascade(label="Copy",
-                          image=copy_img,
-                          compound='left',
-                          menu=copymenu)
-        copymenu.add_command(label="Name",
-                             image=name_img,
-                             compound='left',
-                             command=lambda: copy_name(values))
-        copymenu.add_command(label="Path",
-                             image=path_img,
-                             compound='left',
-                             command=lambda: copy_path(values))
-        copymenu.add_command(label="Details",
-                             image=details_img,
-                             compound='left', command=lambda: copy_details())
-
-        if values[6] == 'Root Drive':
-            popup.entryconfig("Copy", state='disable')
-        else:
-            popup.entryconfig("Copy", state='normal')
-
-        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview' and (values[6] == 'Folder' or 'Root' in values[6]):
-            popup.add_separator()
-            popup.add_command(label="Expand folders",
-                              image=exp_img, compound='left',
-                              command=lambda: open_children(curItem),
-                              accelerator="Alt+Down")
-            popup.add_command(label="Collapse folders",
-                              image=col_img,
-                              compound='left',
-                              command=lambda: close_children(curItem),
-                              accelerator="Alt+Up")
-            if opened:
-                popup.entryconfig("Collapse folders", state='normal')
-            else:
-                popup.entryconfig("Collapse folders", state='disable')
-        popup.tk_popup(event.x_root, event.y_root)
-    except IndexError:
-        pass
-    finally:
-        popup.grab_release()
-
-
-def del_folder(iid):
-    global proj_name
-    clear_search()
-    tv.delete(iid)
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    details.config(state='disable')
-    if len(tv.get_children()) == 0:
-        odsmenu.entryconfig("Unload all files", state='disable')
-        file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
-        search_entry.delete(0, 'end')
-        search_entry.configure(state="disabled")
-        btn.configure(state="disabled")
-        if len(tv_frame.tabs()) == 1:
-            projmenu.entryconfig("Save", state='disable')
-            root.unbind('<Alt-s>')
-            projmenu.entryconfig("SaveAs", state='disable')
-            projmenu.entryconfig("Unload", state='disable')
-            proj_name = None
+    rebind()
 
 
 def del_logs():
@@ -2639,231 +2918,10 @@ def del_logs():
         proj_name = None
 
 
-def new_selection(event):
-    global cur_sel
-    curItem = event.widget.selection()
-
-    if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview':
-        file_pane()
-    selectItem(event)
-
-    try:
-        if cur_sel == f'{event.widget}{curItem[0]}':
-            return
-    except Exception:
-        return
-    else:
-        cur_sel = f'{event.widget}{curItem[0]}'
-
-        t1 = threading.Thread(target=get_info,
-                              args=(event,),
-                              daemon=True)
-
-        if 'get_info' not in str(threading.enumerate()):
-            stop.clear()
-            t1.start()
-        else:
-            stop.set()
-
-
-def selectItem(event):
-    curItem = event.widget.selection()
-    values = event.widget.item(curItem, 'values')
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    try:
-        if values[6] == 'Root Drive':
-            line = f'Name: {values[5]}\nType: {values[6]}'
-        elif values[6] == 'Root Shared' or values[6] == 'Root Default':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[13]}\nDriveItemId: {values[3]}'
-        elif values[6] == 'Folder':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[13]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag: {values[4]}'
-        elif values[6] == 'Root Deleted':
-            line = f'Name: {values[5]}\nType: {values[6]}'
-        elif values[6] == 'File - deleted':
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[10]}\nSize: {values[7]}\nHash: {values[8]}\nDeleteTimeStamp: {values[11]} UTC'
-        else:
-            line = f'Name: {values[5]}\nType: {values[6]}\nPath: {values[13]}\nSize: {values[7]}\nHash: {values[8]}\nParentId: {values[2]}\nDriveItemId: {values[3]}\neTag: {values[4]}'
-        if 'deleted' in values[6].lower():
-            details.insert(tk.END, line, 'red')
-        else:
-            details.insert(tk.END, line)
-        details.see(tk.END)
-    except IndexError:
-        pass
-
-    details.config(state='disable')
-
-
-def file_pane():
-    curItem = tv.selection()
-
-    for item in tv2.get_children():
-        tv2.delete(item)
-
-    for item in tv3.get_children():
-        tv3.delete(item)
-
-    for child in tv.get_children(curItem):
-        if tv.item(child)["tags"]:
-            tv2.insert("", "end", image=tv.item(child)["image"],
-                       text=f' {tv.item(child)["text"]}', values=tv.item(child)["values"], tags=tv.item(child)["tags"][0])
-        else:
-            tv2.insert("", "end", image=tv.item(child)["image"],
-                       text=f' {tv.item(child)["text"]}', values=tv.item(child)["values"])
-
-        if 'deleted' in tv.item(child, 'values')[6].lower():
-            tv3.insert("", "end", values=tv.item(child)["values"])
-
-        elif tv.item(child, 'values')[9] == '5':
-            tv3.insert("", "end", image=excluded_img, values=tv.item(child)["values"])
-
-        else:
-            tv3.insert("", "end", image=online_img, text=tv.item(child, 'values')[9], values=tv.item(child)["values"])
-    try:
-        if curItem[0] in file_items:
-            for i in file_items[curItem[0]]:
-                tv2.insert("", "end", image=tv.item(i)["image"],
-                           text=f' {tv.item(i)["text"]}', values=tv.item(i)["values"])
-
-                if tv.item(i, 'values')[9] == '2':
-                    if tv.item(i, "values")[11] == '1':
-                        tv3.insert("", "end", image=available_shared_img,
-                                   values=tv.item(i)["values"])
-                    else:
-                        tv3.insert("", "end", image=available_img,
-                                   values=tv.item(i)["values"])
-                elif tv.item(i, 'values')[9] == '5':
-                    if tv.item(i, "values")[11] == '1':
-                        tv3.insert("", "end", image=excluded_shared_img,
-                                   values=tv.item(i)["values"])
-                    else:
-                        tv3.insert("", "end", image=excluded_img,
-                                   values=tv.item(i)["values"])
-                elif tv.item(i, 'values')[9] == '8':
-                    if tv.item(i, "values")[11] == '1':
-                        tv3.insert("", "end", image=online_shared_img,
-                                   values=tv.item(i)["values"])
-                    else:
-                        tv3.insert("", "end", image=online_img,
-                                   values=tv.item(i)["values"])
-                else:
-                    if tv.item(i, "values")[11] == '1':
-                        tv3.insert("", "end", image=onedrive_shared_img, text=tv.item(i, 'values')[9],
-                                   values=tv.item(i)["values"])
-                    else:
-
-                        tv3.insert("", "end", text=tv.item(i, 'values')[9],
-                                   values=tv.item(i)["values"])
-    except Exception:
-        pass
-
-    root.update_idletasks()
-
-
-def get_info(event):
-    df_list = []
-    curItem = event.widget.selection()
-    values = event.widget.item(curItem, 'values')
-    for item in root.winfo_children():
-        for i in item.winfo_children():
-            if '!mytable' in str(i):
-                df_list.append(i.model.df)
-
-    if len(df_list) == 0:
-        return
-
-    for item in infoFrame.winfo_children():
-        if '.!notebook2.!frame.' in str(item):
-            item.destroy()
-
-    root.update_idletasks()
-
-    if f'{values[6]}' != 'File - deleted' and len(values[3]) == 0:
-        return
-
-    infoNB.tab(infoFrame, text="Loading... ")
-    root.update_idletasks()
-
-    info = []
-
-    # find logs for deleted files
-    if f'{values[6]}' == 'File - deleted' and len(values[8]) != 0:
-        file_hash = values[8].split("(")
-
-        if file_hash[0] == 'SHA1':
-            info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[8].split("(")[1].strip(")")}', case=False, na=False)] for df in df_list])
-        if file_hash[0] == 'quickXor':
-            data = ''.join(['{:02x}'.format(i) for i in base64.b64decode(file_hash[1].strip(")"))])
-            info = pd.concat([df.loc[df.Params.astype('string').str.contains(data, case=False, na=False)] for df in df_list])
-
-    # find logs for files
-    if f'{values[6]}' != 'File - deleted' and len(values[3]) != 0:
-        info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[3].split("+")[0]}', case=False, na=False)] for df in df_list])
-
-    if len(info) == 0 or stop.is_set():
-        infoNB.tab(infoFrame, text="Log Entries")
-        if event.widget.selection()[0] != curItem[0]:
-            stop.clear()
-            threading.Thread(target=get_info,
-                             args=(event,),
-                             daemon=True).start()
-        return
-
-    pt = pandastablepatch.MyTable(infoFrame,
-                                  dataframe=info,
-                                  maxcellwidth=900,
-                                  showtoolbar=False,
-                                  showstatusbar=False,
-                                  enable_menus=True,
-                                  editable=False)
-    pt.adjustColumnWidths()
-    pt.show()
-    pt.redraw()
-    if stop.is_set():
-        for item in infoFrame.winfo_children():
-            if '.!notebook2.!frame.' in str(item):
-                item.destroy()
-        if tv.selection()[0] != curItem[0]:
-            stop.clear()
-            threading.Thread(target=get_info,
-                             args=(event,),
-                             daemon=True).start()
-    infoNB.tab(infoFrame, text="Log Entries")
-
-
-def open_children(parent):
-    tv.item(parent, open=True)  # open parent
-    for child in tv.get_children(parent):
-        open_children(child)    # recursively open children
-
-
-def close_children(parent):
-    tv.item(parent, open=False)  # close parent
-    for child in tv.get_children(parent):
-        close_children(child)    # recursively close children
-
-
-def copy_details():
-    root.clipboard_clear()
-    root.clipboard_append(details.get("1.0", tk.END))
-
-
-def copy_path(values):
-    line = f'{values[5]}: {values[13]}\\{values[5]}'
-    root.clipboard_clear()
-    root.clipboard_append(line)
-
-
-def copy_name(values):
-    root.clipboard_clear()
-    root.clipboard_append(values[5])
-
-
 def rebind():
     global bind_id
     bind_id = message.bind('<Double-Button-1>',
-                           lambda event=None: messages(root))
+                           lambda event=None: Messages(root))
 
 
 def log_tab():
@@ -2882,11 +2940,12 @@ def load_proj():
                                                      ))
 
     if filename:
+        tv.grid_forget()
         proj_name = filename
         q = Queue()
         stop_event = threading.Event()
         threading.Thread(target=load_project,
-                         args=(filename, q, stop_event,),
+                         args=(filename, q, stop_event, tv, file_items,),
                          daemon=True,).start()
         threading.Thread(target=proj_parse,
                          args=(q, proj_name,),
@@ -2896,13 +2955,28 @@ def load_proj():
 
 
 def proj_parse(q, proj_name):
+    try:
+        message.unbind('<Double-Button-1>', bind_id)
+    except Exception:
+        pass
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    details.config(state='disable')
+    menubar.entryconfig("File", state="disabled")
+    menubar.entryconfig("Options", state="disabled")
+    menubar.entryconfig("View", state="disabled")
+    menubar.entryconfig("Help", state="disabled")
+    search_entry.delete(0, 'end')
+    search_entry.state(['invalid'])
+    search_entry.configure(state="disabled")
+    clear_search()
+    btn.configure(state="disabled")
+    pb.configure(mode='indeterminate')
+    value_label['text'] = f'Loading {proj_name}. Please wait....'
+    pb.start()
+    
     while True:
         data = q.get()
-
-        if '_OneDrive.csv' in data[0]:
-            x = 'Project'
-            start_parsing(x, filename=data[0], df=data[1])
-            q.task_done()
 
         if '_logs.csv' in data[0]:
             key = data[0].split('_')[0]
@@ -2919,28 +2993,9 @@ def proj_parse(q, proj_name):
             pt.show()
             user_logs.setdefault(f'{key}_logs.csv', pt)
             q.task_done()
-            pb.stop()
-
-        if data[0] == 'wait':
-            try:
-                message.unbind('<Double-Button-1>', bind_id)
-            except Exception:
-                pass
-            details.config(state='normal')
-            details.delete('1.0', tk.END)
-            details.config(state='disable')
-            menubar.entryconfig("File", state="disabled")
-            menubar.entryconfig("Options", state="disabled")
-            menubar.entryconfig("View", state="disabled")
-            menubar.entryconfig("Help", state="disabled")
-            search_entry.configure(state="disabled")
-            btn.configure(state="disabled")
-            pb.configure(mode='indeterminate')
-            value_label['text'] = f'Loading {data[1]}. Please wait....'
-            pb.start()
-            q.task_done()
 
         if data[0] == 'done':
+            pb.stop()
             break
 
     menubar.entryconfig("File", state="normal")
@@ -2966,6 +3021,7 @@ def proj_parse(q, proj_name):
     pb.configure(mode='determinate')
     if len(tv_frame.tabs()) > 1:
         odlmenu.entryconfig("Unload all ODL logs", state='normal')
+    tv.grid(row=1, column=0, sticky="nsew")
 
 
 def save_proj():
@@ -3047,46 +3103,6 @@ def click(event):
         clear_search()
 
 
-def handle_click(event):
-    if tv2.identify_region(event.x, event.y) == "separator":
-        return "break"
-
-
-def multiple_yview(*args):
-    tv2.yview(*args)
-    tv3.yview(*args)
-
-
-def multiple_yview_scroll(event):
-    if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame2.!treeview':
-        tv2.yview_scroll(-1 * int(event.delta / 120), "units")
-    if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!treeview':
-        tv3.yview_scroll(-1 * int(event.delta / 120), "units")
-
-
-def multiple_select(event):
-    try:
-        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!treeview':
-            curItem = tv2.selection()
-            curItem2 = tv3.selection()
-            if not curItem2:
-                curItem2 = ('0',)
-            if curItem[0] != curItem2[0]:
-                tv3.selection_set(curItem[0])
-
-        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame2.!treeview':
-            curItem = tv3.selection()
-            curItem2 = tv2.selection()
-            if not curItem2:
-                curItem2 = ('0',)
-            if curItem[0] != curItem2[0]:
-                tv2.selection_set(curItem[0])
-            new_selection(event)
-
-    except Exception:
-        pass
-
-
 def sync():
 #    global cstruct_df
     if getattr(sys, 'frozen', False):
@@ -3124,10 +3140,10 @@ def thread_search():
 root = ThemedTk()
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
-root.iconbitmap(application_path + '/Images/OneDrive.ico')
+root.iconbitmap(application_path + '/Images/titles/OneDrive.ico')
 root.geometry('1440x880')
 root.minsize(40, 40)
-root.protocol("WM_DELETE_WINDOW", lambda: quit(root))
+root.protocol("WM_DELETE_WINDOW", lambda: QuitDialog(root))
 
 default_font = str(menu_data['font'])
 pandastablepatch.root = root
@@ -3223,67 +3239,98 @@ images = (
 ButtonNotebook()
 ButtonEntry()
 
-root_drive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/hdd.png'))
-default_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded_open_hdd.png'))
-shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded_save_hdd.png'))
-folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/directory_closed.png'))
-folderop_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/directory_open.png'))
-file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow.png'))
-file_del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_delete.png'))
-del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_trashcan.png'))
-load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/repeat_green.png'))
-live_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/computer_desktop.png'))
-sql_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/IDI_DB4S-1.png'))
-json_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_hierarchy1_expanded.png'))
-csv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table.png'))
-uaf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/delete_red.png'))
-search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/magnifier.png'))
-exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/no.png'))
-font_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/format_normal.png'))
-skin_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/skin.png'))
-sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/arrow_plain_green_S.png'))
-pref_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/controls.png'))
-question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question.png'))
-trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/trashcan.png'))
-info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/info.png'))
-error_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/error.png'))
-merror_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/error_small.png'))
-minfo_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/info_small.png'))
-warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/warning.png'))
-ods_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/cloud_cyan.png'))
-saveas_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/floppy_35inch_black.png'))
-save_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/floppy_35inch_green.png'))
-ual_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_delete.png'))
-loadl_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_new.png'))
-proj_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/tables.png'))
-png_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/PNG-16.png'))
-pdf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/PDF-16.png'))
-message_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/language_blue.png'))
-cstruct_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_column.png'))
-question_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/question_small.png'))
-ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode.png'))
-ode_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/ode_small.png'))
-online_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online-8.png'))
-online_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_directory.png'))
-online_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_file.png'))
-online_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online-shared.png'))
-online_shared_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_shared_directory.png'))
-online_shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/online_shared_file.png'))
-available_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available-8.png'))
-available_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available-shared.png'))
-available_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available_file.png'))
-available_shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/available_shared_file.png'))
-file_del_big_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_delete_big.png'))
-file_big_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/file_yellow_big.png'))
-asc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_sort_asc.png'))
-desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/table_sort_desc.png'))
-onedrive_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/shared-8.png'))
-shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/shared_file.png'))
-excluded_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded-10.png'))
-excluded_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_shared.png'))
-excluded_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_directory.png'))
-excluded_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_file.png'))
-excluded_shared_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/excluded_shared_file.png'))
+# menu images
+live_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/computer_desktop.png'))
+ods_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/cloud_cyan.png'))
+proj_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/tables.png'))
+saveas_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/floppy_35inch_black.png'))
+exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/no.png'))
+load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/repeat_green.png'))
+sql_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/IDI_DB4S-1.png'))
+json_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/file_yellow_hierarchy1_expanded.png'))
+csv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/table.png'))
+uaf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/delete_red.png'))
+folderop_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/directory_open.png'))
+loadl_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/table_new.png'))
+save_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/floppy_35inch_green.png'))
+ual_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/table_delete.png'))
+png_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/PNG-16.png'))
+pdf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/PDF-16.png'))
+font_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/format_normal.png'))
+skin_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/skin.png'))
+sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/arrow_plain_green_S.png'))
+pref_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/controls.png'))
+message_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/language_blue.png'))
+cstruct_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/table_column.png'))
+question_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/question_small.png'))
+ode_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/ode_small.png'))
+
+# gui images
+search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/magnifier.png')) # main
+root_drive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/hdd.png')) # treeview 1
+del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/file_yellow_trashcan.png')) # treeview 1
+tenant_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon59.png')) # treeview 1
+vault_closed_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon109.png')) # treeview 1
+vault_open_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon114.png')) # treeview 1
+od_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon11.ico')) # treeview 1 & popup
+merror_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error_small.png')) # messages
+minfo_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info_small.png')) # messages
+warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/warning.png')) # messages
+info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info.png')) # ExportResult
+error_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error.png')) # ExportResult
+asc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_asc.png')) # pandastable
+desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_desc.png')) # pandastable
+question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/question.png')) # hive
+trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/trashcan.png')) # recbin
+ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/ode.png')) # about
+
+# small file images
+file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/file_yellow.png'))
+file_del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/file_yellow_delete.png'))
+not_sync_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/not_sync_file.png'))
+not_link_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/not_link_file.png'))
+
+# small folder images
+folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/directory_closed.png'))
+sync_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/sync_directory.png'))
+not_sync_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/not_sync_directory.png'))
+link_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/67.png'))
+not_link_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/not_link_folder.png'))
+
+# small status images
+online_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online-8.png'))
+online_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online-shared.png'))
+online_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online_sync.png'))
+online_not_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online_not_sync.png'))
+online_link_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online-link.png'))
+online_not_link_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online_not_link.png'))
+available_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/available-8.png'))
+available_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/available-shared.png'))
+onedrive_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/shared-8.png'))
+excluded_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/excluded-10.png'))
+excluded_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/excluded_shared.png'))
+not_link_share_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/not_link_share.png'))
+not_sync_share_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/not_sync_share.png'))
+
+# search images
+available_big_img = Image.open(application_path + '/Images/search/available_big.png')
+directory_big_img = Image.open(application_path + '/Images/search/directory_big.png')
+excluded_big_img = Image.open(application_path + '/Images/search/excluded_big.png')
+file_yellow_big_img = Image.open(application_path + '/Images/search/file_yellow_big.png')
+#locked_big_img = Image.open(application_path + '/Images/search/locked_big.png')
+lync_big_img = Image.open(application_path + '/Images/search/lync_big.png')
+not_lync_big_img = Image.open(application_path + '/Images/search/not_lync_big.png')
+not_sync_big_img = Image.open(application_path + '/Images/search/not_sync_big.png')
+online_big_img = Image.open(application_path + '/Images/search/online_big.png')
+#r_locked_big_img = Image.open(application_path + '/Images/search/r_locked_big.png')
+shared_big_img = Image.open(application_path + '/Images/search/shared_big.png')
+sync_big_img = Image.open(application_path + '/Images/search/sync_big.png')
+building_big_img = Image.open(application_path + '/Images/search/Icon56.png')
+cloud_big_img = Image.open(application_path + '/Images/search/Icon7.png')
+hdd_big_img = Image.open(application_path + '/Images/search/hdd.png')
+file_del_big_img = Image.open(application_path + '/Images/search/file_yellow_delete_big.png')
+vault_big_img = Image.open(application_path + '/Images/search/Icon111.png')
+vault_open_big_img = Image.open(application_path + '/Images/search/Icon116.png')
 
 pandastablepatch.asc_img = asc_img
 pandastablepatch.desc_img = desc_img
@@ -3313,8 +3360,6 @@ bottom_frame.grid_columnconfigure(0, weight=1)
 pwv = tk.PanedWindow(main_frame, orient=tk.VERTICAL,
                      background=bg, sashwidth=6)
 
-columns = ('Date_modified', 'Size')
-
 tv_frame = ScrollableNotebookpatch.MyScrollableNotebook(main_frame,
                                                         wheelscroll=True,
                                                         style='CustomNotebook')
@@ -3324,12 +3369,15 @@ tv_inner_frame = ttk.Frame(tv_frame)
 tv_frame.add(tv_inner_frame, text='OneDrive Folders  ')
 
 pwh = tk.PanedWindow(tv_inner_frame, orient=tk.HORIZONTAL,
-                     background=bgf, sashwidth=2)
+                     background=bgf, sashwidth=6)
 
-tv_pane_frame = ttk.Frame(pwh)
+tv_pane_frame = tk.Frame(pwh, background=bgf)
 
-tv_lable = ttk.Label(tv_pane_frame, text="Path",
-                     justify="left", anchor='w')
+tv_columns = [" Path"]
+treeview_widget = TreeviewHeaderWidget(tv_pane_frame, columns=tv_columns)
+
+#tv_label = ttk.Label(tv_pane_frame, text="Path",
+#                     justify="left", anchor='w')
 tv = ttk.Treeview(tv_pane_frame,
                   show="tree",
                   selectmode='browse',
@@ -3349,34 +3397,14 @@ btn = ttk.Button(find_frame,
                  image=search_img,
                  takefocus=False,
                  compound='right',
-                 command=lambda: [thread_search(), sync_message(root)])
+                 command=lambda: [thread_search(), SyncMessage(root)])
 search_entry.configure(state="disabled")
 btn.configure(state="disabled")
 
+sep = ttk.Separator(find_frame, orient=tk.HORIZONTAL)
+
 scrollbv = ttk.Scrollbar(tv_pane_frame, orient="vertical", command=tv.yview)
 scrollbh = ttk.Scrollbar(tv_pane_frame, orient="horizontal", command=tv.xview)
-
-tv2 = ttk.Treeview(pwh,
-                   selectmode='browse',
-                   takefocus='false')
-tv2.heading('#0', text=' Name', anchor='w')
-tv2.column('#0', minwidth=80, width=340, stretch=True, anchor='w')
-
-tab2 = ttk.Frame(pwh)
-tv3 = ttk.Treeview(tab2,
-                   columns=columns,
-                   selectmode='browse',
-                   takefocus='false')
-tv3.heading('#0', text=' Status', anchor='w')
-tv3.heading('Date_modified', text=' Date_modified', anchor='w')
-tv3.heading('Size', text=' Size', anchor='w')
-tv3.column('#0', minwidth=80, width=100, stretch=False, anchor='w')
-tv3.column('Date_modified', minwidth=80, width=180, stretch=False, anchor='w')
-tv3.column('Size', minwidth=70, width=80, stretch=False, anchor='e')
-
-fscrollbv = ttk.Scrollbar(tab2, orient="vertical", command=multiple_yview)
-tv2.configure(yscrollcommand=fscrollbv.set)
-tv3.configure(yscrollcommand=fscrollbv.set)
 
 value_label = ttk.Label(bottom_frame, text='')
 pb = ttk.Progressbar(bottom_frame, orient='horizontal',
@@ -3387,17 +3415,20 @@ message = ttk.Label(bottom_frame, text=0, background='red',
 sr = ttk.Separator(bottom_frame, orient='vertical')
 sg = ttk.Sizegrip(bottom_frame)
 
-details = tk.Text(pwh, font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, width=50, state='disable')
+details_frame = ttk.Frame(pwh)
+details = tk.Text(details_frame, font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, state='disable')
+detailsscroll = ttk.Scrollbar(details_frame, orient="vertical", command=details.yview)
+details.configure(yscrollcommand=detailsscroll.set)
 details.tag_configure('red', foreground="red")
 tv.configure(yscrollcommand=scrollbv.set, xscrollcommand=scrollbh.set)
 tv.tag_configure('yellow', background="yellow", foreground="black")
 tv.tag_configure('red', foreground="red")
-tv2.tag_configure('red', foreground="red")
 
 tv_pane_frame.grid_rowconfigure(1, weight=1)
 tv_pane_frame.grid_columnconfigure(0, weight=1)
-tab2.grid_rowconfigure(0, weight=1)
-tab2.grid_columnconfigure(0, weight=1)
+
+details_frame.grid_rowconfigure(0, weight=1)
+details_frame.grid_columnconfigure(0, weight=1)
 
 tv_inner_frame.grid_rowconfigure(1, weight=1)
 tv_inner_frame.grid_columnconfigure(0, weight=1)
@@ -3420,10 +3451,12 @@ tvr.grid(row=0, column=0, sticky="nsew")
 tvr.tag_configure('red', foreground="red")
 rscrollbv = ttk.Scrollbar(result_frame, orient="vertical", command=tvr.yview)
 tvr.configure(yscrollcommand=rscrollbv.set)
+popup_manager = PopupManager(root, tv, application_path, details)
+file_manager = FileManager(tv, pwh, cur_sel)
 pwh.add(tv_pane_frame, minsize=40, width=250)
-pwh.add(tv2, minsize=80, width=340)
-pwh.add(tab2, minsize=247)
-pwh.add(details, minsize=20)
+pwh.add(file_manager.tv2, minsize=80, width=340)
+pwh.add(file_manager.tab2, minsize=247)
+pwh.add(details_frame, minsize=20)
 
 infoNB = ttk.Notebook()
 infoFrame = ttk.Frame(infoNB)
@@ -3434,17 +3467,18 @@ pwv.add(infoNB, minsize=100)
 
 search_entry.grid(row=0, column=0, sticky="e", padx=5)
 btn.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+sep.grid(row=1, column=0, columnspan=2, sticky="ew")
 
 pwv.grid(row=0, column=0, sticky="nsew")
 pwh.grid(row=1, column=0, sticky="nsew")
 find_frame.grid(row=0, column=0, sticky='ew')
-tv_lable.grid(row=0, column=0, sticky="nw")
+treeview_widget.grid(row=0, column=0, sticky="ew")
 tv.grid(row=1, column=0, sticky="nsew")
 scrollbv.grid(row=0, column=1, rowspan=2, sticky="nsew")
 scrollbh.grid(row=2, column=0, sticky="nsew")
-tv3.grid(row=0, column=0, sticky="nsew")
-fscrollbv.grid(row=0, column=1, sticky="nsew")
 rscrollbv.grid(row=0, column=1, sticky="nsew")
+details.grid(row=0, column=0, sticky='nsew')
+detailsscroll.grid(row=0, column=1, sticky='nsew')
 
 value_label.grid(row=0, column=0, sticky='se')
 pb.grid(row=0, column=1, padx=5, sticky='se')
@@ -3453,34 +3487,27 @@ message.grid(row=0, column=3, sticky='nse')
 sr.grid(row=0, column=4, padx=(1, 2), sticky='nse')
 sg.grid(row=0, column=5, sticky='se')
 
+tool_tip_manager = ToolTipManager()
 
-tv.bind('<<TreeviewSelect>>', new_selection)
+tv.bind('<<TreeviewSelect>>', file_manager.new_selection)
 tv.bind('<Button-1>', lambda event=None: clear_search())
-tv2.bind('<<TreeviewSelect>>', multiple_select)
-tv3.bind('<<TreeviewSelect>>', multiple_select)
-tv.bind("<Button-3>", do_popup)
-tv2.bind("<Button-3>", do_popup)
-tv3.bind("<Button-3>", do_popup)
-tvr.bind('<<TreeviewSelect>>', new_selection)
+tv.bind("<Button-3>", popup_manager.do_popup)
+tvr.bind('<<TreeviewSelect>>', file_manager.new_selection)
 tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
 tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
-tv2.bind('<Button-1>', handle_click)
-tv2.bind('<Motion>', handle_click)
-tv2.bind('<MouseWheel>', multiple_yview_scroll)
-tv3.bind('<MouseWheel>', multiple_yview_scroll)
 root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
-root.bind('<Control-m>', lambda event=None: messages(root))
+root.bind('<Control-m>', lambda event=None: Messages(root))
 root.bind('<Alt-KeyPress-0>', lambda event=None: clear_all())
 root.bind('<Alt-KeyPress-2>', lambda event=None: load_proj())
 root.bind('<Alt-s>', lambda event=None: save_proj())
 root.bind('<<NotebookTabChanged>>', lambda event=None: log_tab())
 search_entry.bind('<Return>',
-                  lambda event=None: [thread_search(), sync_message(root)])
+                  lambda event=None: [thread_search(), SyncMessage(root)])
 search_entry.bind('<KeyRelease>', click)
-bind_id = message.bind('<Double-Button-1>', lambda event=None: messages(root))
-infoNB.bind('<Motion>', motion)
-search_entry.bind('<Motion>', motion)
-root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', motion)
+bind_id = message.bind('<Double-Button-1>', lambda event=None: Messages(root))
+infoNB.bind('<Motion>', tool_tip_manager.motion)
+search_entry.bind('<Motion>', tool_tip_manager.motion)
+root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', tool_tip_manager.motion)
 
 keyboard.is_pressed('shift')
 
@@ -3570,7 +3597,7 @@ file_menu.add_cascade(label="Export 'OneDrive Folders'", menu=exportmenu,
                       image=saveas_img, compound='left')
 file_menu.add_separator()
 file_menu.add_command(label="Exit", image=exit_img, compound='left',
-                      command=lambda: quit(root))
+                      command=lambda: QuitDialog(root))
 
 file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
 
@@ -3580,21 +3607,21 @@ options_menu.add_cascade(label="Skins", image=skin_img,
                          compound='left', menu=submenu)
 options_menu.add_separator()
 options_menu.add_command(label="Sync with Github", image=sync_img,
-                         compound='left', command=lambda: [sync(), sync_message(root)])
+                         compound='left', command=lambda: [sync(), SyncMessage(root)])
 options_menu.add_separator()
 options_menu.add_command(label="Preferences", image=pref_img,
-                         compound='left', command=lambda: preferences(root))
+                         compound='left', command=lambda: Preferences(root))
 
 view_menu.add_command(label="Messages", image=message_img, accelerator="Ctrl+M",
-                      compound='left', command=lambda: messages(root))
+                      compound='left', command=lambda: Messages(root))
 view_menu.add_separator()
 view_menu.add_command(label="CStructs", image=cstruct_img,
                       compound='left', command=lambda: cstructs(root, cstruct_df))
 
 help_menu.add_command(label="Quick help", image=question_small_img,
-                      compound='left', command=lambda: help(root))
+                      compound='left', command=lambda: Help(root))
 help_menu.add_command(label="About", image=ode_small_img,
-                      compound='left', command=lambda: about(root))
+                      compound='left', command=lambda: About(root))
 
 menubar.add_cascade(label="File",
                     menu=file_menu)
@@ -3610,7 +3637,7 @@ submenu.entryconfig(submenu.index(ttk.Style().theme_use()),
 if not ctypes.windll.shell32.IsUserAnAdmin():
     file_menu.entryconfig("Live system", state="disabled")
 
-CreateToolTip(message, text='Total messages\n'
+tool_tip_manager.create_tooltip(message, text='Total messages\n'
               '  Contains the total number of messages available. A yellow\n'
               '  background indicates a warning message is available. A red\n'
               '  background indicates an error message is available.',

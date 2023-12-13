@@ -1,94 +1,186 @@
-# OneDriveExplorer
-# Copyright (C) 2022
-#
-# This file is part of OneDriveExplorer
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-#
-
-#import ctypes
+import os
+import hashlib
 import logging
 import pandas as pd
-import ode.parsers.recbin as find_deleted
-from ode.utils import find_parent, parse_reg
-#from ode.helpers.mft import live_hive
+from Registry import Registry
+import ode.parsers.recbin
 
 log = logging.getLogger(__name__)
 
+find_deleted = ode.parsers.recbin.DeleteProcessor()
 
-def parse_onedrive(df, account=False, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
-    if df.empty:
-        return df, pd.DataFrame()
-    share_df = df.loc[(~df.ParentId.isin(df.DriveItemId)) & (~df.Type.str.contains('Root'))]
-    share_list = list(set(share_df.ParentId))
-    share_root = []
+class OneDriveParser:
+    def __init__(self):
+        pass
 
-    for x in share_list:
-        input = {'ParentId': '',
-                 'DriveItemId': x,
-                 'eTag': '',
-                 'Type': 'Root Shared',
-                 'Name': 'Shared with user',
-                 'Size': '',
-                 'Hash': '',
-                 'Status': '',
-                 'Date_modified': '',
-                 'Shared': '',
-                 'Children': [],
-                 'Level': 1
-                 }
+    def hash_file(self, file):
+        BUF_SIZE = 65536
+        sha1 = hashlib.sha1()
 
-        share_root.append(input)
-
-    share_df = pd.DataFrame.from_records(share_root)
-    df = pd.concat([df, share_df], ignore_index=True, axis=0)
-    rbin_df = pd.DataFrame()
-
-    if reghive:
         try:
-            df, od_keys = parse_reg(reghive, account, df)
+            with open(file, 'rb') as f:
+                while True:
+                    data = f.read(BUF_SIZE)
+                    if not data:
+                        break
+                    sha1.update(data)
 
-            if recbin:
-                rbin = find_deleted.find_deleted(recbin, od_keys, account,
-                                                 gui=gui, pb=pb,
-                                                 value_label=value_label)
-                rbin_df = pd.DataFrame.from_records(rbin)
+            return sha1.hexdigest()
+        except Exception:
+            return ''
 
-        except Exception as e:
-#            if PermissionError and ctypes.windll.shell32.IsUserAnAdmin():
-#                value_label['text'] = f"Searching for {account}'s NTUSER.DAT. Please wait...."
-#                pb.configure(mode='indeterminate')
-#                pb.start()
-#                reghive = live_hive(account)
-#            else:
-            log.warning(f'Unable to read registry hive! {e}')
+    def parse_reg(self, reghive, account, df):
+        reg_handle = Registry.Registry(reghive)
+        int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
+        od_keys = reg_handle.open(f'SOFTWARE\\Microsoft\\OneDrive\\Accounts\\{account}\\Tenants')
+
+        df['MountPoint'] = ''
+        for providers in int_keys.subkeys():
+            df.loc[(df.resourceID == providers.name()), ['MountPoint']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
+            df.loc[(df.scopeID == providers.name()), ['MountPoint']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
+        try:
+            reghive.seek(0)
+        except Exception:
             pass
 
-    id_name_dict = dict(zip(df.DriveItemId, df.Name))
-    parent_dict = dict(zip(df.DriveItemId, df.ParentId))
+        return df, od_keys
 
-    if 'Path' in df.columns:
-        df['Level'] = df['Path'].str.split('\\\\').str.len()
+    def find_parent(self, x, id_name_dict, parent_dict):
+        value = parent_dict.get(x, None)
+        if x is None:
+            return ''
+        elif value is None:
+            return x + "\\\\"
+        else:
+            if id_name_dict.get(value, None) is None:
+                return self.find_parent(value, id_name_dict, parent_dict) + x
+        return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
-    else:
-        df['Path'] = df.DriveItemId.apply(lambda x: find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
-        df['Level'] = df['Path'].str.len()
-        df['Path'] = df['Path'].str.join('\\')
 
-    return df, rbin_df
+    def parse_onedrive(self, df, df_scope, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
+        if os.path.isdir(file_path):
+            directory = file_path
+            filename = ['SyncEngineDatabase.db', 'SafeDelete.db']
+            h = []
+            for f in filename:
+                h.append(self.hash_file(f'{file_path}\{f}'))
+            hash = h
+        else:
+            directory, filename = os.path.split(file_path)
+            hash = self.hash_file(file_path)
+        if reghive:
+            try:
+                df, od_keys = self.parse_reg(reghive, account, df)
+
+                if recbin:
+                    rbin = find_deleted.find_deleted(recbin, od_keys, account, gui=gui, pb=pb, value_label=value_label)
+                    lrbin_df = pd.DataFrame.from_records(rbin)
+                    rbin_df = pd.concat([rbin_df, lrbin_df], ignore_index=True, axis=0)
+
+            except Exception as e:
+                log.warning(f'Unable to read registry hive! {e}')
+                pass
+
+        id_name_dict = dict(zip(df.resourceID, df.Name))
+        parent_dict = dict(zip(df.resourceID, df.parentResourceID))
+
+        if 'Path' in df.columns:
+            df['Level'] = df['Path'].str.split('\\\\').str.len()
+            convert = {'fileStatus': 'Int64',
+                       'volumeID': 'Int64',
+                       'sharedItem': 'Int64',
+                       'folderStatus': 'Int64'
+                      }
+        
+        else:
+            df['Path'] = df.resourceID.apply(lambda x: self.find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
+            df['Level'] = df['Path'].str.len()
+            df['Path'] = df['Path'].str.join('\\')
+            convert = {'fileStatus': 'Int64',
+                       'volumeID': 'Int64',
+                       'itemIndex': 'Int64',
+                       'sharedItem': 'Int64',
+                       'folderStatus': 'Int64'
+                      }
+
+        df['FileSort'] = ''
+        df['FolderSort'] = ''
+
+        df.loc[df.Type == 'File', ['FileSort']] = df['Name'].str.lower()
+        df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
+
+        df = df.astype(convert)
+
+        df['volumeID'] = df['volumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+        df['volumeID'] = df['volumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+        
+        try:
+            df['MountPoint'] = df['MountPoint'].where(pd.notna(df['MountPoint']), '')
+        except KeyError:
+            df['MountPoint'] = ''
+
+        
+
+        cache = {}
+        final = []
+        is_del = []
+
+        for row in df.sort_values(
+            by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+            ascending=[False, False, False, True, False, False]).to_dict('records'):
+            if row['Type'] == 'File':
+                file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+
+                folder = cache.setdefault(row['parentResourceID'], {})
+                folder.setdefault('Files', []).append(file)
+            else:
+                if 'Scope' in row['Type']:
+                    if row['scopeID'] not in scopeID:
+                        continue
+                    scope = {key: row[key] for key in (
+                    'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint')}
+                    folder = cache.get(row['scopeID'], {})
+                    temp = {**scope, **folder}
+                    final.insert(0, temp)
+                else:
+                    sub_folder = {key: row[key] for key in (
+                    'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
+                    'itemIndex')}
+                    if row['resourceID'] in scopeID:
+                        scopeID.remove(row['resourceID'])
+                        for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):
+                            scope = {key: s[key] for key in (
+                            'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath')}
+                            scope['MountPoint'] = row['MountPoint']
+                        folder = cache.get(row['resourceID'], {})
+                        temp = {**sub_folder, **folder}
+                        scope.setdefault('Links', []).append(temp)
+                        folder_merge = cache.setdefault(row['parentResourceID'], {})
+                        folder_merge.setdefault('Scope', []).append(scope)
+                    else:
+                        folder = cache.get(row['resourceID'], {})
+                        temp = {**sub_folder, **folder}
+                        folder_merge = cache.setdefault(row['parentResourceID'], {})
+                        folder_merge.setdefault('Folders', []).append(temp)
+
+        if not rbin_df.empty:
+            for row in rbin_df.to_dict('records'):
+                file = {key: row[key] for key in ('parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'size', 'hash')}
+                is_del.append(file)
+
+            deleted = {'Type': 'Root Deleted',
+                       'Children': ''
+                      }
+
+            deleted['Children'] = is_del
+            final.append(deleted)
+
+        cache = {"Path": directory,
+                 "Name": filename,
+                 "Hash": hash,
+                 "Data": ''
+                 }
+
+        cache['Data'] = final
+
+        return cache, rbin_df

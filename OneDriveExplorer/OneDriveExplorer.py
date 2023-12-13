@@ -8,10 +8,10 @@ import uuid
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
-from ode.parsers.dat_new import parse_dat
-from ode.parsers.onedrive import parse_onedrive
+import ode.parsers.dat as dat_parser
+import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
-from ode.parsers.sqlite_db import parse_sql
+import ode.parsers.sqlite_db as sqlite_parser
 from ode.utils import update_from_repo
 
 logging.basicConfig(level=logging.INFO,
@@ -20,10 +20,12 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.09.22"
+__version__ = "2023.12.13"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
-
+DATParser = dat_parser.DATParser()
+OneDriveParser = onedrive_parser.OneDriveParser()
+SQLiteParser = sqlite_parser.SQLiteParser()
 
 def spinning_cursor():
     while True:
@@ -53,7 +55,8 @@ def main():
         if ((args.csv or args.html) and args.json) or (not args.csv and not args.html):
             if not args.json:
                 args.json = '.'
-            print_json(df, rbin_df, name, args.pretty, args.json)
+#            print_json(df, rbin_df, name, args.pretty, args.json)
+            print_json(cache, name, args.pretty, args.json)
 
         try:
             file_count = df.Type.value_counts()['File']
@@ -62,7 +65,8 @@ def main():
             file_count = 0
 
         try:
-            del_count = rbin_df.Type.value_counts()['File - deleted']
+#            del_count = rbin_df.Type.value_counts()['File - deleted']
+            del_count = len(rbin_df)
         except (KeyError, AttributeError):
             logging.warning("KeyError: 'File - deleted'")
             del_count = 0
@@ -169,13 +173,37 @@ def main():
             name = f'{sql_find[0][0]}_{sql_find[0][1]}'
         except Exception:
             name = 'SQLite_DB'
-        df, rbin_df = parse_sql(args.sql, args.reghive)
-        output()
+        df, rbin_df, df_scope, scopeID, account = SQLiteParser.parse_sql(args.sql)
+
+        if not df.empty:
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, args.sql, rbin_df, account, args.reghive, args.RECYCLE_BIN)
+            
+        if df.empty:
+            print(f'Unable to parse {name} sqlite database.')
+            logging.warning(f'Unable to parse {name} sqlite database.')
+        else:
+            output()
+
+        rootDir = args.logs
+        if rootDir is None:
+            sys.exit()
+        if rootDir is not True:
+            load_cparser(args.cstructs)
+            odl = parse_odl(rootDir)
+            if not args.csv:
+                args.csv = '.'
+            log_output = f'{args.csv}/ODL_logs.csv'
+            odl.to_csv(log_output, index=False)
 
     if args.file:
         account = os.path.dirname(args.file.replace('/', '\\')).rsplit('\\', 1)[-1]
-        df, name = parse_dat(args.file, args.reghive, args.RECYCLE_BIN, start, account)
-        df, rbin_df = parse_onedrive(df, account, args.reghive, args.RECYCLE_BIN)
+        name = os.path.split(args.file)[1]
+        
+        df, rbin_df, df_scope, scopeID = DATParser.parse_dat(args.file, account)
+
+        if not df.empty:
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, args.file,  rbin_df, account, args.reghive, args.RECYCLE_BIN)
+
         if df.empty:
             filename = args.file.replace('/', '\\')
             print(f'Unable to parse {filename}.')
@@ -237,7 +265,7 @@ def main():
             if sql_find:
                 d.setdefault(sql_find[0][0], {})
                 d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
-        print(d)
+
         for key, value in d.items():
             filenames = []
             for k, v in value.items():
@@ -251,8 +279,13 @@ def main():
                     print(f'\n\nParsing {key} OneDrive\n')
                     for filename in filenames:
                         account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
-                        df, name = parse_dat(filename, args.reghive, args.RECYCLE_BIN, start, account)
-                        df, rbin_df = parse_onedrive(df, account, args.reghive, args.RECYCLE_BIN)
+                        name = os.path.split(filename)[1]
+        
+                        df, rbin_df, df_scope, scopeID = DATParser.parse_dat(filename, account)
+
+                        if not df.empty:
+                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename,  rbin_df, account, args.reghive, args.RECYCLE_BIN)
+                        
                         if df.empty:
                             filename = filename.replace('/', '\\')
                             print(f'Unable to parse {filename}.')
@@ -264,7 +297,12 @@ def main():
                     print(f'\n\nParsing {key} OneDrive\n')
                     for account, sql_dir in v.items():
                         name = f'{key}_{account}'
-                        df, rbin_df = parse_sql(sql_dir, args.reghive)
+                        
+                        df, rbin_df, df_scope, scopeID, account = SQLiteParser.parse_sql(sql_dir)
+
+                        if not df.empty:
+                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, sql_dir, rbin_df, account, args.reghive, args.RECYCLE_BIN)
+                        
                         if df.empty:
                             print(f'Unable to parse {name} sqlite database.')
                             logging.warning(f'Unable to parse {name} sqlite database.')

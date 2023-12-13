@@ -151,7 +151,7 @@ class MyTable(Table):
         self.win.geometry('800x450')
         self.win.minsize(800, 450)
         self.win.title("Cell contents")
-        self.win.iconbitmap(application_path + '/Images/windows_tile.ico')
+        self.win.iconbitmap(application_path + '/Images/titles/windows_tile.ico')
         self.win.grid_rowconfigure(0, weight=1)
         self.win.grid_columnconfigure(0, weight=1)
 

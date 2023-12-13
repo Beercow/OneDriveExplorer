@@ -456,16 +456,16 @@ def process_odl(filename, map):
                 return pd.DataFrame()
             timestamp = ReadUnixMsTime(data_block.timestamp)
             odl['Timestamp'] = timestamp
-            if header.odl_version == 3:
-                data = cparser.Data_v3(f.read(data_block.data_len))
-                params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 36)
-            else:
-                data = cparser.Data_v2(f.read(data_block.data_len))
-                params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
             try:
+                if header.odl_version == 3:
+                    data = cparser.Data_v3(f.read(data_block.data_len))
+                    params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 36)
+                else:
+                    data = cparser.Data_v2(f.read(data_block.data_len))
+                    params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
                 f.seek(- params_len, io.SEEK_CUR)
-            except Exception:
-                log.error(f'Unable to parse {basename}. Something went wrong!')
+            except Exception as e:
+                log.error(f'Unable to parse {basename}. Something went wrong! {e}')
                 return pd.DataFrame()
 
             if params_len:
@@ -521,29 +521,7 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
     obfuscation_maps = []
     map = {}
 
-    df = pd.DataFrame(columns=['Filename',
-                               'File_Index',
-                               'Timestamp',
-                               'One_Drive_Version',
-                               'OS_Version',
-                               'Code_File',
-                               'Flags',
-                               'Function',
-                               'Description',
-                               'Params',
-                               'Param1',
-                               'Param2',
-                               'Param3',
-                               'Param4',
-                               'Param5',
-                               'Param6',
-                               'Param7',
-                               'Param8',
-                               'Param9',
-                               'Param10',
-                               'Param11',
-                               'Param12',
-                               'Param13'])
+    df = pd.DataFrame()
 
     for path, subdirs, files in os.walk(rootDir):
         filematch = ([os.path.join(path, file) for file in files if file.endswith(('.odl', '.odlgz', '.odlsent', '.aodl'))])
@@ -572,6 +550,7 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
             progress_gui(total, count, pb, value_label, status=f'Parsing log files for {key}. Please wait....')
         else:
             progress(count, total, status=f'Parsing log files for {key}. Please wait....')
+#        df_filtered = df.dropna(axis=1, how='all')
         df = pd.concat([df, log_df], ignore_index=True, axis=0)
 
     return df

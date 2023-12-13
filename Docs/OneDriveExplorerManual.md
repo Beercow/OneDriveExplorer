@@ -8,6 +8,7 @@
 2023-03-10 Rev. 3 - Updated for v2023.03.10  
 2023-05-05 Rev. 4 - Updated for v2023.05.05  
 2023-09-07 Rev. 5 - Updated for v2023.09.07
+2023-12-13 Rev. 5 - Updated for v2023.12.13
 
 ## OneDriveExplorer GUI Introduction
 OneDriveExplorer GUI is used to view the contents of \<UserCid>.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.
@@ -26,6 +27,12 @@ On the left-hand side of the window is the navigation pane. This pane displays t
 
 #### File/Folder Pane
 The file/folder pane shows the contents of the folder selected in the navigation pane along with it's OneDrive status. Once a file/folder has been loaded and a folder has been selected, a context menu is available by right clicking on the file/folder. Context menu options will be discussed later.
+
+##### Status
+File folder statu is a s follows:  
+![](.\Manual\blog2.png)
+
+<span style="color:red">*Note: Not Synced and Not Linked do not exist on the endpoint. These are artifacts of syncing and linking libraries.</span>
 
 #### Details
 The Details pane shows detailed information about the folder/file selected. Information includes name, type, path, parentid, driveitemid, etag, and number of children.
@@ -318,6 +325,23 @@ A user registry hive can be supplied with the `-r` argument. This will resolve s
 # Creating CStructs
 
 # Version changes
+## v2023.12.13
+### Added
+#### GUI/commandline
+* Media data
+* spoPermissions
+### Fixed 
+#### GUI
+* Increased sash size
+* File/Folder status
+#### GUI/commandline
+* Proper nesting of files/folders 
+* json format
+* Code cleanup
+## v2023.09.22
+### Fixed 
+#### GUI/commandline
+* updated odl parser for version 3
 ## v2023.09.07
 ### Added
 #### GUI/commandline
