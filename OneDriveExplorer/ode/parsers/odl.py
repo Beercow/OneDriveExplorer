@@ -26,7 +26,7 @@
 
 import os
 import io
-import gzip
+import zlib
 import re
 import string
 import datetime
@@ -220,40 +220,43 @@ def decrypt(cipher_text, dkey):
     global dkey_dict
     global utf_type
 
-    if not dkey_dict:
-        return ""
+    cipher_text_orig = cipher_text
+
+    if dkey_dict == '':
+        return cipher_text_orig
     if len(cipher_text) < 22:
-        return ""  # invalid
+        return cipher_text_orig  # invalid or it was not encrypted!
     # add proper base64 padding
     remainder = len(cipher_text) % 4
     if remainder == 1:
-        return ""  # invalid b64
+        return cipher_text_orig # invalid b64 or it was not encrypted!
     elif remainder in (2, 3):
         cipher_text += "=" * (4 - remainder)
     try:
         cipher_text = cipher_text.replace('_', '/').replace('-', '+')
         cipher_text = base64.b64decode(cipher_text)
     except Exception:
-        return ""
+        return cipher_text_orig
 
     if len(cipher_text) % 16 != 0:
-        return ""
-    else:
-        pass
+        return cipher_text_orig # invalid b64 or it was not encrypted!
 
     try:
         cipher = AES.new(dkey, AES.MODE_CBC, iv=b'\0'*16)
         raw = cipher.decrypt(cipher_text)
-    except ValueError:
-        return ""
+    except ValueError as ex:
+#        log.error(f'Exception while decrypting data {str(ex)}')
+        return cipher_text_orig
     try:
         plain_text = unpad(raw, 16)
-    except Exception:
-        return ""
+    except Exception as ex:
+        #print("Error in unpad!", str(ex), raw)
+        return cipher_text_orig
     try:
         plain_text = plain_text.decode(utf_type)
-    except ValueError:
-        return ""
+    except ValueError as ex:
+        #print(f"Error decoding {utf_type}", str(ex))
+        return cipher_text_orig
     return plain_text
 
 
@@ -304,7 +307,7 @@ def read_obfuscation_map(obfuscation_map_path, map):
 def tokenized_replace(string, map, dkey):
     output = ''
     tokens = ':\\.@%#&*|{}!?<>;:~()//"\''
-    parts = []
+    parts = []  # [ ('word', 1), (':', 0), ..] word=1, token=0
     last_word = ''
     last_token = ''
     for i, char in enumerate(string):
@@ -390,20 +393,26 @@ def process_odl(filename, map):
         return pd.DataFrame()
     with f:
         i = 1
-        header = cparser.Odl_header(f.read(0x100))
+        try:
+            header = cparser.Odl_header(f.read(0x100))
+        except Exception:
+            log.warning(f'Unable to parse {basename}. Not a valid log file.')
+            return pd.DataFrame()
         if header.signature == b'EBFGONED':  # Odl header
             pass
         else:
             log.warning(f'{basename} wrong header! Did not find EBFGONED')
             return pd.DataFrame()
         signature = f.read(8)
-
         # Now either we have the gzip header here or the CDEF header (compressed or uncompressed handles both)
         if signature[0:4] == b'\x1F\x8B\x08\x00':  # gzip
             try:
                 f.seek(-8, 1)
-                file_data = gzip.decompress(f.read())
-            except (gzip.BadGzipFile, OSError) as ex:
+                all_data = f.read()
+                z = zlib.decompressobj(31)
+                file_data = z.decompress(all_data)
+#                file_data = gzip.decompress(f.read())
+            except (zlib.error, OSError) as ex:
                 log.error(f'..decompression error for file {basename}. {ex}')
                 return pd.DataFrame()
             f.close()
@@ -453,7 +462,8 @@ def process_odl(filename, map):
             else:
                 log.error(f'Unknown odl_version = {header.odl_version}')
             if data_block.signature != 0xffeeddcc:
-                return pd.DataFrame()
+                log.warning(f'{basename} wrong data_block signature! Did not find 0xCCDDEEFF')
+                return pd.DataFrame.from_records(odl_rows)
             timestamp = ReadUnixMsTime(data_block.timestamp)
             odl['Timestamp'] = timestamp
             try:
@@ -465,8 +475,9 @@ def process_odl(filename, map):
                     params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
                 f.seek(- params_len, io.SEEK_CUR)
             except Exception as e:
-                log.error(f'Unable to parse {basename}. Something went wrong! {e}')
-                return pd.DataFrame()
+                log.warning(f'Unable to parse {basename}. Something went wrong! {type(e).__name__}')
+                template = "An exception of type {0} occurred. Arguments:\n{1!r}"
+                return pd.DataFrame.from_records(odl_rows)
 
             if params_len:
                 try:
