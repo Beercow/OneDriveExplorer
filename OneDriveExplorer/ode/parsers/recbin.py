@@ -107,7 +107,8 @@ class DeleteProcessor:
                             'fileId': '',
                             'DeleteTimeStamp': self.from_unix_sec(delete_time_stamp),
                             'size': f'{file_size.st_size // 1024 + 1} KB',
-                            'hash': hash_func
+                            'hash': hash_func,
+                            'deletingProcess': ''
                         }
                         yield input_data
                 else:
@@ -125,7 +126,8 @@ class DeleteProcessor:
                         'fileId': '',
                         'DeleteTimeStamp': self.from_unix_sec(delete_time_stamp),
                         'size': file_size,
-                        'hash': hash_func
+                        'hash': hash_func,
+                        'deletingProcess': ''
                     }
                     yield input_data
 

@@ -29,7 +29,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def print_csv(df, rbin_df, name, csv_path, csv_name=False):
+def print_csv(df, rbin_df, df_GraphMetadata_Records, name, csv_path, csv_name=False):
     log.info('Started writing CSV file')
 
     if not os.path.exists(csv_path):
@@ -52,6 +52,8 @@ def print_csv(df, rbin_df, name, csv_path, csv_name=False):
     if not rbin_df.empty:
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
+    merged_df = pd.merge(df, df_GraphMetadata_Records, on='resourceID', how='left', suffixes=('_df1', '_GraphMetadata_Records'))
+    
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
 
     if csv_name:
@@ -62,4 +64,4 @@ def print_csv(df, rbin_df, name, csv_path, csv_name=False):
     if file_extension == 'previous' and not csv_name:
         csv_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv"
 
-    df.to_csv(csv_path + '/' + csv_file, index=False)
+    merged_df.to_csv(csv_path + '/' + csv_file, index=False)

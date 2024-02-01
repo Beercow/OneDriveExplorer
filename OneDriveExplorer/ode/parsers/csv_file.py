@@ -22,6 +22,7 @@
 # SOFTWARE.
 #
 
+import ast
 import pandas as pd
 import logging
 
@@ -68,7 +69,7 @@ def parse_csv(filename):
 
     try:
         df = pd.read_csv(file, low_memory=False, quotechar='"', dtype=dtypes)
-        df_scope = df.loc[df['Type'] == 'Scope', ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'libraryType']]
+        df_scope = df.loc[df['Type'] == 'Scope', ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'spoPermissions', 'libraryType']]
         columns_to_fill = df_scope.columns.difference(['libraryType'])
         df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
         scopeID = df_scope['scopeID'].tolist()
@@ -77,21 +78,33 @@ def parse_csv(filename):
                        'inRecycleBin': 'Int64'
                       }
             df = df.astype(convert)
-            rbin_df = df.loc[df['Type'] == 'Deleted', ['Type', 'parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'size', 'hash']]
+            rbin_df = df.loc[df['Type'] == 'Deleted', ['Type', 'parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'size', 'hash', 'deletingProcess']]
             rbin_df = rbin_df.astype(object)
             rbin_df = rbin_df.where(pd.notna(rbin_df), '')
             df = df.drop(df[df['Type'] == 'Deleteed'].index)
             df.drop(columns=columns_to_drop, inplace=True)
         else:
             rbin_df = pd.DataFrame()
+        
+        df_GraphMetadata_Records = df.loc[(df['Type'] == 'File') & df['fileName'].notna(), 
+                                          ['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID', 
+                                           'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount']]
+        
+        if not df_GraphMetadata_Records.empty:
+            json_columns = ['graphMetadataJSON', 'filePolicies']
+            df_GraphMetadata_Records[json_columns] = df_GraphMetadata_Records[json_columns].map(lambda x: ast.literal_eval(x) if pd.notna(x) and x.strip() else '')
+            df_GraphMetadata_Records['lastWriteCount'] = df_GraphMetadata_Records['lastWriteCount'].astype('Int64')
+        
         df = df.astype(object)
         df = df.where(pd.notna(df), None)
 
-    except Exception:
+    except Exception as e:
+        print(e)
         log.error(f'Not a valid csv. {csv_name}')
         df = pd.DataFrame()
         rbin_df = pd.DataFrame()
         df_scope = pd.DataFrame()
+        df_GraphMetadata_Records = pd.DataFrame()
         scopeID = []
 
-    return df, rbin_df, df_scope, scopeID
+    return df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID

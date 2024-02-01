@@ -1,3 +1,27 @@
+# OneDriveExplorer
+# Copyright (C) 2022
+#
+# This file is part of OneDriveExplorer
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+
 import os
 import sys
 import logging
@@ -10,6 +34,7 @@ import urllib.parse
 import sqlite3
 from dissect import cstruct
 import pandas as pd
+import numpy as np
 from ode.utils import progress, progress_gui
 
 class DATParser:
@@ -29,7 +54,7 @@ class DATParser:
         self.int_to_date = ['lastChange', 'serverLastChange', 'mediaDateTaken']
         self.split_str = ['fileName', 'folderName']
         self.id_format = ['resourceID', 'parentResourceID', 'parentScopeID', 'scopeID', 'sourceResourceID']
-        self.rem_list = ['header', 'entry_offset', 'unknown1', 'unknown2', 'unknown3', 'flags', 'unknown4', 'unknown5', 'unknown6', 'syncTokenData', 'syncTokenData_size', 'spoPermissions', 'unknown7', 'shortcutVolumeID', 'shortcutItemIndex', 'sourceResourceID']
+        self.rem_list = ['header', 'entry_offset', 'unknown1', 'unknown2', 'unknown3', 'flags', 'unknown4', 'unknown5', 'unknown6', 'syncTokenData', 'syncTokenData_size', 'unknown7', 'shortcutVolumeID', 'shortcutItemIndex', 'sourceResourceID']
 
     def format_id(self, _):
         f = _[:32].decode("utf-8")
@@ -138,11 +163,11 @@ class DATParser:
                 if header.syncTokenData_size != 0:
                     account = 'Personal'
                     csvwriter = csv.writer(temp_scope, escapechar='\\')
-                    csvwriter.writerow(['scopeID', 'siteID', 'webID', 'listID', 'libraryType'])
+                    csvwriter.writerow(['scopeID', 'siteID', 'webID', 'listID', 'libraryType', 'spoPermissions'])
                     self.scope_header = True
                     syncTokenData = urllib.parse.unquote(header.syncTokenData[:int(header.syncTokenData_size)].decode('utf-8'))
                     syncDict = dict(item.split("=") for item in syncTokenData.split(";"))
-                    csvwriter.writerow([syncDict['ID'], '', '', '', ''])
+                    csvwriter.writerow([syncDict['ID'], '', '', '', '', ''])
 
                 if version == '29':
                     chunk = 1048
@@ -386,7 +411,7 @@ class DATParser:
                                 continue
                         block._values.update([('siteID', b''), ('webID', b'')])
                         block._values.move_to_end('listID', last=True)
-                        block._values.update([('libraryType', b'')])
+                        block._values.update([('libraryType', b''), ('spoPermissions', '')])
 
                     elif ff == '0b':
                         data_type = 'Scope'
@@ -396,7 +421,7 @@ class DATParser:
                                 del block._values[key]
                             except:
                                 continue
-                        block._values.update([('siteID', b''), ('webID', b''), ('listID', b''), ('libraryType', b'')])
+                        block._values.update([('siteID', b''), ('webID', b''), ('listID', b''), ('libraryType', b''), ('spoPermissions', '')])
 
                     elif ff == '0c':
                         data_type = 'Scope'
@@ -453,10 +478,11 @@ class DATParser:
 
                     csvwriter.writerow(block._values.values())
                 
-                    if gui:
-                        progress_gui(total, count, pb, value_label, status='Building folder list. Please wait....')
-                    else:
-                        progress(count, total, status='Building folder list. Please wait....')
+                    if count % 30 == 0:
+                        if gui:
+                            progress_gui(total, count, pb, value_label, status='Building folder list. Please wait....')
+                        else:
+                            progress(count, total, status='Building folder list. Please wait....')
 
         except Exception as e:
             #log.error(e)
@@ -477,6 +503,9 @@ class DATParser:
         df_scope.insert(6, 'webURL', '')
         df_scope.insert(7, 'remotePath', '')
         df_scope = df_scope.astype(object)
+        df_scope['spoPermissions'].replace('', np.nan, inplace=True)
+        df_scope['spoPermissions']= df_scope['spoPermissions'].fillna(0).astype('int')
+        df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: self.permissions(x))
         df_scope.fillna('', inplace=True)
         scopeID = df_scope['scopeID'].tolist()
 
