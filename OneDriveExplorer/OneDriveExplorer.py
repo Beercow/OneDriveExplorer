@@ -1,3 +1,27 @@
+# OneDriveExplorer
+# Copyright (C) 2022
+#
+# This file is part of OneDriveExplorer
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+
 import os
 import sys
 import re
@@ -5,6 +29,7 @@ import argparse
 import time
 import logging
 import uuid
+import pandas as pd
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
@@ -20,7 +45,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.12.20"
+__version__ = "2023.12.13"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()
@@ -45,9 +70,11 @@ def guid():
 
 
 def main():
+    df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID', 
+                                                 'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount'])
     def output():
         if args.csv:
-            print_csv(df, rbin_df, name, args.csv, args.csvf)
+            print_csv(df, rbin_df, df_GraphMetadata_Records, name, args.csv, args.csvf)
 
         if args.html:
             print_html(df, rbin_df, name, args.html)
@@ -173,10 +200,10 @@ def main():
             name = f'{sql_find[0][0]}_{sql_find[0][1]}'
         except Exception:
             name = 'SQLite_DB'
-        df, rbin_df, df_scope, scopeID, account = SQLiteParser.parse_sql(args.sql)
+        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account = SQLiteParser.parse_sql(args.sql)
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, args.sql, rbin_df, account, args.reghive, args.RECYCLE_BIN)
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, args.sql, rbin_df, account, args.reghive, args.RECYCLE_BIN)
             
         if df.empty:
             print(f'Unable to parse {name} sqlite database.')
@@ -202,7 +229,7 @@ def main():
         df, rbin_df, df_scope, scopeID = DATParser.parse_dat(args.file, account)
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, args.file,  rbin_df, account, args.reghive, args.RECYCLE_BIN)
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, args.file,  rbin_df, account, args.reghive, args.RECYCLE_BIN)
 
         if df.empty:
             filename = args.file.replace('/', '\\')
@@ -284,7 +311,7 @@ def main():
                         df, rbin_df, df_scope, scopeID = DATParser.parse_dat(filename, account)
 
                         if not df.empty:
-                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename,  rbin_df, account, args.reghive, args.RECYCLE_BIN)
+                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records,scopeID, filename,  rbin_df, account, args.reghive, args.RECYCLE_BIN)
                         
                         if df.empty:
                             filename = filename.replace('/', '\\')
@@ -298,10 +325,10 @@ def main():
                     for account, sql_dir in v.items():
                         name = f'{key}_{account}'
                         
-                        df, rbin_df, df_scope, scopeID, account = SQLiteParser.parse_sql(sql_dir)
+                        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account = SQLiteParser.parse_sql(sql_dir)
 
                         if not df.empty:
-                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, sql_dir, rbin_df, account, args.reghive, args.RECYCLE_BIN)
+                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, sql_dir, rbin_df, account, args.reghive, args.RECYCLE_BIN)
                         
                         if df.empty:
                             print(f'Unable to parse {name} sqlite database.')

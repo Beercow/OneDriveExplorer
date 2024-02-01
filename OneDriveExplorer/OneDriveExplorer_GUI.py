@@ -1,5 +1,31 @@
+# OneDriveExplorer
+# Copyright (C) 2022
+#
+# This file is part of OneDriveExplorer
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+
 import os
 import sys
+import colorsys
+import concurrent.futures
 import re
 import base64
 import json
@@ -75,7 +101,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.12.20"
+__version__ = "2023.12.13"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -91,6 +117,9 @@ delay = None
 cstruct_df = ''
 v = Validator()
 file_items = defaultdict(list)
+dfs_to_concat = []
+df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID', 
+                                                 'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount'])
 
 if getattr(sys, 'frozen', False):
     # If the application is run as a bundle, the PyInstaller bootloader
@@ -800,11 +829,36 @@ class ExportResult:
             pass
 
 
-class cstructs:
+class CStructs:
     def __init__(self, root, df):
         self.root = root
         self.df = df
+
         self.win = tk.Toplevel(self.root)
+        self.setup_window()
+
+        self.frame = ttk.Frame(self.win)
+        self.inner_frame = ttk.Frame(self.frame, relief='groove')
+
+        self.cstruct_frame = ttk.Frame(self.inner_frame)
+        self.mid_frame = ttk.Frame(self.inner_frame)
+        self.mid_frame.columnconfigure(1, weight=1)
+        self.bottom_frame = ttk.Frame(self.inner_frame)
+        self.bottom_frame.columnconfigure(4, weight=1)
+
+        self.setup_cstruct_frame()
+        self.setup_mid_frame()
+        self.setup_bottom_frame()
+        
+        if self.total['text'] == '0':
+            self.disable_widgets()
+        else:
+            self.populate_plugin_list()
+            self.sync_windows(self.win)
+            self.grid_all_widgets()
+            self.bind_events()
+
+    def setup_window(self):
         self.win.title("CStructs")
         self.win.iconbitmap(application_path + '/Images/titles/cstruct.ico')
         self.win.grab_set()
@@ -812,219 +866,200 @@ class cstructs:
         self.win.resizable(False, False)
         self.win.protocol("WM_DELETE_WINDOW", self.close_plugins)
         hwnd = get_parent(self.win.winfo_id())
-        #   getting the old style
+
+        # Getting the old style
         old_style = get_window_long(hwnd, GWL_STYLE)
-        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
-        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
-        #   setting new style
+
+        # Building the new style (old style AND NOT Maximize AND NOT Minimize)
+        new_style = old_style & ~WS_MAXIMIZEBOX & ~WS_MINIMIZEBOX
+
+        # Setting new style
         set_window_long(hwnd, GWL_STYLE, new_style)
 
-        self.frame = ttk.Frame(self.win)
-
-        self.inner_frame = ttk.Frame(self.frame,
-                                     relief='groove')
-
-        self.cstruct_frame = ttk.Frame(self.inner_frame)
-
-        self.bottom_frame = ttk.Frame(self.inner_frame)
-
+    def setup_cstruct_frame(self):
         self.plugin_list = tk.Listbox(self.cstruct_frame, activestyle='dotbox',
-                                      exportselection=False, width=100, bd=0)
+                                      exportselection=False, width=70, bd=0, font='TkDefaultFont')
         self.scrollbv = ttk.Scrollbar(self.cstruct_frame, orient="vertical",
                                       command=self.plugin_list.yview)
         self.plugin_list.configure(yscrollcommand=self.scrollbv.set)
 
-        self.code_label = ttk.Label(self.inner_frame, text="Code file",
-                                    justify="left", anchor='w')
-        self.entry1 = ttk.Entry(self.inner_frame, width=88)
-        self.author_label = ttk.Label(self.inner_frame, text="Author",
-                                      justify="left", anchor='w')
-        self.entry2 = ttk.Entry(self.inner_frame, width=88)
-        self.function_label = ttk.Label(self.inner_frame, text="Functions",
-                                        justify="left", anchor='w')
-        self.function_list = tk.Listbox(self.inner_frame, activestyle='none',
-                                        exportselection=False, width=86,
-                                        height=3, bd=0, selectmode="SINGLE")
-        self.fscrollbv = ttk.Scrollbar(self.inner_frame, orient="vertical",
-                                       command=self.function_list.yview)
+    def setup_mid_frame(self):
+        # Assuming self.mid_frame is already created and configured
+        self.code_label = ttk.Label(self.mid_frame, text="Code file", justify="left", anchor='w')
+        self.entry1 = tk.Text(self.mid_frame, exportselection=False, font='TkDefaultFont',
+                              cursor='arrow', width=49, height=1, padx=5)
+
+        self.author_label = ttk.Label(self.mid_frame, text="Author", justify="left", anchor='w')
+        self.entry2 = tk.Text(self.mid_frame, exportselection=False, font='TkDefaultFont',
+                              cursor='arrow', width=49, height=1, padx=5)
+
+        self.function_label = ttk.Label(self.mid_frame, text="Functions", justify="left", anchor='w')
+        self.function_list = tk.Listbox(self.mid_frame, activestyle='none', font='TkDefaultFont',
+                                        exportselection=False, width=48, relief='flat',
+                                        height=5, bd=1, selectmode="SINGLE")
+        self.fscrollbv = ttk.Scrollbar(self.mid_frame, orient="vertical", command=self.function_list.yview)
         self.function_list.configure(yscrollcommand=self.fscrollbv.set)
-        self.version_label = ttk.Label(self.inner_frame, text="Version",
-                                       justify="left", anchor='w')
-        self.entry3 = ttk.Entry(self.inner_frame, width=88)
-        self.id_label = ttk.Label(self.inner_frame, text="Internal GUID",
-                                  justify="left", anchor='w')
-        self.entry4 = ttk.Entry(self.inner_frame, width=88)
-        self.description_label = ttk.Label(self.inner_frame, text="Description",
-                                           justify="left", anchor='w')
-        self.entry5 = ttk.Entry(self.inner_frame, width=88)
 
-        self.load_label = ttk.Label(self.bottom_frame, text="CStructs loaded:",
-                                    justify="left", anchor='w')
+        self.version_label = ttk.Label(self.mid_frame, text="Version", justify="left", anchor='w')
+        self.entry3 = tk.Text(self.mid_frame, exportselection=False, font='TkDefaultFont',
+                              cursor='arrow', width=49, height=1, padx=5)
+
+        self.id_label = ttk.Label(self.mid_frame, text="Internal GUID", justify="left", anchor='w')
+        self.entry4 = tk.Text(self.mid_frame, exportselection=False, font='TkDefaultFont',
+                              cursor='arrow', width=49, height=1, padx=5)
+
+        self.description_label = ttk.Label(self.mid_frame, text="Description", justify="left", anchor='w')
+        self.entry5 = tk.Text(self.mid_frame, exportselection=False, font='TkDefaultFont',
+                              cursor='arrow', width=49, height=1, padx=5)
+
+
+    def setup_bottom_frame(self):
+        self.load_label = ttk.Label(self.bottom_frame, text="CStructs loaded:", justify="left", anchor='w')
         self.sl = ttk.Separator(self.bottom_frame, orient='vertical')
-        self.total = ttk.Label(self.bottom_frame, text=f"{self.df.shape[0]}",
-                               anchor='center', width=3)
+        self.total = ttk.Label(self.bottom_frame, text=f"{self.df.shape[0]}", anchor='center', width=3)
         self.sr = ttk.Separator(self.bottom_frame, orient='vertical')
-        self.btn = ttk.Button(self.inner_frame, text="Add'l. Info",
-                              takefocus=False, command=self.more_info)
+        self.btn = ttk.Button(self.bottom_frame, text="Add'l. Info", takefocus=False, command=self.more_info)
 
-        if self.total['text'] == '0':
-            self.btn.configure(state='disabled')
-            self.entry1.configure(state="disabled")
-            self.entry2.configure(state="disabled")
-            self.entry3.configure(state="disabled")
-            self.entry4.configure(state="disabled")
-            self.entry5.configure(state="disabled")
-            self.plugin_list.configure(state="disabled")
+    def close_plugins(self):
+        # Implement close_plugins logic here
+        pass
 
+    def disable_widgets(self):
+        self.btn.configure(state='disabled')
+        self.entry1.configure(state="disabled")
+        self.entry2.configure(state="disabled")
+        self.entry3.configure(state="disabled")
+        self.entry4.configure(state="disabled")
+        self.entry5.configure(state="disabled")
+        self.plugin_list.configure(state="disabled")
+
+    def populate_plugin_list(self):
         if not self.df.empty:
-            self.plugin_list.insert("end", *self.df.Code_File)
+            self.plugin_list.insert("end", *("\u2008" + str(item) for item in self.df.Code_File))
             self.plugin_list.select_set(0)
             self.selected_item(event=None)
 
-        self.sync_windows(self.win)
-
+    def grid_all_widgets(self):
         self.frame.grid(row=0, column=0, sticky='nsew')
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
-        self.cstruct_frame.grid(row=0, column=0, columnspan=3,
-                                padx=10, pady=10, sticky='nsew')
-        self.bottom_frame.grid(row=7, column=0, columnspan=3, padx=10,
-                               pady=(10, 2), sticky='sw')
+        self.cstruct_frame.grid(row=0, column=0, padx=10, pady=(10, 5), sticky='nsew')
+        self.mid_frame.grid(row=1, column=0, padx=10, pady=5, sticky='nsew')
+        self.bottom_frame.grid(row=2, column=0, padx=10, pady=(5, 4), sticky='nsew')
 
         self.plugin_list.grid(row=0, column=0, sticky="nsew")
         self.scrollbv.grid(row=0, column=1, sticky="nsew")
 
-        self.code_label.grid(row=1, column=0, padx=(10, 0),
-                             pady=(0, 5), sticky='w')
-        self.entry1.grid(row=1, column=1, padx=(0, 10), columnspan=2,
-                         pady=(0, 5), sticky='e')
-        self.author_label.grid(row=2, column=0, padx=(10, 0),
-                               pady=(0, 5), sticky='w')
-        self.entry2.grid(row=2, column=1, padx=(0, 10), columnspan=2,
-                         pady=(0, 5), sticky='e')
-        self.function_label.grid(row=3, column=0, padx=(10, 0),
-                                 pady=(0, 5), sticky='nw')
-        self.function_list.grid(row=3, column=1, padx=(4, 0),
-                                pady=(0, 5), sticky='e')
-        self.fscrollbv.grid(row=3, column=2,
-                            padx=(0, 10), pady=(0, 5), sticky="nsew")
-        self.version_label.grid(row=4, column=0, padx=(10, 0),
-                                pady=(0, 5), sticky='w')
-        self.entry3.grid(row=4, column=1, padx=(0, 10), columnspan=2,
-                         pady=(0, 5), sticky='e')
-        self.id_label.grid(row=5, column=0, padx=(10, 0),
-                           pady=(0, 5), sticky='w')
-        self.entry4.grid(row=5, column=1, padx=(0, 10), columnspan=2,
-                         pady=(0, 5), sticky='e')
-        self.description_label.grid(row=6, column=0, padx=(10, 0),
-                                    pady=(0, 5), sticky='w')
-        self.entry5.grid(row=6, column=1, padx=(0, 10), columnspan=2,
-                         pady=(0, 5), sticky='e')
+        self.code_label.grid(row=0, column=0, pady=(0, 5), sticky='w')
+        self.entry1.grid(row=0, column=1, columnspan=2, pady=(0, 5), sticky='e')
+        self.author_label.grid(row=2, column=0, pady=(0, 5), sticky='w')
+        self.entry2.grid(row=2, column=1, columnspan=2, pady=(0, 5), sticky='e')
+        self.function_label.grid(row=3, column=0, pady=(0, 5), sticky='nw')
+        self.function_list.grid(row=3, column=1, pady=(0, 5), sticky='e')
+        self.fscrollbv.grid(row=3, column=2, pady=(0, 5), sticky="nsew")
+        self.version_label.grid(row=4, column=0, pady=(0, 5), sticky='w')
+        self.entry3.grid(row=4, column=1, columnspan=2, pady=(0, 5), sticky='e')
+        self.id_label.grid(row=5, column=0, pady=(0, 5), sticky='w')
+        self.entry4.grid(row=5, column=1, columnspan=2, pady=(0, 5), sticky='e')
+        self.description_label.grid(row=6, column=0, pady=(0, 5), sticky='w')
+        self.entry5.grid(row=6, column=1, columnspan=2, pady=(0, 5), sticky='e')
 
         self.load_label.grid(row=0, column=0, padx=(0, 5), sticky='w')
-        self.sl.grid(row=0, column=1, sticky='ns')
-        self.total.grid(row=0, column=2)
-        self.sr.grid(row=0, column=3, sticky='ns')
-        self.btn.grid(row=7, column=1, columnspan=2,
-                      padx=10, pady=(0, 5), sticky='e')
+        self.sl.grid(row=0, column=1, sticky='nsw')
+        self.total.grid(row=0, column=2, sticky='w')
+        self.sr.grid(row=0, column=3, sticky='nsw')
+        self.btn.grid(row=0, column=4, pady=(0, 5), sticky='e')
 
-        ttk.Style().map('TEntry',
-                        foreground=[('disabled',
-                                    ttk.Style().lookup('TEntry',
-                                                       'foreground'))])
-
+    def bind_events(self):
         self.plugin_list.bind("<<ListboxSelect>>", self.selected_item)
         self.function_list.bind('<Button>', lambda a: "break")
         self.function_list.bind('<Motion>', lambda a: "break")
+        self.entry1.bind('<Button-1>', lambda a: "break")
+        self.entry2.bind('<Button-1>', lambda a: "break")
+        self.entry3.bind('<Button-1>', lambda a: "break")
+        self.entry4.bind('<Button-1>', lambda a: "break")
+        self.entry5.bind('<Button-1>', lambda a: "break")
 
     def selected_item(self, event):
         for i in self.plugin_list.curselection():
-            text = self.df.loc[self.df.Code_File == self.plugin_list.get(i)].values.tolist()[0]
+            text = self.df.loc[self.df.Code_File == self.plugin_list.get(i).strip('\u2008')].values.tolist()[0]
+
             self.function_list.delete(0, "end")
             for x in text[5]:
                 self.function_list.insert("end", f"\u2008{x['Function']}")
-            self.entry1.configure(state="normal")
-            self.entry2.configure(state="normal")
-            self.entry3.configure(state="normal")
-            self.entry4.configure(state="normal")
-            self.entry5.configure(state="normal")
-            self.entry1.delete(0, "end")
-            self.entry2.delete(0, "end")
-            self.entry3.delete(0, "end")
-            self.entry4.delete(0, "end")
-            self.entry5.delete(0, "end")
-            self.entry1.insert(0, text[4])
-            self.entry2.insert(0, text[1])
-            self.entry3.insert(0, text[2])
-            self.entry4.insert(0, text[3])
-            self.entry5.insert(0, text[0])
-            self.entry1.configure(state="disabled")
-            self.entry2.configure(state="disabled")
-            self.entry3.configure(state="disabled")
-            self.entry4.configure(state="disabled")
-            self.entry5.configure(state="disabled")
+
+            entry_data = [text[4], text[1], text[2], text[3], text[0]]
+            entry_widgets = [self.entry1, self.entry2, self.entry3, self.entry4, self.entry5]
+
+            for entry, data in zip(entry_widgets, entry_data):
+                entry.configure(state="normal")
+                entry.delete('1.0', "end")
+                entry.insert("end", data)
+                entry.configure(state="disabled")
 
     def more_info(self):
         self.info = tk.Toplevel(self.win)
-        self.info.title("CStructs")
-        self.info.iconbitmap(application_path + '/Images/titles/cstruct.ico')
-        self.info.grab_set()
-        self.info.focus_force()
-        self.info.resizable(False, False)
-        hwnd = get_parent(self.info.winfo_id())
-        #   getting the old style
-        old_style = get_window_long(hwnd, GWL_STYLE)
-        #   building the new style (old style AND NOT Maximize AND NOT Minimize)
-        new_style = old_style & ~ WS_MAXIMIZEBOX & ~ WS_MINIMIZEBOX
-        #   setting new style
-        set_window_long(hwnd, GWL_STYLE, new_style)
+        self.configure_info_window()
 
         self.info_frame = ttk.Frame(self.info)
-
-        self.info_inner_frame = ttk.Frame(self.info_frame, padding=5,
-                                          relief='groove')
+        self.info_inner_frame = ttk.Frame(self.info_frame, padding=5, relief='groove')
 
         self.scrollb = ttk.Scrollbar(self.info_inner_frame)
-        self.info_text = CustomText(self.info_inner_frame,
-                                    yscrollcommand=self.scrollb.set,
-                                    padx=5,
-                                    pady=5,
-                                    fg="DarkOrange2")
+        self.info_text = CustomText(self.info_inner_frame, yscrollcommand=self.scrollb.set,
+                                    padx=5, pady=5, fg="DarkOrange2")
         self.scrollb.config(command=self.info_text.yview)
 
-        self.info_text.tag_configure("blue", foreground="blue")
-        self.info_text.tag_configure("black", foreground="black")
-        self.info_text.tag_configure("green", foreground="green")
-        self.info_text.tag_configure("gray", foreground="dim gray")
-        self.info_text.tag_configure("dblue", foreground="DodgerBlue2")
-        self.info_text.tag_configure("black2", foreground="black")
-        self.info_text.tag_configure("dgreen", foreground="DarkSeaGreen3")
+        self.configure_info_text_tags()
 
         yaml = YAML()
         yaml.compact(seq_seq=False, seq_map=False)
         string_stream = StringIO()
 
         for i in self.plugin_list.curselection():
-            text = self.df.loc[self.df.Code_File == self.plugin_list.get(i)].values.tolist()[0]
+            text = self.df.loc[self.df.Code_File == self.plugin_list.get(i).strip('\u2008')].values.tolist()[0]
             yaml.dump(text[5], string_stream)
             self.info_text.insert("end", string_stream.getvalue())
-            self.info_text.highlight_pattern("Function|Description|Flags|Structure(?=:)", "blue", regexp=True)
-            self.info_text.highlight_pattern(":\s|:\s\||\s.*?(?=;)", "black", regexp=True)
-            self.info_text.highlight_pattern("#\s.*?$", "green", regexp=True)
-            self.info_text.highlight_pattern("#define\s.*?$|{|}|;|(\];)|(?:\S)(\[)", "gray", regexp=True)
-            self.info_text.highlight_pattern("(?:\S)(?=\[)", "black2", regexp=True)
-            self.info_text.highlight_pattern("//.*?$", "dgreen", regexp=True)
-            self.info_text.highlight_pattern("\s(BYTE|CHAR|DWORD|INT|INT128|INT16|INT32|INT64|INT8|LONG|LONG32|LONG64|LONGLONG|OWORD|QWORD|SHORT|UCHAR|UINT|UINT128|UINT16|UINT32|UINT64|UINT8|ULONG|ULONG64|ULONGLONG|USHORT|WCHAR|WORD|__int128|__int16|__int32|__int64|__int8|char|int|int128|int128_t|int16|int16_t|int32|int32_t|int64|int64_t|int8|int8_t|long long|long|short|signed char|signed int|signed long long|signed long|signed short|struct|u1|u16|u2|u4|u8|uchar|uint|uint128|uint128_t|uint16|uint16_t|uint32|uint32_t|uint64|uint64_t|uint8|uint8_t|ulong|unsigned __int128|unsigned char|unsigned int|unsigned long long|unsigned long|unsigned short|ushort|void|wchar|wchar_t)\s", "dblue", regexp=True)
+            self.highlight_patterns_in_info_text()
 
-        self.info_frame.grid(row=0, column=0)
-        self.info_inner_frame.grid(row=0, column=0)
-        self.info_text.grid(row=0, column=0)
-        self.scrollb.grid(row=0, column=1, sticky='nsew')
+        self.grid_info_widgets()
 
         self.sync_windows(self.info)
 
         self.info_text.bind('<Key>', lambda a: "break")
         self.info_text.bind('<Button>', lambda a: "break")
         self.info_text.bind('<Motion>', lambda a: "break")
+
+    def configure_info_window(self):
+        self.info.title(f"{self.plugin_list.get(self.plugin_list.curselection()[0])}")
+        self.info.iconbitmap(application_path + '/Images/titles/window_info.ico')
+        self.info.grab_set()
+        self.info.focus_force()
+        self.info.resizable(False, False)
+        hwnd = get_parent(self.info.winfo_id())
+        old_style = get_window_long(hwnd, GWL_STYLE)
+        new_style = old_style & ~WS_MAXIMIZEBOX & ~WS_MINIMIZEBOX
+        set_window_long(hwnd, GWL_STYLE, new_style)
+
+    def configure_info_text_tags(self):
+        tags = ["blue", "black", "green", "gray", "dblue", "black2", "dgreen"]
+        colors = ["blue", "black", "green", "dim gray", "DodgerBlue2", "black", "DarkSeaGreen3"]
+
+        for tag, color in zip(tags, colors):
+            self.info_text.tag_configure(tag, foreground=color)
+
+    def highlight_patterns_in_info_text(self):
+        self.info_text.highlight_pattern("Function|Description|Flags|Structure(?=:)", "blue", regexp=True)
+        self.info_text.highlight_pattern(":\s|:\s\||\s.*?(?=;)", "black", regexp=True)
+        self.info_text.highlight_pattern("#\s.*?$", "green", regexp=True)
+        self.info_text.highlight_pattern("#define\s.*?$|{|}|;|(\];)|(?:\S)(\[)", "gray", regexp=True)
+        self.info_text.highlight_pattern("(?:\S)(?=\[)", "black2", regexp=True)
+        self.info_text.highlight_pattern("//.*?$", "dgreen", regexp=True)
+        self.info_text.highlight_pattern("\s(BYTE|CHAR|DWORD|INT|INT128|INT16|INT32|INT64|INT8|LONG|LONG32|LONG64|LONGLONG|OWORD|QWORD|SHORT|UCHAR|UINT|UINT128|UINT16|UINT32|UINT64|UINT8|ULONG|ULONG64|ULONGLONG|USHORT|WCHAR|WORD|__int128|__int16|__int32|__int64|__int8|char|int|int128|int128_t|int16|int16_t|int32|int32_t|int64|int64_t|int8|int8_t|long long|long|short|signed char|signed int|signed long long|signed long|signed short|struct|u1|u16|u2|u4|u8|uchar|uint|uint128|uint128_t|uint16|uint16_t|uint32|uint32_t|uint64|uint64_t|uint8|uint8_t|ulong|unsigned __int128|unsigned char|unsigned int|unsigned long long|unsigned long|unsigned short|ushort|void|wchar|wchar_t)\s", "dblue", regexp=True)
+
+    def grid_info_widgets(self):
+        self.info_frame.grid(row=0, column=0)
+        self.info_inner_frame.grid(row=0, column=0, padx=5, pady=5)
+        self.info_text.grid(row=0, column=0, padx=(5, 0), pady=5)
+        self.scrollb.grid(row=0, column=1, padx=(0, 5), pady=5, sticky='nsew')
 
     def sync_windows(self, window, event=None):
         x = self.root.winfo_x()
@@ -1185,12 +1220,13 @@ class SyncMessage:
         self.win.overrideredirect(1)
 
     def configure_window(self):
-        reg_font = ("Segoe UI", 8, "normal")
+        reg_font = ("Segoe UI", 14, "normal")
         bold_font = ("Segoe UI", 16, "bold")
+        self.bgf = style.lookup('Treeview', 'background')
 
-        self.lbl_with_my_gif = AnimatedGif(self.win, application_path + '/Images/gui/load.gif', 0.1)
-        self.label = ttk.Label(self.win, text="Please wait           ", font=bold_font)
-        self.label1 = ttk.Label(self.win, text="Working...", font=reg_font)
+        self.lbl_with_my_gif = AnimatedGif(self.win, application_path + '/Images/gui/load.gif', 0.1, self.bgf)
+        self.label = ttk.Label(self.win, text="Please wait           ", font=bold_font, background=self.bgf)
+        self.label1 = ttk.Label(self.win, text="Working...", font=reg_font, background=self.bgf)
 
     def create_widgets(self):
         self.lbl_with_my_gif.grid(row=0, column=0, rowspan=2)
@@ -1203,6 +1239,9 @@ class SyncMessage:
         self.win.bind('<Configure>', self.sync_windows)
 
     def sync_windows(self, event=None):
+        if 'thread_load' in str(threading.enumerate()) and len(threading.enumerate()) <= 4:
+            self.root.unbind("<Configure>")
+            self.win.destroy()
         if len(threading.enumerate()) <= 3:
             self.root.unbind("<Configure>")
             self.win.destroy()
@@ -1264,12 +1303,11 @@ class Result:
     def process_args(self):
         l = list(self.args[0])
         text = ''
-        
         if len(l) == 3:
             text = f'  {self.args[0][1]}\n  {self.args[0][2]}'
             self.status.append(hdd_big_img)
             self.folder = False
-        elif len(l) == 13:
+        elif len(l) == 14 and 'site' in self.args[0][3]:
             if '+' in self.args[0][2]:
                 self.status.append(building_big_img)
             else:
@@ -1282,7 +1320,7 @@ class Result:
         values = tuple(l)
         output_image = self.create_output_image()
         self.update_image_dictionary(output_image)
-        self.insert_into_treeview(text, values)
+        self.insert_into_treeview(self.args[1], text, values)
 
     def process_folder_status(self, l):
         if self.folder:
@@ -1350,16 +1388,17 @@ class Result:
         if self.sha1.hexdigest() not in s_image:
             s_image[self.sha1.hexdigest()] = image
 
-    def insert_into_treeview(self, text, values):
-        tvr.insert("", "end", image=s_image[self.sha1.hexdigest()], text=text, values=values, tags=self.tags)
+    def insert_into_treeview(self, iid, text, values):
+        tvr.insert("", "end", iid=iid, image=s_image[self.sha1.hexdigest()], text=text, values=values, tags=self.tags)
 
 
 class PopupManager:
-    def __init__(self, root, tv, application_path, details):
+    def __init__(self, root, tv, application_path, details, breadcrumb):
         self.root = root
         self.tv = tv
         self.application_path = application_path
         self.details = details
+        self.breadcrumb = breadcrumb
 
         self.rof_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon11.ico'))
         self.copy_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/copy.png'))
@@ -1383,7 +1422,7 @@ class PopupManager:
                 popup.add_command(label="Remove OneDrive Folder",
                                   image=self.rof_img,
                                   compound='left',
-                                  command=lambda: self.del_folder(curItem))
+                                  command=lambda: [self.thread_del_folder(curItem), SyncMessage(root)])
                 popup.add_separator()
 
             if image[0] != str(del_img):
@@ -1456,25 +1495,42 @@ class PopupManager:
         self.root.clipboard_clear()
         self.root.clipboard_append(values[6].split("Name: ")[1])
 
+    def thread_del_folder(self, iid):
+        message.unbind('<Double-Button-1>', bind_id)
+        value_label['text'] = ''
+        t1 = threading.Thread(target=self.del_folder, args=(iid,), daemon=True)
+        t1.start()
+        root.after(200, check_if_ready, t1, "df")
+    
     def del_folder(self, iid):
         global proj_name
+        widgets_disable()
+        search_entry.delete(0, 'end')
+        search_entry.configure(state="disabled")
+        btn.configure(state="disabled")
         clear_search()
-        self.tv.delete(iid)
+        self.breadcrumb.clear()
+        self.tv.grid_forget()     
+        file_manager.tv2.delete(*file_manager.tv2.get_children())
+        file_manager.tv3.delete(*file_manager.tv3.get_children())
         self.details.config(state='normal')
         self.details.delete('1.0', tk.END)
         self.details.config(state='disable')
+        delete_item_and_descendants(self.tv, iid)
+        tv.delete(*tv.get_children(iid))
+        tv.delete(iid)
+        self.tv.grid(row=1, column=0, sticky="nsew")
         if len(self.tv.get_children()) == 0:
             odsmenu.entryconfig("Unload all files", state='disable')
             file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
-            search_entry.delete(0, 'end')
-            search_entry.configure(state="disabled")
-            btn.configure(state="disabled")
             if len(tv_frame.tabs()) == 1:
                 projmenu.entryconfig("Save", state='disable')
                 root.unbind('<Alt-s>')
                 projmenu.entryconfig("SaveAs", state='disable')
                 projmenu.entryconfig("Unload", state='disable')
                 proj_name = None
+
+        widgets_normal()
 
 
 class ToolTipManager:
@@ -1490,17 +1546,19 @@ class ToolTipManager:
             self.hide_tip()
 
         if motion:
-            widget.after(500, enter(None, motion=True))
+            widget.after(1000, enter(None, motion=True))
         else:
             widget.bind('<Enter>', lambda event: widget.after(500, enter(event)))
 
         widget.bind('<Leave>', leave)
 
     def motion(self, event):
+        if len(threading.enumerate()) > 3:
+            return
         if event.widget.identify(event.x, event.y) == 'label':
             index = event.widget.index("@%d,%d" % (event.x, event.y))
             if index != 0:
-                return
+                text = 'ODL Logs\n  Files contain to troubleshoot synchronization issues\n  caused by editing files offline in the desktop version\n  of OneDrive.'
             if self.current_tab != event.widget.tab(index, 'text'):
                 self.current_tab = event.widget.tab(index, 'text')
                 if event.widget.tab(index, 'text') == 'Details':
@@ -1585,6 +1643,7 @@ class FileManager:
         self.parent = parent
         self.columns = columns
         self.cur_sel = cur_sel
+        self.breadcrumb_list = breadcrumb
         self.stop = threading.Event()
 
         # Treeview for the current directory
@@ -1630,10 +1689,33 @@ class FileManager:
 
         self.tv2.bind('<Button-1>', self.handle_click)
         self.tv2.bind('<Motion>', self.handle_click)
+        self.tv2.bind('<Double-Button-1>', self.handle_double_click)
+        self.tv3.bind('<Double-Button-1>', self.handle_double_click)
 
     def handle_click(self, event):
         if self.tv2.identify_region(event.x, event.y) == "separator":
             return "break"
+
+    def handle_double_click(self, event):
+        cur_item = event.widget.selection()
+        values = list(event.widget.item(cur_item, 'values'))
+        if not any(('folderStatus:' in item or 'webURL:' in item) for item in values):
+            if values[2] == '':
+                pass
+            else:
+                return
+        parent = self.tv.parent(cur_item[0])
+        self.tv.selection_set(cur_item[0])
+        item_id = cur_item[0]
+        while True:
+            parent = self.tv.parent(item_id)
+            if parent:
+                self.tv.item(parent, open=True)
+                item_id = parent
+            else:
+                break
+        
+        clear_search()
 
     def multiple_yview(self, *args):
         self.tv2.yview(*args)
@@ -1668,6 +1750,10 @@ class FileManager:
             pass
 
     def new_selection(self, event):
+        matches = ["start_parsing", "live_system", "odl", "load_project", "proj_parse"]
+        if any(x in str(threading.enumerate()) for x in matches):
+            return
+            
         cur_item = event.widget.selection()
 
         if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview':
@@ -1694,14 +1780,17 @@ class FileManager:
 
     def select_item(self, event):
         cur_item = event.widget.selection()
+        if cur_item == ():
+            return
         values = list(event.widget.item(cur_item, 'values'))
         if len(values) > 4:
             if values[0] != '':
-                if 'inRecycleBin' in values[7]:
-                    values[0] = f'DeleteTimeStamp: {values[0]}'
-                else:
-                    values[0] = f'lastChange: {values[0]}'
+                timestamp = "DeleteTimeStamp: " if 'inRecycleBin' in values[7] else "lastChange: "
+                if 'Date modified' in str(values[0]):
+                       values[0] = str(values[0])[17:].split("\n")[0]
+                values[0] = f'{timestamp}{values[0]}'
                 values[1] = f'size: {values[1]}'
+                
         try:
             tags = event.widget.item(cur_item, 'tags')[0]
         except:
@@ -1717,12 +1806,22 @@ class FileManager:
             pass
 
         details.config(state='disable')
+        if len(values) > 4:
+            meta_btn.config(state='disable')
+            if ('fileStatus' in values[7] or 'inRecycleBin' in values[7]) and not df_GraphMetadata_Records.empty:
+                line_number = 4
+                start_index = f"{line_number}.0"
+                end_index = f"{line_number + 1}.0"
+                pattern = r'resourceID: |resourceId: '
+                line_value =  re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
+                df_result = df_GraphMetadata_Records[df_GraphMetadata_Records['resourceID'] == line_value]
+                if not df_result.empty:
+                    meta_btn.config(state='normal')
 
     def get_info(self, event):  # need to finish testing on deleted files
         df_list = []
         curItem = event.widget.selection()
         values = event.widget.item(curItem, 'values')
-        #print(f'values: {values}')
 
         for item in root.winfo_children():
             for i in item.winfo_children():
@@ -1753,8 +1852,7 @@ class FileManager:
                 file_hash = values[10].split("(")[1].strip(")")
             except:
                 file_hash = ''
-            #print(rid)
-            #print(f'hash: {file_hash}')
+
             if len(rid) != 0:
                 info = pd.concat([df.loc[df.Params.astype('string').str.contains(rid, case=False, na=False)] for df in df_list])
             elif len(file_hash) != 0:
@@ -1774,7 +1872,7 @@ class FileManager:
             infoNB.tab(infoFrame, text="Log Entries")
             if event.widget.selection()[0] != curItem[0]:
                 stop.clear()
-                threading.Thread(target=get_info,
+                threading.Thread(target=self.get_info,
                                  args=(event,),
                                  daemon=True).start()
             return
@@ -1795,13 +1893,20 @@ class FileManager:
                     item.destroy()
             if tv.selection()[0] != curItem[0]:
                 stop.clear()
-                threading.Thread(target=get_info,
+                threading.Thread(target=self.get_info,
                                  args=(event,),
                                  daemon=True).start()
         infoNB.tab(infoFrame, text="Log Entries")
 
     def file_pane(self):
         cur_item = self.tv.selection()
+        if len(cur_item) == 0:
+            self.tv2.delete(*self.tv2.get_children())
+            self.tv3.delete(*self.tv3.get_children())
+            self.breadcrumb_list.append(cur_item)
+            return
+        
+        self.breadcrumb_list.append(cur_item[0])
 
         for item in self.tv2.get_children():
             self.tv2.delete(item)
@@ -1835,7 +1940,7 @@ class FileManager:
             values = item_data["values"]
             tags = item_data["tags"][0] if item_data["tags"] else ''
 
-            self.tv2.insert("", "end", image=image_key, text=text, values=values, tags=tags)
+            self.tv2.insert("", "end", iid=child, image=image_key, text=text, values=values, tags=tags)
 
             values_7 = values[7].split(' ')[1] if len(values) > 7 and len(values[7].split(' ')) > 1 else ''
             if values_7 == '7':
@@ -1845,7 +1950,7 @@ class FileManager:
                     image_value = online_img
             else:
                 image_value = image_mapping.get(values_7, online_img)
-            self.tv3.insert("", "end", image=image_value, values=values, tags=tags)
+            self.tv3.insert("", "end", iid=child, image=image_value, values=values, tags=tags)
 
         try:
             if cur_item[0] in file_items:
@@ -1871,7 +1976,7 @@ class FileManager:
 
                     self.tv3.insert("", "end", image=image_value_i, values=values_i, tags=tags_i)
         except Exception as e:
-            print(e)
+#            print(e)
             pass
 
         self.parent.update_idletasks()
@@ -1893,6 +1998,587 @@ class TreeviewHeaderWidget(ttk.Frame):
 
         # Pack the TreeView inside the custom widget
         self.treeview.pack(fill=tk.BOTH, expand=True)
+
+
+class LabelSeparator(tk.Frame):
+    def __init__ (self, parent, text = "", width = "", *args):
+        tk.Frame.__init__ (self, parent, *args)
+
+        self.bgf = style.lookup('Label', 'background')
+        
+        self.configure(background=self.bgf)
+        self.grid_columnconfigure(0, weight=1)
+        
+        self.separator = ttk.Separator (self, orient = tk.HORIZONTAL)
+        self.separator.grid (row = 0, column = 0, sticky="ew")
+
+        self.label = ttk.Label (self, text=text, font=default_font)
+        self.label.grid (row = 0, column = 0, padx = width, sticky="w")
+
+
+class Metadata:
+    def __init__(self, root, df_GraphMetadata_Records):
+        self.root = root
+        self.bgf = style.lookup('Label', 'background')
+        self.df = df_GraphMetadata_Records
+        
+        self.line_number = 8
+        self.start_index = f"{self.line_number}.0"
+        self.end_index = f"{self.line_number + 1}.0"
+        self.line_value =  details.get(self.start_index, self.end_index)
+        if 'file' in self.line_value:
+            self.iconbitmap = f'{application_path}/Images/titles/file_yellow.ico'
+        else:
+            self.iconbitmap = f'{application_path}/Images/titles/file_yellow_delete.ico'
+        self.create_metadata_window()
+
+    def create_metadata_window(self):
+        self.win = tk.Toplevel(self.root)
+        self.setup_window()
+        self.create_widgets()
+        self.get_resourceID()
+        self.sync_windows()
+
+    def setup_window(self):
+        self.win.wm_transient(self.root)
+        self.win.title("Properties")
+        self.win.iconbitmap(self.iconbitmap)
+        self.win.grab_set()
+        self.win.focus_force()
+        self.win.resizable(False, False)
+        self.win.protocol("WM_DELETE_WINDOW", self.__callback)
+
+    def create_widgets(self):
+        self.frame = ttk.Frame(self.win)
+        self.metaNB = ttk.Notebook(self.frame, padding=5)
+        self.meta_frame = ttk.Frame(self.metaNB, padding=10)
+        self.metaNB.add(self.meta_frame, text='Metadata')
+        
+        self.frame.grid(row=0, column=0, sticky="nsew")
+        self.metaNB.grid(row=0, column=0, sticky="nsew")
+
+        
+    def get_resourceID(self):
+        line_number = 4
+        start_index = f"{line_number}.0"
+        end_index = f"{line_number + 1}.0"
+        pattern = r'resourceID: |resourceId: '
+        line_value =  re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
+        df_result = self.df[self.df['resourceID'] == line_value]
+        row_num = 0
+        for item in df_result.to_dict(orient='records'):
+            for key, value in item.items():
+                if key =='fileName':
+                    self.win.title(f"{value} Properties")
+                if key == 'graphMetadataJSON':
+                    self.get_graphMetadataJSON(value)
+                    continue
+                if key == 'filePolicies':
+                    self.get_filePolicies(value)
+                    continue
+
+                self.add_label_to_frame(self.meta_frame, key, value, row_num)
+                
+                row_num += 1
+        
+    def get_graphMetadataJSON(self, value):
+        if not value:
+            return
+
+        self.json_frame = ttk.Frame(self.metaNB, padding=10)
+        self.json_frame.grid_columnconfigure(1, weight=1)
+        self.metaNB.add(self.json_frame, text='MetadataJSON')
+        row_num = 0
+        for k, v in value.items():
+            if isinstance(v, dict):
+                header_label = LabelSeparator(self.json_frame, text=f"{k}", width=15)
+                header_label.grid(row=row_num, column=0, columnspan=2, sticky="ew")
+                row_num += 1
+                for a, b in v.items():
+                    key_label = HighlightableTextBox(self.json_frame, text=f"{a}:", font=default_font, wraplength='165p')
+                    key_label.label.grid(row=row_num, column=0, padx=(0, 2), pady=(0, 5), sticky="nw")
+                    
+                    value_label = HighlightableTextBox(self.json_frame, text=str(b), font=default_font, wraplength='165p')
+                    value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
+                    
+                    row_num += 1
+            else:
+                logging.error(f'Issue parsing graphMetadataJSON. {type(v)} {k}:{v}')
+    
+    def get_filePolicies(self, value):
+        if not value:
+            return
+
+        policy_frame = ttk.Frame(self.metaNB, padding=10)
+        policy_frame.grid_columnconfigure(1, weight=1)
+        self.metaNB.add(policy_frame, text='filePolicies')
+
+        row_num = 0
+
+        for k, v in value.items():
+            if isinstance(v, list):
+                self.add_list_to_frame(policy_frame, k, v, row_num)
+            else:
+                self.add_label_to_frame(policy_frame, k, v, row_num)
+            row_num += 1
+
+        return policy_frame
+
+    def add_list_to_frame(self, parent_frame, label_text, items, row_num):
+        header_label = LabelSeparator(parent_frame, text=label_text, width=15)
+        header_label.grid(row=row_num, column=0, columnspan=2, sticky="ew")
+        row_num += 1
+
+        for item in items:
+            if isinstance(item, dict):
+                self.add_dict_to_frame(parent_frame, item, row_num)
+                row_num += 1
+            else:
+                self.add_label_to_frame(parent_frame, '', item, row_num)
+                row_num += 1
+
+    def add_dict_to_frame(self, parent_frame, dictionary, row_num):
+        for key, value in dictionary.items():
+            if isinstance(value, dict):
+                self.header_frame_label = ttk.Label(parent_frame, text=f"{key}", font=default_font)
+                self.header_frame = tk.LabelFrame(parent_frame, labelwidget=self.header_frame_label, padx=5, labelanchor="nw", bg=self.bgf)
+                self.header_frame.grid(row=row_num, column=0, columnspan=2, sticky="ew")
+                row_num += 1
+                frow_num = 0
+                for k, v in value.items():
+                    self.add_label_to_frame(self.header_frame, k, v, frow_num)
+                    frow_num += 1
+            else:
+                self.add_label_to_frame(parent_frame, key, value, row_num)
+                row_num += 1
+
+    def add_label_to_frame(self, parent_frame, key, value, row_num):
+        key_label = HighlightableTextBox(parent_frame, text=f"{key}:", font=default_font, wraplength='165p')
+        key_label.label.grid(row=row_num, column=0, padx=(0, 2), pady=(0, 5), sticky="nw")
+
+        value_label = HighlightableTextBox(parent_frame, text=str(value), font=default_font, wraplength='165p')
+        value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
+        row_num += 1
+
+    
+    def sync_windows(self, event=None):
+        x = details_frame.winfo_x()
+        y = details_frame.winfo_y()
+        qw = self.win.winfo_width()
+        qh = self.win.winfo_height()
+        w = details_frame.winfo_width()
+        h = details_frame.winfo_height()
+        self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
+
+    
+    def __callback(self):
+        self.win.destroy()
+
+
+class HighlightableTextBox:
+    def __init__(self, master, text, font, wraplength):
+        self.label = ttk.Label(master, text=text, font=font, wraplength=wraplength)
+        self.label.bind("<Enter>", lambda event: self.on_enter())
+        self.label.bind("<Leave>", lambda event: self.on_leave())
+        self.label.bind("<Button-3>", lambda event: self.copy_text())
+        self.highlighted = False
+
+    def on_enter(self):
+        if not self.highlighted:
+            self.label.configure(background=details['selectbackground'])
+
+    def on_leave(self):
+        if not self.highlighted:
+            self.label.configure(background=style.lookup('TLabel', 'background'))
+
+    def clear_highlight(self):
+        self.highlighted = False
+        self.label.configure(background=style.lookup('TLabel', 'background'))
+
+    def copy_text(self):
+        selected_text = self.label["text"]
+        root.clipboard_clear()
+        root.clipboard_append(selected_text)
+
+
+class Breadcrumb(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.my_list = []
+        self.crumb_trail = []
+        self.crumb_trail_index = -2
+        self.crumb_length = 0
+        self.update = True
+        self.tv = tv
+        self.breadcrumb_viewer()
+        self.update_theme()
+        self.unbind_left()
+        self.unbind_right()
+        self.unbind_up()
+    
+    def breadcrumb_viewer(self):
+        self.leftArrow = ttk.Label(self, text=" \u2B60 ", font=('', 14, 'bold'))
+        self.rightArrow = ttk.Label(self, text=" \u2B62 ", font=('', 14, 'bold'))
+        self.upArrow = ttk.Label(self, text=" \u2B61 ", font=('', 14, 'bold'))
+        self.crumb_frame = ttk.Frame(self)
+        
+        self.leftArrow.pack(side='left', anchor='w')
+        self.rightArrow.pack(side='left', anchor='w')
+        self.upArrow.pack(side='left', anchor='w')
+        self.crumb_frame.pack(side='left', anchor='w', expand=True, fill='both')
+        
+        self.leftArrow.config(style=f'{self.leftArrow.cget("text")}Hover.TLabel')
+        self.rightArrow.config(style=f'{self.rightArrow.cget("text")}Hover.TLabel')
+        self.upArrow.config(style=f'{self.upArrow.cget("text")}Hover.TLabel')
+ 
+        self.crumb_frame.bind("<Configure>", lambda event: self.on_resize(event))
+        
+    def unbind_left(self):
+        self.leftArrow.config(state='disable')
+        self.leftArrow.unbind("<Enter>")
+        self.leftArrow.unbind("<Leave>")
+        self.leftArrow.unbind("<Button-1>")
+    
+    def unbind_right(self):
+        self.rightArrow.config(state='disable')
+        self.rightArrow.unbind("<Enter>")
+        self.rightArrow.unbind("<Leave>")
+        self.rightArrow.unbind("<Button-1>")
+    
+    def unbind_up(self):
+        self.upArrow.config(state='disable')
+        self.upArrow.unbind("<Enter>")
+        self.upArrow.unbind("<Leave>")
+        self.upArrow.unbind("<Button-1>")
+    
+    def rebind_left(self):
+        self.leftArrow.config(state='normal')
+        self.leftArrow.bind("<Enter>", lambda event, l=self.leftArrow.cget("text"): self.on_enter(event, l))
+        self.leftArrow.bind("<Leave>", lambda event, l=self.leftArrow.cget("text"): self.on_leave(event, l))
+        self.leftArrow.bind("<Button-1>", self.crumb_left)
+        
+    def rebind_right(self):
+        self.rightArrow.config(state='normal')
+        self.rightArrow.bind("<Enter>", lambda event, l=self.rightArrow.cget("text"): self.on_enter(event, l))
+        self.rightArrow.bind("<Leave>", lambda event, l=self.rightArrow.cget("text"): self.on_leave(event, l))
+        self.rightArrow.bind("<Button-1>", self.crumb_right)
+        
+    def rebind_up(self):
+        self.upArrow.config(state='normal')
+        self.upArrow.bind("<Enter>", lambda event, l=self.upArrow.cget("text"): self.on_enter(event, l))
+        self.upArrow.bind("<Leave>", lambda event, l=self.upArrow.cget("text"): self.on_leave(event, l))
+        self.upArrow.bind("<Button-1>", self.up_one)
+    
+    def create_compact(self, i, my_list):
+        my_list = my_list[:i+1]
+        option_dict = {}
+        optionList = ['']
+        
+        for i, value in reversed(list(enumerate(my_list))):
+            item_data = self.tv.item(value)
+            option_dict[item_data['text'].split('\\')[-1]] = value
+        
+        for key in list(option_dict.keys()):
+            optionList.append(key)
+
+        v = tk.StringVar()
+        om = ttk.OptionMenu(self.crumb_frame, v, *optionList, command=lambda selected_option, dict_key=option_dict: self.on_option_selected(selected_option, dict_key))
+        om.configure(style='no_label.TMenubutton')
+
+        return om
+    
+    def create_widgets(self):
+        total_width = self.total_width
+        widgets = []
+
+        for i, value in reversed(list(enumerate(self.my_list))):
+            if isinstance(value, tuple):
+                continue
+            option_dict = {}
+            optionList = []
+            item_data = self.tv.item(value)
+            option_dict[item_data['text'].split('\\')[-1]] = value
+            for child in self.tv.get_children(value):
+                option_dict[self.tv.item(child)['text']] = child
+            optionList = list(option_dict.keys())
+            v = tk.StringVar()
+            v.set(optionList[0])
+            
+            # Use lambda to pass both the selected option and the corresponding dictionary
+            om = ttk.OptionMenu(self.crumb_frame, v, *optionList, command=lambda selected_option, dict_key=option_dict: self.on_option_selected(selected_option, dict_key))
+            if len(optionList) == 1:
+                om.configure(style='no_button.TMenubutton')
+
+            # Bind the left-click event to get the value before opening the dropdown
+            om.bind("<Button-1>", lambda event, combo=v, dict_key=option_dict: self.on_left_click(event, combo, dict_key))
+            om_width = om.winfo_reqwidth()
+            total_width += om_width
+            frame_width = self.winfo_width()
+
+            if total_width > frame_width:
+                om.destroy()
+                om = self.create_compact(i, self.my_list)
+                widgets.append(om)
+                break
+            
+            widgets.append(om)
+
+        self.crumb_length = total_width
+            
+        for widget in reversed(widgets):
+            widget.pack(side='left', fill='y')
+        
+        widgets.clear()
+
+    def clear(self):
+        self.my_list = []
+        self.crumb_trail = []
+        self.crumb_trail_index = -1
+        self.bindings()
+        self.update_widgets()
+        self.create_widgets()
+    
+    def bindings(self):
+        if self.crumb_trail:
+            self.rebind_left()
+            if (len(self.crumb_trail) - 1 == self.crumb_trail_index) or (self.crumb_trail_index == -2):
+                self.on_leave('', self.rightArrow.cget("text"))
+                self.unbind_right()
+            else:
+                self.rebind_right()
+        else:
+            self.on_leave('', self.leftArrow.cget("text"))
+            self.unbind_left()
+            self.on_leave('', self.rightArrow.cget("text"))
+            self.unbind_right()
+        
+        if self.crumb_trail_index == -1:
+            self.on_leave('', self.leftArrow.cget("text"))
+            self.unbind_left()
+
+        if self.my_list and (self.my_list != [()]):
+            self.rebind_up()
+        else:
+            self.on_leave('', self.upArrow.cget("text"))
+            self.unbind_up()
+
+    def disable_crumbs(self):
+        for widget in self.winfo_children():
+            if '!frame' in str(widget):
+                for crumb in widget.winfo_children():
+                    crumb.config(state='disable')
+
+    def enable_crumbs(self):
+        for widget in self.winfo_children():
+            if '!frame' in str(widget):
+                for crumb in widget.winfo_children():
+                    crumb.config(state='normal')
+
+    def append(self, value):
+        if self.update:
+            if self.crumb_trail_index != -2:
+                del self.crumb_trail[self.crumb_trail_index:-1]
+                if self.crumb_trail == [()]:
+                    self.crumb_trail = []
+                self.crumb_trail_index = -2
+            try:
+                if value != self.crumb_trail[-1]:
+                    self.crumb_trail.append(value)
+            except:
+                if value != ():
+                    self.crumb_trail.append(value)
+
+        self.find_parent_hierarchy(value)
+        self.bindings()
+        self.update_widgets()
+        self.create_widgets()
+        self.update = True
+
+    def update_widgets(self):
+        # Destroy existing optionmenus and recreate them with updated list
+        for widget in self.winfo_children():
+            if '!frame' in str(widget):
+                for crumb in widget.winfo_children():
+                    crumb.destroy()
+
+    def find_parent_hierarchy(self, item):
+        self.my_list.clear()
+        parent_item = self.tv.parent(item)
+        self.my_list = [item]
+
+        while parent_item:
+            self.my_list.insert(0, parent_item)
+            parent_item = self.tv.parent(parent_item)
+
+    def on_option_selected(self, selected_option, option_dict):
+        clear_search()
+        self.find_parent_hierarchy(option_dict[selected_option])
+        self.update_treeview(option_dict[selected_option])
+    
+    def update_treeview(self, cur_item):
+        parent = self.tv.parent(cur_item)
+        self.tv.selection_set(cur_item)
+        self.tv.item(parent, open=True)
+
+    def on_left_click(self, event, combo, option_dict):
+        # Get the value when left-clicking on the OptionMenu box
+        x, y, widget = event.x, event.y, event.widget
+        elem = widget.identify(x, y)
+        if str(widget.cget('state')) == 'disable':
+            return
+        if 'label' in elem:
+            clear_search()
+            selected_option = combo.get()
+            self.update_widgets()
+            self.find_parent_hierarchy(option_dict[selected_option])
+            self.update_treeview(option_dict[selected_option])
+
+    def on_enter(self, event, label):
+        # Lighten the default background color
+        hover_color = self.change_color(self.default_background_color, 0.3)
+        self.style.configure(f'{label}Hover.TLabel', background=hover_color, foreground='black')
+
+    def on_leave(self, event, label):
+        if self.default_foreground_color == '':
+            self.default_foreground_color = 'black'
+        self.style.configure(f'{label}Hover.TLabel', background=self.default_background_color, foreground=self.default_foreground_color)
+
+    def on_resize(self, event):
+        self.update_widgets()
+        self.create_widgets()
+
+    def up_one(self, event):
+        try:
+            move_up = self.my_list[-2]
+        except IndexError:
+            move_up = ''
+        self.find_parent_hierarchy(move_up)
+        self.update_treeview(move_up)
+
+    def crumb_left(self, event):
+        self.update = False
+        if self.crumb_trail_index == 0:
+            self.update_treeview('')
+            self.crumb_trail_index += -1
+            return
+        elif self.crumb_trail_index == -1:
+            self.update_treeview('')
+            return
+        elif self.crumb_trail_index == -2:
+            self.crumb_trail_index = len(self.crumb_trail) -2
+            if self.crumb_trail_index == -1:
+                self.update_treeview('')
+                return
+        else:
+            self.crumb_trail_index += -1
+
+        self.update_treeview(self.crumb_trail[self.crumb_trail_index])
+
+
+    def crumb_right(self, event):
+        self.update = False
+        if self.crumb_trail_index < len(self.crumb_trail) - 1:
+            self.crumb_trail_index += 1
+
+        self.update_treeview(self.crumb_trail[self.crumb_trail_index])
+
+    def change_color(self, hex_color, saturation_factor=0.2, brightness_factor=-0.2, lighten=True):
+        hex_color = str(hex_color).lstrip('#')
+        try:
+            sbf_rgb = root.winfo_rgb(hex_color)
+            hex_color = "{:02X}{:02X}{:02X}".format(sbf_rgb[0] // 256, sbf_rgb[1] // 256, sbf_rgb[2] // 256)
+        except:
+            pass
+        rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+        hls = colorsys.rgb_to_hls(*[c / 255.0 for c in rgb])
+        if lighten:
+            change_hls = (hls[0], min(1, hls[1] + saturation_factor), hls[2])
+        else:
+            change_hls = (hls[0], max(0, hls[1] - saturation_factor), max(0, hls[2] + brightness_factor))
+        change_rgb = tuple(int(c * 255) for c in colorsys.hls_to_rgb(*change_hls))
+        change_hex = "#{:02X}{:02X}{:02X}".format(*change_rgb)
+        return change_hex
+
+    def update_theme(self):
+        self.total_width = self.leftArrow.winfo_reqwidth() + self.rightArrow.winfo_reqwidth() + self.upArrow.winfo_reqwidth()
+        self.style = ttk.Style(root)
+        layout = self.style.layout('TMenubutton')
+        elem = layout[0][0]
+        self.default_background_color = self.style.lookup('TLabel', 'background')
+        self.default_foreground_color = self.style.lookup('TLabel', 'foreground')
+
+        style.layout('no_button.TMenubutton', [(f'{elem}',
+          {'sticky': 'nswe',
+           'children': [('Menubutton.focus',
+             {'sticky': 'nswe',
+              'children': [('Menubutton.padding',
+                {'sticky': 'we',
+                 'children': [('Menubutton.label',
+                   {'side': 'left', 'sticky': ''})]})]})]})])
+
+        style.layout('no_label.TMenubutton', [(f'{elem}',
+          {'sticky': 'nswe',
+           'children': [('Menubutton.focus',
+             {'sticky': 'nswe',
+              'children': [('Menubutton.indicator',
+                {'side': 'right', 'sticky': ''})]})]})])
+
+        self.leftArrow['background'] = ''
+        self.leftArrow['foreground'] = ''
+        self.rightArrow['background'] = ''
+        self.rightArrow['foreground'] = ''
+        self.upArrow['background'] = ''
+        self.upArrow['foreground'] = ''
+
+class DetailsFrame(tk.Frame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.canvas = tk.Canvas(self)
+        self.scrollbar_y = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollbar_x = tk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+
+        self.frame_inner = tk.Frame(self.canvas)
+        self.text_widget = tk.Text(self.frame_inner, font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, state='disabled')
+        self.button = tk.Button(self.frame_inner, text="Metadata", image=meta_img, takefocus=False, compound='left', command=self.on_button_click)
+
+        self.text_widget.grid(row=0, column=0, sticky="nsew")
+        self.button.grid(row=1, column=0, pady=10)
+
+        self.scrollbar_y.grid(row=0, column=1, sticky="ns")
+        self.scrollbar_x.grid(row=1, column=0, sticky="ew")
+
+        self.frame_inner.grid(row=0, column=0, sticky="nsew")
+        self.canvas.create_window((0, 0), window=self.frame_inner, anchor="nw")
+
+        self.canvas.update_idletasks()
+
+        self.canvas.config(scrollregion=self.canvas.bbox("all"), yscrollcommand=self.scrollbar_y.set, xscrollcommand=self.scrollbar_x.set)
+
+        # Configure grid weights to allow resizing
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+
+    def on_button_click(self):
+        # Button click handler
+        Metadata(root, df_GraphMetadata_Records)
+
+    def insert(self, position, text, tags=''):
+        self.text_widget.insert(position, text, tags)
+
+    def delete(self, start, end=None):
+        self.text_widget.delete(start, end)
+
+    def config_text(self, state):
+        self.text_widget.config(state=state)
+
+    def config_btn(self, state):
+        self.button.config(state=state)
+
+    def get(self, start, end):
+        self.text_widget.get(start, end)
 
 
 def ButtonNotebook():
@@ -2129,8 +2815,23 @@ def pane_config():
     details.config(background=bgf, foreground=fgf)
     style.configure('Result.Treeview', rowheight=40)
     tv_pane_frame.configure(background=bgf)
+    details_frame.config(background=bgf)
+    breadcrumb.update_theme()
     ttk.Style().theme_use()
+    
+    # below are fixes for when changing from breeze theme
+    if str(message.cget('background')) == '#eff0f1':
+        message['background'] = ''
+        message['foreground'] = ''
 
+    value_label['background'] = ''
+    value_label['foreground'] = ''
+
+    la['background'] = ''
+    la['foreground'] = ''
+
+    ra['background'] = ''
+    ra['foreground'] = ''
 
 def fixed_map(option):
     # Returns the style map for 'option' with any styles starting with
@@ -2161,12 +2862,20 @@ def search(item=''):
     query = search_entry.get()
     if len(query) == 0:
         return
-
+    search_entry.configure(state="disabled")
+    btn.configure(state="disabled")
+    breadcrumb.unbind_left()
+    breadcrumb.unbind_right()
+    breadcrumb.unbind_up()
+    breadcrumb.disable_crumbs()
+    tv.grid_forget()
+    file_manager.tv2.delete(*file_manager.tv2.get_children())
+    file_manager.tv3.delete(*file_manager.tv3.get_children())
     children = tv.get_children(item)
     for child in children:
         if query.lower() in str(tv.item(child, 'values')).lower():
             values = tv.item(child, 'values')
-            Result(root, values)
+            Result(root, values, child)
         if child in file_items:
             for i in file_items[child]:
                 if query.lower() in str(tv.item(i, 'values')).lower():
@@ -2174,11 +2883,17 @@ def search(item=''):
                     if tv.item(i, 'tags'):
                         tags='red'
                     values = tv.item(i, 'values')
-                    Result(root, values, folder=False, tags=tags)
+                    Result(root, values, i, folder=False, tags=tags)
         search(item=child)
 
 
 def search_result():
+    breadcrumb.bindings()
+    breadcrumb.enable_crumbs()
+    search_entry.configure(state="normal")
+    btn.configure(state="normal")
+    rebind()
+    tv.grid(row=1, column=0, sticky="nsew")
     if len(search_entry.get()) == 0:
         return
     position = pwh.sash_coord(2)
@@ -2193,9 +2908,8 @@ def clear_search():
     global s_image
     s_image.clear()
     position = None
-    children = tvr.get_children()
-    for child in children:
-        tvr.delete(child)
+    threading.Thread(target=clear_tvr,
+                         daemon=True).start()
     if len(pwh.panes()) == 3:
         position = pwh.sash_coord(1)
     pwh.remove(result_frame)
@@ -2206,14 +2920,27 @@ def clear_search():
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
+    meta_btn.config(state='disable')
 
+def delete_item_and_descendants(tree, item=''):
+    children = tree.get_children(item)
+    for child in children:
+        if child in file_items:
+            for i in file_items[child]:
+                root.after(0, tv.delete, i) 
+            del file_items[child]
+        delete_item_and_descendants(tree, child)
 
 def clear_all():
     global proj_name
+    value_label['text'] = ''
+    widgets_disable()
     clear_search()
-    tv.delete(*tv.get_children())
-    tv2.delete(*tv2.get_children())
-    tv3.delete(*tv3.get_children())
+    breadcrumb.clear()
+    tv.grid_forget()
+    root.update_idletasks()
+    file_manager.tv2.delete(*file_manager.tv2.get_children())
+    file_manager.tv3.delete(*file_manager.tv3.get_children())
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
@@ -2222,12 +2949,22 @@ def clear_all():
     search_entry.delete(0, 'end')
     search_entry.configure(state="disabled")
     btn.configure(state="disabled")
+    meta_btn.config(state='disabled')
+    delete_item_and_descendants(tv)
+    tv.delete(*tv.get_children())
+    tv.grid(row=1, column=0, sticky="nsew")
     if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
         projmenu.entryconfig("Save", state='disable')
         root.unbind('<Alt-s>')
         projmenu.entryconfig("SaveAs", state='disable')
         projmenu.entryconfig("Unload", state='disable')
         proj_name = None
+
+
+def clear_tvr():
+    children = tvr.get_children()
+    for child in children:
+        tvr.delete(child)
 
 
 def json_count(item='', file_count=0, del_count=0, folder_count=0):
@@ -2255,7 +2992,8 @@ def json_count(item='', file_count=0, del_count=0, folder_count=0):
     return file_count, del_count, folder_count
 
 
-def parent_child(d, parent_id=None):
+def parent_child(d, parent_id=None, meta=False):
+    global dfs_to_concat
     if parent_id is None:
         # This line is only for the first call of the function
         parent_id = tv.insert("",
@@ -2302,13 +3040,17 @@ def parent_child(d, parent_id=None):
                                  "end",
                                  image=image,
                                  text=text,
-                                 values=(z)))
+                                 values=(z)), meta)
 
     if 'Files' in d:
         for c in d['Files']:
             x = (c['lastChange'], c['size'])
-            y = [f'{k}: {v}' for k, v in c.items() if 'lastChange' not in k and 'size' not in k]
+            y = [f'{k}: {v}' for k, v in c.items() if 'lastChange' not in k and 'size' not in k and 'Metadata' not in k]
             z = x + tuple(y)
+
+            if meta:
+                dfs_to_concat.extend([{**v, 'resourceID': c['resourceID']} for k, v in c.items() if isinstance(v, dict) and 'Metadata' in k])
+
             if c['fileStatus'] == 6:
                 image = not_sync_file_img
             elif c['fileStatus'] == 7:
@@ -2342,7 +3084,7 @@ def parent_child(d, parent_id=None):
                              0,
                              image=image,
                              text=f" {c['Name']}",
-                             values=(z)))    
+                             values=(z)), meta)    
     
     if 'Scope' in d:
         for c in d['Scope']:
@@ -2366,21 +3108,19 @@ def parent_child(d, parent_id=None):
                                  0,
                                  image=image,
                                  text=f" {b['Name']}",
-                                 values=(z))) 
+                                 values=(z)), meta) 
 
 
 def live_system(menu):
     global reghive
     global recbin
-
-    message.unbind('<Double-Button-1>', bind_id)
-    menubar.entryconfig("File", state="disabled")
-    menubar.entryconfig("Options", state="disabled")
-    menubar.entryconfig("View", state="disabled")
-    menubar.entryconfig("Help", state="disabled")
+    widgets_disable()
+    clear_search()
+    search_entry.delete(0, 'end')
     search_entry.configure(state="disabled")
-    btn.configure(state="disabled")
-
+    breadcrumb.clear()
+    file_manager.tv2.delete(*file_manager.tv2.get_children())
+    file_manager.tv3.delete(*file_manager.tv3.get_children())
     pb.configure(mode='indeterminate')
     value_label['text'] = "Searching for OneDrive. Please wait..."
     pb.start()
@@ -2438,28 +3178,15 @@ def live_system(menu):
 
                     for filename in filenames:
                         x = menu.entrycget(0, "label")
-                        start_parsing(x, filename, reghive, recbin)
+                        start_parsing(x, filename, reghive, recbin, True)
 
             if k == 'sql':
                 logging.info(f'Parsing OneDrive SQLite for {key}')
-                menubar.entryconfig("File", state="disabled")
-                menubar.entryconfig("Options", state="disabled")
-                menubar.entryconfig("View", state="disabled")
-                menubar.entryconfig("Help", state="disabled")
-                search_entry.configure(state="disabled")
-                btn.configure(state="disabled")
-
                 for account, sql_dir in v.items():
                     x = 'Load from SQLite'
-                    start_parsing(x, sql_dir, reghive, recbin)
+                    start_parsing(x, sql_dir, reghive, recbin, True)
 
     if menu_data['odl'] is True:
-        menubar.entryconfig("File", state="disabled")
-        menubar.entryconfig("Options", state="disabled")
-        menubar.entryconfig("View", state="disabled")
-        menubar.entryconfig("Help", state="disabled")
-        search_entry.configure(state="disabled")
-        btn.configure(state="disabled")
         for key, value in d.items():
             for k, v in value.items():
                 if k == 'logs':
@@ -2503,17 +3230,9 @@ def live_system(menu):
         message['background'] = 'red'
         message['foreground'] = ''
 
-    rebind()
-
     value_label['text'] = "All jobs complete"
 
-    menubar.entryconfig("File", state="normal")
-    menubar.entryconfig("Options", state="normal")
-    menubar.entryconfig("View", state="normal")
-    menubar.entryconfig("Help", state="normal")
-    search_entry.configure(state="normal")
-    btn.configure(state="normal")
-
+    widgets_normal()
     if len(tv_frame.tabs()) > 1:
         odlmenu.entryconfig("Unload all ODL logs", state='normal')
         projmenu.entryconfig("Save", state='normal')
@@ -2537,6 +3256,7 @@ def open_dat(menu):
             root.wait_window(hive(root).win)
 
         x = menu.entrycget(0, "label")
+        message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, filename, reghive, recbin,),
                          daemon=True).start()
@@ -2557,6 +3277,7 @@ def read_sql(menu):
             root.wait_window(hive(root).win)
 
         x = menu.entrycget(1, "label")
+        message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, folder_name, reghive, recbin,),
                          daemon=True).start()
@@ -2571,6 +3292,7 @@ def import_json(menu):
 
     if filename:
         x = menu.entrycget(2, "label")
+        message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, filename,),
                          daemon=True).start()
@@ -2584,6 +3306,7 @@ def import_csv(menu):
 
     if filename:
         x = menu.entrycget(3, "label")
+        message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, filename,),
                          daemon=True).start()
@@ -2610,13 +3333,14 @@ def import_odl():
 
 
 def odl(folder_name, csv=False):
-    message.unbind('<Double-Button-1>', bind_id)
-    menubar.entryconfig("File", state="disabled")
-    menubar.entryconfig("Options", state="disabled")
-    menubar.entryconfig("View", state="disabled")
-    menubar.entryconfig("Help", state="disabled")
+    widgets_disable()
     search_entry.configure(state="disabled")
-    btn.configure(state="disabled")
+    breadcrumb.unbind_left()
+    breadcrumb.unbind_right()
+    breadcrumb.unbind_up()
+    breadcrumb.disable_crumbs()
+    file_manager.tv2.delete(*file_manager.tv2.get_children())
+    file_manager.tv3.delete(*file_manager.tv3.get_children())
     key_find = re.compile(r'Users/(?P<user>.*)?/AppData')
     if csv:
         key = folder_name.name.split('/')[-1].split('_')[0]
@@ -2705,14 +3429,7 @@ def odl(folder_name, csv=False):
     if "ERROR," in log_capture_string.getvalue():
         message['background'] = 'red'
         message['foreground'] = ''
-
-    menubar.entryconfig("File", state="normal")
-    menubar.entryconfig("Options", state="normal")
-    menubar.entryconfig("View", state="normal")
-    menubar.entryconfig("Help", state="normal")
-    search_entry.configure(state="normal")
-    btn.configure(state="normal")
-    rebind()
+    widgets_normal()
 
     if len(tv_frame.tabs()) > 1:
         odlmenu.entryconfig("Unload all ODL logs", state='normal')
@@ -2727,24 +3444,20 @@ def save_settings():
         json.dump(menu_data, jsonfile)
 
 
-def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
-    try:
-        message.unbind('<Double-Button-1>', bind_id)
-    except Exception:
-        pass
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    details.config(state='disable')
-    menubar.entryconfig("File", state="disabled")
-    menubar.entryconfig("Options", state="disabled")
-    menubar.entryconfig("View", state="disabled")
-    menubar.entryconfig("Help", state="disabled")
+def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
+    global df_GraphMetadata_Records
+    breadcrumb.clear()
+    if len(tv.selection()) > 0:
+        tv.selection_remove(tv.selection()[0])
+        popup_manager.close_children('')
+        file_manager.tv2.delete(*file_manager.tv2.get_children())
+        file_manager.tv3.delete(*file_manager.tv3.get_children())
     search_entry.delete(0, 'end')
     search_entry.state(['invalid'])
     search_entry.configure(state="disabled")
     clear_search()
-    btn.configure(state="disabled")
-
+    if not live:
+        widgets_disable()
     start = time.time()
     dat = False
 
@@ -2756,7 +3469,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
                              gui=True, pb=pb, value_label=value_label)
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename,  rbin_df, account, reghive, recbin, gui=True,
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename,  rbin_df, account, reghive, recbin, gui=True,
                                                   pb=pb, value_label=value_label)
         
         dat = True
@@ -2770,11 +3483,15 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         except Exception:
             name = 'SQLite_DB'
 
-        df, rbin_df, df_scope, scopeID, account = SQLiteParser.parse_sql(filename)
+        pb.configure(mode='indeterminate')
+        value_label['text'] = 'Building folder list. Please wait....'
+        pb.start()
+        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account = SQLiteParser.parse_sql(filename)
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename, rbin_df, account, reghive, recbin, gui=True,
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename, rbin_df, account, reghive, recbin, gui=True,
                                                   pb=pb, value_label=value_label)
+        pb.stop()
         dat = True
 
     if x == 'Import JSON':
@@ -2784,9 +3501,10 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
 
     if x == 'Import CSV':
         account = ''
-        df, rbin_df, df_scope, scopeID = parse_csv(filename)
+        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID = parse_csv(filename)
+
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, scopeID, filename.name, rbin_df, account, reghive, recbin, gui=True,
+            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename.name, rbin_df, account, reghive, recbin, gui=True,
                                                   pb=pb, value_label=value_label)
 
 
@@ -2799,14 +3517,14 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
     del_count = len(rbin_df) if not rbin_df.empty else 0
 
     if not df.empty or x == 'Import JSON':
-
         pb.configure(mode='indeterminate')
         value_label['text'] = "Building tree. Please wait..."
         pb.start()
-        tv.grid_forget()
-        parent_child(cache)
-        tv.grid(row=1, column=0, sticky="nsew")
-
+        if x == 'Import JSON':
+            parent_child(cache, None, True)
+            df_GraphMetadata_Records = pd.DataFrame(dfs_to_concat)
+        else:
+            parent_child(cache)
         if x == 'Import JSON':
             curItem = tv.get_children()[-1]
             file_count, del_count, folder_count = json_count(item=curItem)
@@ -2829,7 +3547,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
             pb.configure(mode='indeterminate')
             pb.start()
             try:
-                print_csv(df, rbin_df, name, menu_data['path'])
+                print_csv(df, rbin_df, df_GraphMetadata_Records, name, menu_data['path'])
             except Exception as e:
                 logging.warning(f'Unable to save csv. {e}')
             pb.stop()
@@ -2860,13 +3578,9 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
             pass
         logging.warning(f'Unable to parse {filename}.')  # see about changing to name
         value_label['text'] = f'Unable to parse {filename}.'  # see about changing to name
-
-    menubar.entryconfig("File", state="normal")
-    menubar.entryconfig("Options", state="normal")
-    menubar.entryconfig("View", state="normal")
-    menubar.entryconfig("Help", state="normal")
-    search_entry.configure(state="normal")
-    btn.configure(state="normal")
+        pb['value'] = 0
+        pb.configure(mode='determinate')
+        pb.stop()
 
     if len(tv.get_children()) > 0:
         odsmenu.entryconfig("Unload all files", state='normal')
@@ -2886,7 +3600,8 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, df=False):
         message['background'] = 'red'
         message['foreground'] = ''
 
-    rebind()
+    if not live:
+        widgets_normal()
 
 
 def del_logs():
@@ -2933,19 +3648,21 @@ def log_tab():
 
 def load_proj():
     global proj_name
-    filename = filedialog.askopenfilename(initialdir="/",
-                                          title="Open",
-                                          filetypes=(("OneDriveExplorer project file",
-                                                      "*.ode_proj"),
-                                                     ))
-
-    if filename:
+    def thread_load():
+        t1 = threading.Thread(target=clear_all, daemon=True)
+        t1.start()
+        root.after(200, check_if_ready, t1, "lp")
+        SyncMessage(root)
+        root.event_generate("<Configure>")
         tv.grid_forget()
+        del_logs()
+        t1.join()
+        root.event_generate("<Configure>")
         proj_name = filename
         q = Queue()
         stop_event = threading.Event()
         threading.Thread(target=load_project,
-                         args=(filename, q, stop_event, tv, file_items,),
+                         args=(filename, df_GraphMetadata_Records, q, stop_event, tv, file_items, pb, value_label,),
                          daemon=True,).start()
         threading.Thread(target=proj_parse,
                          args=(q, proj_name,),
@@ -2953,31 +3670,27 @@ def load_proj():
 
         projmenu.entryconfig("Unload", state='normal')
 
+    filename = filedialog.askopenfilename(initialdir="/",
+                                          title="Open",
+                                          filetypes=(("OneDriveExplorer project file",
+                                                      "*.ode_proj"),
+                                                     ))
+
+    if filename:
+        message.unbind('<Double-Button-1>', bind_id)
+        threading.Thread(target=thread_load, daemon=True).start()
+
 
 def proj_parse(q, proj_name):
-    try:
-        message.unbind('<Double-Button-1>', bind_id)
-    except Exception:
-        pass
-    details.config(state='normal')
-    details.delete('1.0', tk.END)
-    details.config(state='disable')
-    menubar.entryconfig("File", state="disabled")
-    menubar.entryconfig("Options", state="disabled")
-    menubar.entryconfig("View", state="disabled")
-    menubar.entryconfig("Help", state="disabled")
+    global df_GraphMetadata_Records
+    widgets_disable()
     search_entry.delete(0, 'end')
     search_entry.state(['invalid'])
     search_entry.configure(state="disabled")
     clear_search()
-    btn.configure(state="disabled")
-    pb.configure(mode='indeterminate')
-    value_label['text'] = f'Loading {proj_name}. Please wait....'
-    pb.start()
     
     while True:
         data = q.get()
-
         if '_logs.csv' in data[0]:
             key = data[0].split('_')[0]
             tb = ttk.Frame()
@@ -2994,16 +3707,15 @@ def proj_parse(q, proj_name):
             user_logs.setdefault(f'{key}_logs.csv', pt)
             q.task_done()
 
+        if isinstance(data[0], pd.core.frame.DataFrame):
+            df_GraphMetadata_Records = data[0]
+            continue
+        
         if data[0] == 'done':
             pb.stop()
             break
 
-    menubar.entryconfig("File", state="normal")
-    menubar.entryconfig("Options", state="normal")
-    menubar.entryconfig("View", state="normal")
-    menubar.entryconfig("Help", state="normal")
-    search_entry.configure(state="normal")
-    btn.configure(state="normal")
+    widgets_normal()
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
     message['text'] = mcount
     if "INFO," in log_capture_string.getvalue():
@@ -3021,6 +3733,9 @@ def proj_parse(q, proj_name):
     pb.configure(mode='determinate')
     if len(tv_frame.tabs()) > 1:
         odlmenu.entryconfig("Unload all ODL logs", state='normal')
+    if len(tv.get_children()) > 0:
+        odsmenu.entryconfig("Unload all files", state='normal')
+        file_menu.entryconfig("Export 'OneDrive Folders'", state='normal')
     tv.grid(row=1, column=0, sticky="nsew")
 
 
@@ -3035,12 +3750,47 @@ def saveAs_proj(filename=None):
         filename = filedialog.asksaveasfilename(defaultextension=".ode_proj")
 
     if filename:
+        tv.grid_forget()
+        message.unbind('<Double-Button-1>', bind_id)
         proj_name = filename
-        threading.Thread(target=save_project,
-                         args=(tv, file_items, filename, user_logs, pb, value_label,),
+        threading.Thread(target=thread_save,
+                         args=(filename,),
                          daemon=True).start()
 
         projmenu.entryconfig("Unload", state='normal')
+
+    
+def thread_save(filename):
+    widgets_disable()
+    file_manager.tv2.delete(*file_manager.tv2.get_children())
+    file_manager.tv3.delete(*file_manager.tv3.get_children())
+    search_entry.delete(0, 'end')
+    search_entry.state(['invalid'])
+    search_entry.configure(state="disabled")
+    clear_search()
+    breadcrumb.unbind_left()
+    breadcrumb.unbind_right()
+    breadcrumb.unbind_up()
+    breadcrumb.disable_crumbs()
+
+    save_project(tv, file_items, df_GraphMetadata_Records, filename, user_logs, pb, value_label)
+    
+    widgets_normal()
+    breadcrumb.bindings()
+    breadcrumb.enable_crumbs()
+    mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
+    message['text'] = mcount
+    if "INFO," in log_capture_string.getvalue():
+        message['background'] = ''
+        message['foreground'] = ''
+    if "WARNING," in log_capture_string.getvalue():
+        message['background'] = 'yellow'
+        message['foreground'] = 'black'
+    if "ERROR," in log_capture_string.getvalue():
+        message['background'] = 'red'
+        message['foreground'] = ''
+    rebind()
+    tv.grid(row=1, column=0, sticky="nsew")
 
 
 def export_tree(ext=None):
@@ -3104,7 +3854,6 @@ def click(event):
 
 
 def sync():
-#    global cstruct_df
     if getattr(sys, 'frozen', False):
         t1 = threading.Thread(target=os.system,
                               args=("OneDriveExplorer.exe --sync --gui",),
@@ -3125,19 +3874,68 @@ def check_if_ready(thread, t_string):
         root.after(200, check_if_ready, thread, t_string)
     else:
         if t_string == "ts":
+            widgets_normal()
             search_result()
         if t_string == "s":
             cstruct_df = load_cparser(args.cstructs)
+        if t_string == "tca" or t_string == "df":
+            widgets_normal()
+        if t_string == "lp":
+            root.event_generate("<Configure>")
+            return
 
 
 def thread_search():
     clear_search()
+    widgets_disable()
+    message.unbind('<Double-Button-1>', bind_id)
     t1 = threading.Thread(target=search, daemon=True)
     t1.start()
     root.after(200, check_if_ready, t1, "ts")
 
 
-root = ThemedTk()
+def thread_clear_all():
+    message.unbind('<Double-Button-1>', bind_id)
+    t1 = threading.Thread(target=clear_all, daemon=True)
+    t1.start()
+    root.after(200, check_if_ready, t1, "tca")
+
+
+def widgets_disable():
+    tabs = tb.tabs()
+    for i, item in enumerate(tabs):
+        if str(item).endswith('!frame'):
+            continue
+        tb.tab(item, state='disable')
+    details.config(state='normal')
+    details.delete('1.0', tk.END)
+    details.config(state='disable')
+    menubar.entryconfig("File", state="disabled")
+    menubar.entryconfig("Options", state="disabled")
+    menubar.entryconfig("View", state="disabled")
+    menubar.entryconfig("Help", state="disabled")
+    btn.configure(state="disabled")
+    meta_btn.config(state='disable')
+    tv.grid_forget()
+
+
+def widgets_normal():
+    tabs = tb.tabs()
+    for i, item in enumerate(tabs):
+        if str(item).endswith('!frame'):
+            continue
+        tb.tab(item, state="normal")
+    rebind()
+    menubar.entryconfig("File", state="normal")
+    menubar.entryconfig("Options", state="normal")
+    menubar.entryconfig("View", state="normal")
+    menubar.entryconfig("Help", state="normal")
+    if len(tv.get_children()) > 0:
+        search_entry.configure(state="normal")
+        btn.configure(state="normal")
+    tv.grid(row=1, column=0, sticky="nsew")
+
+root = ThemedTk(gif_override=True)
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
 root.iconbitmap(application_path + '/Images/titles/OneDrive.ico')
@@ -3283,6 +4081,7 @@ desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_s
 question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/question.png')) # hive
 trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/trashcan.png')) # recbin
 ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/ode.png')) # about
+meta_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/tools.png')) # about
 
 # small file images
 file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/file_yellow.png'))
@@ -3376,8 +4175,6 @@ tv_pane_frame = tk.Frame(pwh, background=bgf)
 tv_columns = [" Path"]
 treeview_widget = TreeviewHeaderWidget(tv_pane_frame, columns=tv_columns)
 
-#tv_label = ttk.Label(tv_pane_frame, text="Path",
-#                     justify="left", anchor='w')
 tv = ttk.Treeview(tv_pane_frame,
                   show="tree",
                   selectmode='browse',
@@ -3385,6 +4182,7 @@ tv = ttk.Treeview(tv_pane_frame,
 tv.heading('#0', text=' Path', anchor='w')
 tv.column('#0', minwidth=40, width=250, stretch=True, anchor='w')
 
+breadcrumb = Breadcrumb(tv_inner_frame)
 
 find_frame = ttk.Frame(tv_inner_frame)
 
@@ -3393,15 +4191,13 @@ find_frame.grid_columnconfigure(0, weight=1)
 search_entry = ttk.Entry(find_frame, width=30,
                          exportselection=0, style='CustomEntry')
 btn = ttk.Button(find_frame,
-                 text="Find",
                  image=search_img,
                  takefocus=False,
-                 compound='right',
                  command=lambda: [thread_search(), SyncMessage(root)])
 search_entry.configure(state="disabled")
 btn.configure(state="disabled")
 
-sep = ttk.Separator(find_frame, orient=tk.HORIZONTAL)
+sep = ttk.Separator(tv_inner_frame, orient=tk.HORIZONTAL)
 
 scrollbv = ttk.Scrollbar(tv_pane_frame, orient="vertical", command=tv.yview)
 scrollbh = ttk.Scrollbar(tv_pane_frame, orient="horizontal", command=tv.xview)
@@ -3415,8 +4211,10 @@ message = ttk.Label(bottom_frame, text=0, background='red',
 sr = ttk.Separator(bottom_frame, orient='vertical')
 sg = ttk.Sizegrip(bottom_frame)
 
-details_frame = ttk.Frame(pwh)
+details_frame = tk.Frame(pwh)
+details_frame.config(background=bgf)
 details = tk.Text(details_frame, font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, state='disable')
+meta_btn = ttk.Button(details_frame, text="Metadata", image=meta_img, takefocus=False, compound='left', state='disable', command=lambda: Metadata(root, df_GraphMetadata_Records))
 detailsscroll = ttk.Scrollbar(details_frame, orient="vertical", command=details.yview)
 details.configure(yscrollcommand=detailsscroll.set)
 details.tag_configure('red', foreground="red")
@@ -3430,7 +4228,7 @@ tv_pane_frame.grid_columnconfigure(0, weight=1)
 details_frame.grid_rowconfigure(0, weight=1)
 details_frame.grid_columnconfigure(0, weight=1)
 
-tv_inner_frame.grid_rowconfigure(1, weight=1)
+tv_inner_frame.grid_rowconfigure(2, weight=1)
 tv_inner_frame.grid_columnconfigure(0, weight=1)
 
 result_frame = ttk.Frame(pwh)
@@ -3451,7 +4249,7 @@ tvr.grid(row=0, column=0, sticky="nsew")
 tvr.tag_configure('red', foreground="red")
 rscrollbv = ttk.Scrollbar(result_frame, orient="vertical", command=tvr.yview)
 tvr.configure(yscrollcommand=rscrollbv.set)
-popup_manager = PopupManager(root, tv, application_path, details)
+popup_manager = PopupManager(root, tv, application_path, details, breadcrumb)
 file_manager = FileManager(tv, pwh, cur_sel)
 pwh.add(tv_pane_frame, minsize=40, width=250)
 pwh.add(file_manager.tv2, minsize=80, width=340)
@@ -3465,20 +4263,22 @@ infoNB.add(infoFrame, text='Log Entries')
 pwv.add(tv_frame, minsize=100)
 pwv.add(infoNB, minsize=100)
 
-search_entry.grid(row=0, column=0, sticky="e", padx=5)
-btn.grid(row=0, column=1, padx=5, pady=5, sticky="e")
-sep.grid(row=1, column=0, columnspan=2, sticky="ew")
+search_entry.grid(row=0, column=0, sticky="nse", padx=(5,0), pady=5)
+btn.grid(row=0, column=1, padx=(0,5), pady=5, sticky="e")
 
 pwv.grid(row=0, column=0, sticky="nsew")
-pwh.grid(row=1, column=0, sticky="nsew")
-find_frame.grid(row=0, column=0, sticky='ew')
+breadcrumb.grid(row=0, column=0, sticky='ew')
+find_frame.grid(row=0, column=1, sticky='ew')
+sep.grid(row=1, column=0, columnspan=2, sticky="ew")
+pwh.grid(row=2, column=0, columnspan=2, sticky="nsew")
 treeview_widget.grid(row=0, column=0, sticky="ew")
 tv.grid(row=1, column=0, sticky="nsew")
 scrollbv.grid(row=0, column=1, rowspan=2, sticky="nsew")
 scrollbh.grid(row=2, column=0, sticky="nsew")
 rscrollbv.grid(row=0, column=1, sticky="nsew")
 details.grid(row=0, column=0, sticky='nsew')
-detailsscroll.grid(row=0, column=1, sticky='nsew')
+meta_btn.grid(row=1, column=0, sticky='w')
+detailsscroll.grid(row=0, column=1, rowspan=2, sticky='nsew')
 
 value_label.grid(row=0, column=0, sticky='se')
 pb.grid(row=0, column=1, padx=5, sticky='se')
@@ -3487,12 +4287,18 @@ message.grid(row=0, column=3, sticky='nse')
 sr.grid(row=0, column=4, padx=(1, 2), sticky='nse')
 sg.grid(row=0, column=5, sticky='se')
 
+# needed for fixes when changing from breeze theme
+la = root.nametowidget('.!frame.!frame.!myscrollablenotebook.!frame.!label')
+ra = root.nametowidget('.!frame.!frame.!myscrollablenotebook.!frame.!label2')
+tb = root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2')
+
 tool_tip_manager = ToolTipManager()
 
 tv.bind('<<TreeviewSelect>>', file_manager.new_selection)
 tv.bind('<Button-1>', lambda event=None: clear_search())
 tv.bind("<Button-3>", popup_manager.do_popup)
 tvr.bind('<<TreeviewSelect>>', file_manager.new_selection)
+tvr.bind('<Double-Button-1>', file_manager.handle_double_click)
 tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
 tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
 root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
@@ -3546,7 +4352,7 @@ odsmenu.add_command(label="Import JSON", image=json_img,
 odsmenu.add_command(label="Import CSV", image=csv_img, compound='left',
                     command=lambda: import_csv(odsmenu))
 odsmenu.add_command(label="Unload all files", image=uaf_img, compound='left',
-                    command=lambda: clear_all(), accelerator="Alt+0")
+                    command=lambda: [thread_clear_all(), SyncMessage(root)], accelerator="Alt+0")
 odsmenu.entryconfig("Unload all files", state='disable')
 
 odlmenu.add_command(label="Load ODL logs", image=folderop_img, compound='left',
@@ -3564,7 +4370,7 @@ projmenu.add_command(label="Save", image=save_img, compound='left',
 projmenu.add_command(label="SaveAs", image=saveas_img, compound='left',
                      command=lambda: saveAs_proj())
 projmenu.add_command(label="Unload", image=ual_img, compound='left',
-                     command=lambda: [clear_all(), del_logs()])
+                     command=lambda: [thread_clear_all(), del_logs(), SyncMessage(root)])
 projmenu.entryconfig("Save", state='disable')
 root.unbind('<Alt-s>')
 projmenu.entryconfig("SaveAs", state='disable')
@@ -3577,9 +4383,9 @@ exportmenu.add_command(label="PDF",  image=pdf_img, compound='left',
 
 file_menu.add_command(label="Live system",
                       image=live_img, compound='left',
-                      command=lambda: threading.Thread(target=live_system,
+                      command=lambda: [message.unbind('<Double-Button-1>', bind_id), threading.Thread(target=live_system,
                                                        args=(file_menu,),
-                                                       daemon=True).start())
+                                                       daemon=True).start()])
 
 file_menu.add_cascade(label="OneDrive settings", menu=odsmenu,
                       image=ods_img, compound='left')
@@ -3616,7 +4422,7 @@ view_menu.add_command(label="Messages", image=message_img, accelerator="Ctrl+M",
                       compound='left', command=lambda: Messages(root))
 view_menu.add_separator()
 view_menu.add_command(label="CStructs", image=cstruct_img,
-                      compound='left', command=lambda: cstructs(root, cstruct_df))
+                      compound='left', command=lambda: CStructs(root, cstruct_df))
 
 help_menu.add_command(label="Quick help", image=question_small_img,
                       compound='left', command=lambda: Help(root))
