@@ -22,6 +22,7 @@
 # SOFTWARE.
 #
 
+import ast
 import os
 import sys
 import colorsys
@@ -1507,6 +1508,7 @@ class PopupManager:
         widgets_disable()
         search_entry.delete(0, 'end')
         search_entry.configure(state="disabled")
+        search_entry.configure(cursor='arrow')
         btn.configure(state="disabled")
         clear_search()
         self.breadcrumb.clear()
@@ -2499,29 +2501,55 @@ class Breadcrumb(ttk.Frame):
         change_hex = "#{:02X}{:02X}{:02X}".format(*change_rgb)
         return change_hex
 
+    def iter_layout(self, layout, ind=True):
+        """Recursively prints the layout children."""
+        elements = ''
+    
+        for element, child in layout:
+            if 'indicator' in element and ind is True:
+                continue
+            if 'label' in element and ind is False:
+                continue
+            
+            elements += f"('{element}', {{"
+        
+            for key, value in child.items():
+                if isinstance(value, str):
+                    elements += f"'{key}': '{value}', "
+                else:
+                    elements += f"'{key}': ["
+                    elements += self.iter_layout(value, ind=ind)
+                    elements += (']')
+        
+            elements += '})'
+    
+        return elements
+
     def update_theme(self):
         self.total_width = self.leftArrow.winfo_reqwidth() + self.rightArrow.winfo_reqwidth() + self.upArrow.winfo_reqwidth()
         self.style = ttk.Style(root)
+
         layout = self.style.layout('TMenubutton')
-        elem = layout[0][0]
+        
+        no_button = self.iter_layout(layout)
+        no_button = no_button.replace(")(", "), (").replace(", }", "}").replace(", 'children': []", "")  # Remove trailing commas
+        no_button = ast.literal_eval(no_button)
+        
+        no_label = self.iter_layout(layout, ind=False)
+        no_label = no_label.replace(")(", "), (").replace(", }", "}").replace(", 'children': []", "")  # Remove trailing commas
+        no_label = ast.literal_eval(no_label)
+        
         self.default_background_color = self.style.lookup('TLabel', 'background')
         self.default_foreground_color = self.style.lookup('TLabel', 'foreground')
 
-        style.layout('no_button.TMenubutton', [(f'{elem}',
-          {'sticky': 'nswe',
-           'children': [('Menubutton.focus',
-             {'sticky': 'nswe',
-              'children': [('Menubutton.padding',
-                {'sticky': 'we',
-                 'children': [('Menubutton.label',
-                   {'side': 'left', 'sticky': ''})]})]})]})])
-
-        style.layout('no_label.TMenubutton', [(f'{elem}',
-          {'sticky': 'nswe',
-           'children': [('Menubutton.focus',
-             {'sticky': 'nswe',
-              'children': [('Menubutton.indicator',
-                {'side': 'right', 'sticky': ''})]})]})])
+        try:
+            style.layout('no_button.TMenubutton', [no_button])
+        except:
+            style.layout('no_button.TMenubutton', list(no_button))
+        try:
+            style.layout('no_label.TMenubutton', [no_label])
+        except:
+            style.layout('no_label.TMenubutton', list(no_label))
 
         self.leftArrow['background'] = ''
         self.leftArrow['foreground'] = ''
@@ -2583,6 +2611,26 @@ class DetailsFrame(tk.Frame):
 
 def ButtonNotebook():
 
+    def iter_layout(layout):
+        """Recursively prints the layout children."""
+        elements = ''
+        for element, child in layout:
+            if 'focus' in element:
+                for key, value in child.items():
+                    if not isinstance(value, str):
+                        elements += iter_layout(value)
+                continue
+            elements += f"('{element}', {{"
+            for key, value in child.items():
+                if isinstance(value, str):
+                    elements += f"'{key}': '{value}', "
+                else:
+                    elements += f"'{key}': ["
+                    elements += iter_layout(value)
+                    elements += (']')
+            elements += '})'
+        return elements
+
     TNotebook_map = style.map('TNotebook.Tab')
     style.map('CustomNotebook.Tab', **TNotebook_map)
 
@@ -2594,54 +2642,33 @@ def ButtonNotebook():
                              border=8, sticky='')
         style.layout("CustomNotebook", [("CustomNotebook.client",
                                         {"sticky": "nswe"})])
-        style.layout("CustomNotebook.Tab", [
-            ("CustomNotebook.tab", {
-                "sticky": "nswe",
-                "children": [
-                    ("CustomNotebook.padding", {
-                        "side": "top",
-                        "sticky": "nswe",
-                        "children": [
-                            # ("CustomNotebook.focus", {
-                                # "side": "top",
-                                # "sticky": "nswe",
-                                # "children": [
-                                ("CustomNotebook.label",
-                                 {"side": "left", "sticky": ''}),
-                                ("CustomNotebook.close",
-                                 {"side": "left", "sticky": ''}),
-                                ]
-                            # })
-                        # ]
-                    })
-                ]
-            })
-        ])
+
+        layout = style.layout('TNotebook.Tab')
+        elements = iter_layout(layout)
+        elements = elements.replace("label', {'sticky': 'nswe', }", "label', {'side': 'left', 'sticky': '', }").replace("label', {'side': 'top'", "label', {'side': 'left'").replace(", })", "}), ('Notebook.close', {'side': 'left', 'sticky': ''})")
+        elements = ast.literal_eval(elements)
+        
+        try:
+            style.layout("CustomNotebook.Tab", [elements])
+        except:
+            style.layout("CustomNotebook.Tab", list(elements))
+
         style.configure('CustomNotebook.Tab', **style.configure('TNotebook.Tab'))
         style.configure('CustomNotebook', **style.configure('TNotebook'))
     except Exception:
         pass
 
-    # Nothing to do with ButtonNotebook, removing focus lines from other tabs
-    style.layout("TNotebook.Tab", [
-        ('Notebook.tab', {
-            'sticky': 'nswe',
-            'children': [
-                ('Notebook.padding', {
-                    'side': 'top',
-                    'sticky': 'nswe',
-                    'children': [
-                        # ('Notebook.focus', {
-                            # 'side': 'top',
-                            # 'sticky': 'nswe',
-                            # 'children': [
-                            ('Notebook.label',
-                                {'side': 'top', 'sticky': ''})],
-                })],
-            })],
-        # })]
-    )
-
+    layout = style.layout('TNotebook.Tab')
+    
+    no_focus = iter_layout(layout)
+    no_focus = no_focus.replace(")(", "), (").replace(", }", "}").replace(", 'children': []", "")  # Remove trailing commas
+    no_focus = ast.literal_eval(no_focus)
+    
+    try:
+        style.layout('TNotebook.Tab', [no_focus])
+    except:
+        style.layout('TNotebook.Tab', list(no_focus))
+    
     def on_close_press(event):
         """Called when the button is pressed over the close button"""
 
@@ -2722,7 +2749,6 @@ def ButtonNotebook():
 
 
 def ButtonEntry(do_bind=False):
-
     TEntry_map = style.map('TEntry')
     style.map('CustomEntry', **TEntry_map)
 
@@ -2863,6 +2889,7 @@ def search(item=''):
     if len(query) == 0:
         return
     search_entry.configure(state="disabled")
+    search_entry.configure(cursor='arrow')
     btn.configure(state="disabled")
     breadcrumb.unbind_left()
     breadcrumb.unbind_right()
@@ -2891,6 +2918,7 @@ def search_result():
     breadcrumb.bindings()
     breadcrumb.enable_crumbs()
     search_entry.configure(state="normal")
+    search_entry.configure(cursor='xterm')
     btn.configure(state="normal")
     rebind()
     tv.grid(row=1, column=0, sticky="nsew")
@@ -2948,6 +2976,7 @@ def clear_all():
     file_menu.entryconfig("Export 'OneDrive Folders'", state='disable')
     search_entry.delete(0, 'end')
     search_entry.configure(state="disabled")
+    search_entry.configure(cursor='arrow')
     btn.configure(state="disabled")
     meta_btn.config(state='disabled')
     delete_item_and_descendants(tv)
@@ -3118,6 +3147,7 @@ def live_system(menu):
     clear_search()
     search_entry.delete(0, 'end')
     search_entry.configure(state="disabled")
+    search_entry.configure(cursor='arrow')
     breadcrumb.clear()
     file_manager.tv2.delete(*file_manager.tv2.get_children())
     file_manager.tv3.delete(*file_manager.tv3.get_children())
@@ -3174,6 +3204,7 @@ def live_system(menu):
                     menubar.entryconfig("View", state="disabled")
                     menubar.entryconfig("Help", state="disabled")
                     search_entry.configure(state="disabled")
+                    search_entry.configure(cursor='arrow')
                     btn.configure(state="disabled")
 
                     for filename in filenames:
@@ -3201,7 +3232,7 @@ def live_system(menu):
                                                   showstatusbar=False,
                                                   enable_menus=True,
                                                   editable=False)
-                    tv_frame.add(tb, text=f'{key} Logs')
+                    tv_frame.add(tb, text=f'{key} Logs  ')
                     pt.adjustColumnWidths()
                     pt.show()
                     user_logs.setdefault(f'{key}_logs.csv', pt)
@@ -3335,6 +3366,7 @@ def import_odl():
 def odl(folder_name, csv=False):
     widgets_disable()
     search_entry.configure(state="disabled")
+    search_entry.configure(cursor='arrow')
     breadcrumb.unbind_left()
     breadcrumb.unbind_right()
     breadcrumb.unbind_up()
@@ -3399,7 +3431,7 @@ def odl(folder_name, csv=False):
                                       enable_menus=True,
                                       editable=False)
         pt.adjustColumnWidths()
-        tv_frame.add(tb, text=f'{key} Logs')
+        tv_frame.add(tb, text=f'{key} Logs  ')
         pt.show()
         user_logs.setdefault(f'{key}_logs.csv', pt)
     pb.stop()
@@ -3455,6 +3487,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
     search_entry.delete(0, 'end')
     search_entry.state(['invalid'])
     search_entry.configure(state="disabled")
+    search_entry.configure(cursor='arrow')
     clear_search()
     if not live:
         widgets_disable()
@@ -3687,6 +3720,7 @@ def proj_parse(q, proj_name):
     search_entry.delete(0, 'end')
     search_entry.state(['invalid'])
     search_entry.configure(state="disabled")
+    search_entry.configure(cursor='arrow')
     clear_search()
     
     while True:
@@ -3701,7 +3735,7 @@ def proj_parse(q, proj_name):
                                           showstatusbar=False,
                                           enable_menus=True,
                                           editable=False)
-            tv_frame.add(tb, text=f'{key} Logs')
+            tv_frame.add(tb, text=f'{key} Logs  ')
             pt.adjustColumnWidths()
             pt.show()
             user_logs.setdefault(f'{key}_logs.csv', pt)
@@ -3767,6 +3801,7 @@ def thread_save(filename):
     search_entry.delete(0, 'end')
     search_entry.state(['invalid'])
     search_entry.configure(state="disabled")
+    search_entry.configure(cursor='arrow')
     clear_search()
     breadcrumb.unbind_left()
     breadcrumb.unbind_right()
@@ -3932,6 +3967,7 @@ def widgets_normal():
     menubar.entryconfig("Help", state="normal")
     if len(tv.get_children()) > 0:
         search_entry.configure(state="normal")
+        search_entry.configure(cursor='xterm')
         btn.configure(state="normal")
     tv.grid(row=1, column=0, sticky="nsew")
 
@@ -4195,6 +4231,7 @@ btn = ttk.Button(find_frame,
                  takefocus=False,
                  command=lambda: [thread_search(), SyncMessage(root)])
 search_entry.configure(state="disabled")
+search_entry.configure(cursor='arrow')
 btn.configure(state="disabled")
 
 sep = ttk.Separator(tv_inner_frame, orient=tk.HORIZONTAL)
@@ -4263,7 +4300,7 @@ infoNB.add(infoFrame, text='Log Entries')
 pwv.add(tv_frame, minsize=100)
 pwv.add(infoNB, minsize=100)
 
-search_entry.grid(row=0, column=0, sticky="nse", padx=(5,0), pady=5)
+search_entry.grid(row=0, column=0, sticky="e", padx=(5,0), pady=5)
 btn.grid(row=0, column=1, padx=(0,5), pady=5, sticky="e")
 
 pwv.grid(row=0, column=0, sticky="nsew")
