@@ -26,7 +26,6 @@ import ast
 import os
 import sys
 import colorsys
-import concurrent.futures
 import re
 import base64
 import json
@@ -669,7 +668,7 @@ class Messages:
             try:
                 with pd.ExcelWriter(excel_name) as writer:
                     self.write_dataframe_to_excel(writer)
-            
+
                 self.pb.stop()
                 ExportResult(self.win, excel_name)
 
@@ -677,7 +676,7 @@ class Messages:
                 logging.error(e)
                 ExportResult(self.win, e, failed=True)
                 self.restore_tree_messages()
-        
+
             self.hide_export_status()
             self.enable_export_buttons()
 
@@ -723,7 +722,7 @@ class Messages:
     def restore_tree_messages(self):
         self.tree.delete(*self.tree.get_children())
         data = log_capture_string.getvalue().split('\n')
-    
+
         for m in data:
             m = m.split(', ', 2)
             try:
@@ -745,13 +744,13 @@ class Messages:
         message['text'] = mcount
 
     def select(self, event=None):
-            self.tb.config(state='normal')
-            self.tb.delete('1.0', tk.END)
-            curItem = self.tree.selection()
-            values = self.tree.item(curItem, 'values')
-            self.tb.insert(tk.END,
-                           re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
-            self.tb.config(state='disable')
+        self.tb.config(state='normal')
+        self.tb.delete('1.0', tk.END)
+        curItem = self.tree.selection()
+        values = self.tree.item(curItem, 'values')
+        self.tb.insert(tk.END,
+                       re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
+        self.tb.config(state='disable')
 
     def sync_windows(self, event=None):
         x = self.root.winfo_x()
@@ -850,7 +849,7 @@ class CStructs:
         self.setup_cstruct_frame()
         self.setup_mid_frame()
         self.setup_bottom_frame()
-        
+
         if self.total['text'] == '0':
             self.disable_widgets()
         else:
@@ -912,7 +911,6 @@ class CStructs:
         self.description_label = ttk.Label(self.mid_frame, text="Description", justify="left", anchor='w')
         self.entry5 = tk.Text(self.mid_frame, exportselection=False, font='TkDefaultFont',
                               cursor='arrow', width=49, height=1, padx=5)
-
 
     def setup_bottom_frame(self):
         self.load_label = ttk.Label(self.bottom_frame, text="CStructs loaded:", justify="left", anchor='w')
@@ -1124,7 +1122,6 @@ class Help:
         self.win.destroy()
 
 
-
 class About:
     def __init__(self, root):
         self.root = root
@@ -1288,7 +1285,9 @@ class CustomText(tk.Text):
             self.mark_set("matchEnd", f"{index}+{count.get()}c")
             self.tag_add(tag, "matchStart", "matchEnd")
 
+
 s_image = {}
+
 
 class Result:
 
@@ -1317,7 +1316,7 @@ class Result:
         else:
             text = f'  {self.args[0][6]}\n  {self.args[0][5]}'
             self.process_folder_status(l)
-            
+
         values = tuple(l)
         output_image = self.create_output_image()
         self.update_image_dictionary(output_image)
@@ -1346,18 +1345,16 @@ class Result:
         else:
             self.status.append(self.get_status_image(num))
 
-
     def process_non_folder_status(self, l):
         if len(l) != 3:
             self.status.append(file_del_big_img) if self.tags == 'red' else self.status.append(file_yellow_big_img)
             l[0] = f'  Date modified: {self.args[0][0]}\n  Size: {self.args[0][1]}'
-            
+
             for num in ['2', '5', '6', '7', '8', '1']:
                 if num in self.args[0][7]:
                     self.status.append(self.get_status_image(num))
                 if num in self.args[0][12]:
                     self.status.append(self.get_status_image(num))
-                
 
     def get_status_image(self, num):
         status_dict = {
@@ -1418,7 +1415,7 @@ class PopupManager:
             image = event.widget.item(curItem, 'image')
             popup = tk.Menu(self.root, tearoff=0)
             copymenu = tk.Menu(self.root, tearoff=0)
-            
+
             if image[0] == str(root_drive_img):
                 popup.add_command(label="Remove OneDrive Folder",
                                   image=self.rof_img,
@@ -1502,7 +1499,7 @@ class PopupManager:
         t1 = threading.Thread(target=self.del_folder, args=(iid,), daemon=True)
         t1.start()
         root.after(200, check_if_ready, t1, "df")
-    
+
     def del_folder(self, iid):
         global proj_name
         widgets_disable()
@@ -1512,7 +1509,7 @@ class PopupManager:
         btn.configure(state="disabled")
         clear_search()
         self.breadcrumb.clear()
-        self.tv.grid_forget()     
+        self.tv.grid_forget()
         file_manager.tv2.delete(*file_manager.tv2.get_children())
         file_manager.tv3.delete(*file_manager.tv3.get_children())
         self.details.config(state='normal')
@@ -1642,6 +1639,7 @@ class ToolTipManager:
 class FileManager:
     def __init__(self, tv, parent, cur_sel, columns=('Date_modified', 'Size')):
         self.tv = tv
+        self.bgf = style.lookup('Label', 'background')
         self.parent = parent
         self.columns = columns
         self.cur_sel = cur_sel
@@ -1716,7 +1714,7 @@ class FileManager:
                 item_id = parent
             else:
                 break
-        
+
         clear_search()
 
     def multiple_yview(self, *args):
@@ -1724,7 +1722,7 @@ class FileManager:
         self.tv3.yview(*args)
 
     def multiple_yview_scroll(self, event):
-        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame4.!treeview':
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame3.!treeview':
             self.tv2.yview_scroll(-1 * int(event.delta / 120), "units")
         elif str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!treeview':
             self.tv3.yview_scroll(-1 * int(event.delta / 120), "units")
@@ -1739,7 +1737,7 @@ class FileManager:
                 if cur_item[0] != cur_item2[0]:
                     self.tv3.selection_set(cur_item[0])
 
-            elif str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame4.!treeview':
+            elif str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame3.!treeview':
                 cur_item = self.tv3.selection()
                 cur_item2 = self.tv2.selection()
                 if not cur_item2:
@@ -1755,7 +1753,7 @@ class FileManager:
         matches = ["start_parsing", "live_system", "odl", "load_project", "proj_parse"]
         if any(x in str(threading.enumerate()) for x in matches):
             return
-            
+
         cur_item = event.widget.selection()
 
         if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame.!treeview':
@@ -1789,13 +1787,13 @@ class FileManager:
             if values[0] != '':
                 timestamp = "DeleteTimeStamp: " if 'inRecycleBin' in values[7] else "lastChange: "
                 if 'Date modified' in str(values[0]):
-                       values[0] = str(values[0])[17:].split("\n")[0]
+                    values[0] = str(values[0])[17:].split("\n")[0]
                 values[0] = f'{timestamp}{values[0]}'
                 values[1] = f'size: {values[1]}'
-                
+
         try:
             tags = event.widget.item(cur_item, 'tags')[0]
-        except:
+        except Exception:
             tags = ''
         details.config(state='normal')
         details.delete('1.0', tk.END)
@@ -1809,16 +1807,132 @@ class FileManager:
 
         details.config(state='disable')
         if len(values) > 4:
-            meta_btn.config(state='disable')
+            details_frame.delete_tab(2)
+            details_frame.delete_tab(1)
             if ('fileStatus' in values[7] or 'inRecycleBin' in values[7]) and not df_GraphMetadata_Records.empty:
                 line_number = 4
                 start_index = f"{line_number}.0"
                 end_index = f"{line_number + 1}.0"
                 pattern = r'resourceID: |resourceId: '
-                line_value =  re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
+                line_value = re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
                 df_result = df_GraphMetadata_Records[df_GraphMetadata_Records['resourceID'] == line_value]
                 if not df_result.empty:
-                    meta_btn.config(state='normal')
+                    tab2 = details_frame.add_tab('Metadata')
+                    self.meta_frame = details_frame.add_frame(tab2)
+                    self.meta_frame.configure(padding=10)
+                    self.get_resourceID(df_GraphMetadata_Records)
+
+    def get_resourceID(self, df):
+        self.header_labels = []
+        self.key_labels = []
+        self.value_labels = []
+        line_number = 4
+        start_index = f"{line_number}.0"
+        end_index = f"{line_number + 1}.0"
+        pattern = r'resourceID: |resourceId: '
+        line_value = re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
+        df_result = df[df['resourceID'] == line_value]
+        row_num = 0
+        for item in df_result.to_dict(orient='records'):
+            for key, value in item.items():
+                if key == 'graphMetadataJSON':
+                    self.get_graphMetadataJSON(value)
+                    continue
+                if key == 'filePolicies':
+                    self.get_filePolicies(value)
+                    continue
+                self.add_label_to_frame(self.meta_frame, key, value, row_num)
+                row_num += 1
+
+    def get_graphMetadataJSON(self, value):
+        if not value:
+            return
+
+        tab3 = details_frame.add_tab('MetadataJSON')
+        self.json_frame = details_frame.add_frame(tab3)
+        self.json_frame.configure(padding=10)
+        row_num = 0
+
+        for k, v in value.items():
+            if isinstance(v, dict):
+                header_label = LabelSeparator(self.json_frame, text=f"{k}", width=15)
+                header_label.grid(row=row_num, column=0, columnspan=2, sticky="ew")
+                row_num += 1
+                self.header_labels.append(header_label)
+
+                for a, b in v.items():
+                    key_label = HighlightableTextBox(self.json_frame, text=f"{a}:", font=default_font, wraplength='165p')
+                    key_label.label.grid(row=row_num, column=0, padx=(0, 2), pady=(0, 5), sticky="nw")
+                    self.key_labels.append(key_label)
+
+                    value_label = HighlightableTextBox(self.json_frame, text=str(b), font=default_font, wraplength='165p')
+                    value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
+                    self.value_labels.append(value_label)
+
+                    row_num += 1
+
+            else:
+                logging.error(f'Issue parsing graphMetadataJSON. {type(v)} {k}:{v}')
+
+    def get_filePolicies(self, value):
+        if not value:
+            return
+
+        tab4 = details_frame.add_tab('filePolicies')
+        policy_frame = details_frame.add_frame(tab4)
+        policy_frame.configure(padding=10)
+
+        row_num = 0
+
+        for k, v in value.items():
+            if isinstance(v, list):
+                self.add_list_to_frame(policy_frame, k, v, row_num)
+            else:
+                self.add_label_to_frame(policy_frame, k, v, row_num)
+            row_num += 1
+
+        return policy_frame
+
+    def add_list_to_frame(self, parent_frame, label_text, items, row_num):
+        header_label = LabelSeparator(parent_frame, text=label_text, width=15)
+        header_label.grid(row=row_num, column=0, columnspan=2, sticky="ew")
+        self.header_labels.append(header_label)
+        row_num += 1
+
+        for item in items:
+            if isinstance(item, dict):
+                self.add_dict_to_frame(parent_frame, item, row_num)
+                row_num += 1
+            else:
+                self.add_label_to_frame(parent_frame, '', item, row_num)
+                row_num += 1
+
+    def add_dict_to_frame(self, parent_frame, dictionary, row_num):
+        for key, value in dictionary.items():
+            if isinstance(value, dict):
+                self.header_frame_label = ttk.Label(parent_frame, text=f"{key}", font=default_font)
+                self.header_frame = tk.LabelFrame(parent_frame, labelwidget=self.header_frame_label, padx=5, labelanchor="nw", bg=self.bgf)
+                self.header_frame.grid(row=row_num, column=0, columnspan=2, sticky="ew")
+                row_num += 1
+                frow_num = 0
+                for k, v in value.items():
+                    self.add_label_to_frame(self.header_frame, k, v, frow_num)
+                    frow_num += 1
+
+                self.header_frame.bind('<Configure>', lambda event: self.update_theme())
+
+            else:
+                self.add_label_to_frame(parent_frame, key, value, row_num)
+                row_num += 1
+
+    def add_label_to_frame(self, parent_frame, key, value, row_num):
+        key_label = HighlightableTextBox(parent_frame, text=f"{key}:", font=default_font, wraplength='165p')
+        key_label.label.grid(row=row_num, column=0, padx=(0, 2), pady=(0, 5), sticky="nw")
+        self.key_labels.append(key_label)
+
+        value_label = HighlightableTextBox(parent_frame, text=str(value), font=default_font, wraplength='165p')
+        value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
+        self.value_labels.append(value_label)
 
     def get_info(self, event):  # need to finish testing on deleted files
         df_list = []
@@ -1834,7 +1948,7 @@ class FileManager:
             return
 
         for item in infoFrame.winfo_children():
-            if '.!notebook2.!frame.' in str(item):
+            if '.!notebook.!frame.' in str(item):
                 item.destroy()
 
         self.parent.update_idletasks()
@@ -1852,7 +1966,7 @@ class FileManager:
             rid = values[3].split(" ")[1].split("+")[0]
             try:
                 file_hash = values[10].split("(")[1].strip(")")
-            except:
+            except Exception:
                 file_hash = ''
 
             if len(rid) != 0:
@@ -1891,7 +2005,7 @@ class FileManager:
         pt.redraw()
         if stop.is_set():
             for item in infoFrame.winfo_children():
-                if '.!notebook2.!frame.' in str(item):
+                if '.!notebook.!frame.' in str(item):
                     item.destroy()
             if tv.selection()[0] != curItem[0]:
                 stop.clear()
@@ -1907,7 +2021,7 @@ class FileManager:
             self.tv3.delete(*self.tv3.get_children())
             self.breadcrumb_list.append(cur_item)
             return
-        
+
         self.breadcrumb_list.append(cur_item[0])
 
         for item in self.tv2.get_children():
@@ -1977,20 +2091,32 @@ class FileManager:
                         image_value_i = image_mapping.get(values_i_7, online_img)
 
                     self.tv3.insert("", "end", image=image_value_i, values=values_i, tags=tags_i)
-        except Exception as e:
-#            print(e)
+        except Exception:
             pass
 
         self.parent.update_idletasks()
+
+    def update_theme(self):
+        # Update background color and other theme-related properties
+        new_bgf = style.lookup('Label', 'background')
+        self.header_frame.config(bg=new_bgf)
+
+    def update_header_labels_theme(self):
+        for header_label in self.header_labels:
+            header_label.update_theme()
+        for key_label in self.key_labels:
+            key_label.clear_highlight()
+        for value_label in self.value_labels:
+            value_label.clear_highlight()
 
 
 class TreeviewHeaderWidget(ttk.Frame):
     def __init__(self, master=None, columns=None, **kwargs):
         super().__init__(master, **kwargs)
-        
+
         # Create TreeView widget
         self.treeview = ttk.Treeview(self, columns=columns, show="headings")
-        
+
         # Add headers to the TreeView
         for col in columns:
             self.treeview.heading(col, text=col, anchor="w")
@@ -2003,19 +2129,23 @@ class TreeviewHeaderWidget(ttk.Frame):
 
 
 class LabelSeparator(tk.Frame):
-    def __init__ (self, parent, text = "", width = "", *args):
-        tk.Frame.__init__ (self, parent, *args)
+    def __init__(self, parent, text="", width="", *args):
+        tk.Frame.__init__(self, parent, *args)
 
         self.bgf = style.lookup('Label', 'background')
-        
+
         self.configure(background=self.bgf)
         self.grid_columnconfigure(0, weight=1)
-        
-        self.separator = ttk.Separator (self, orient = tk.HORIZONTAL)
-        self.separator.grid (row = 0, column = 0, sticky="ew")
 
-        self.label = ttk.Label (self, text=text, font=default_font)
-        self.label.grid (row = 0, column = 0, padx = width, sticky="w")
+        self.separator = ttk.Separator(self, orient=tk.HORIZONTAL)
+        self.separator.grid(row=0, column=0, sticky="ew")
+
+        self.label = ttk.Label(self, text=text, font=default_font)
+        self.label.grid(row=0, column=0, padx=width, sticky="w")
+
+    def update_theme(self):
+        new_bgf = style.lookup('Label', 'background')
+        self.configure(background=new_bgf)
 
 
 class Metadata:
@@ -2023,11 +2153,11 @@ class Metadata:
         self.root = root
         self.bgf = style.lookup('Label', 'background')
         self.df = df_GraphMetadata_Records
-        
+
         self.line_number = 8
         self.start_index = f"{self.line_number}.0"
         self.end_index = f"{self.line_number + 1}.0"
-        self.line_value =  details.get(self.start_index, self.end_index)
+        self.line_value = details.get(self.start_index, self.end_index)
         if 'file' in self.line_value:
             self.iconbitmap = f'{application_path}/Images/titles/file_yellow.ico'
         else:
@@ -2055,22 +2185,21 @@ class Metadata:
         self.metaNB = ttk.Notebook(self.frame, padding=5)
         self.meta_frame = ttk.Frame(self.metaNB, padding=10)
         self.metaNB.add(self.meta_frame, text='Metadata')
-        
+
         self.frame.grid(row=0, column=0, sticky="nsew")
         self.metaNB.grid(row=0, column=0, sticky="nsew")
 
-        
     def get_resourceID(self):
         line_number = 4
         start_index = f"{line_number}.0"
         end_index = f"{line_number + 1}.0"
         pattern = r'resourceID: |resourceId: '
-        line_value =  re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
+        line_value = re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
         df_result = self.df[self.df['resourceID'] == line_value]
         row_num = 0
         for item in df_result.to_dict(orient='records'):
             for key, value in item.items():
-                if key =='fileName':
+                if key == 'fileName':
                     self.win.title(f"{value} Properties")
                 if key == 'graphMetadataJSON':
                     self.get_graphMetadataJSON(value)
@@ -2080,9 +2209,9 @@ class Metadata:
                     continue
 
                 self.add_label_to_frame(self.meta_frame, key, value, row_num)
-                
+
                 row_num += 1
-        
+
     def get_graphMetadataJSON(self, value):
         if not value:
             return
@@ -2099,14 +2228,14 @@ class Metadata:
                 for a, b in v.items():
                     key_label = HighlightableTextBox(self.json_frame, text=f"{a}:", font=default_font, wraplength='165p')
                     key_label.label.grid(row=row_num, column=0, padx=(0, 2), pady=(0, 5), sticky="nw")
-                    
+
                     value_label = HighlightableTextBox(self.json_frame, text=str(b), font=default_font, wraplength='165p')
                     value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
-                    
+
                     row_num += 1
             else:
                 logging.error(f'Issue parsing graphMetadataJSON. {type(v)} {k}:{v}')
-    
+
     def get_filePolicies(self, value):
         if not value:
             return
@@ -2162,7 +2291,6 @@ class Metadata:
         value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
         row_num += 1
 
-    
     def sync_windows(self, event=None):
         x = details_frame.winfo_x()
         y = details_frame.winfo_y()
@@ -2172,13 +2300,12 @@ class Metadata:
         h = details_frame.winfo_height()
         self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
 
-    
     def __callback(self):
         self.win.destroy()
 
 
 class HighlightableTextBox:
-    def __init__(self, master, text, font, wraplength):
+    def __init__(self, master, text, font, wraplength=None):
         self.label = ttk.Label(master, text=text, font=font, wraplength=wraplength)
         self.label.bind("<Enter>", lambda event: self.on_enter())
         self.label.bind("<Leave>", lambda event: self.on_leave())
@@ -2195,7 +2322,12 @@ class HighlightableTextBox:
 
     def clear_highlight(self):
         self.highlighted = False
-        self.label.configure(background=style.lookup('TLabel', 'background'))
+        # below are fixes for when changing from breeze theme
+        if str(self.label.cget('background')) == '#eff0f1':
+            self.label['background'] = ''
+            self.label['foreground'] = ''
+        else:
+            self.label.configure(background=style.lookup('TLabel', 'background'))
 
     def copy_text(self):
         selected_text = self.label["text"]
@@ -2217,69 +2349,69 @@ class Breadcrumb(ttk.Frame):
         self.unbind_left()
         self.unbind_right()
         self.unbind_up()
-    
+
     def breadcrumb_viewer(self):
         self.leftArrow = ttk.Label(self, text=" \u2B60 ", font=('', 14, 'bold'))
         self.rightArrow = ttk.Label(self, text=" \u2B62 ", font=('', 14, 'bold'))
         self.upArrow = ttk.Label(self, text=" \u2B61 ", font=('', 14, 'bold'))
         self.crumb_frame = ttk.Frame(self)
-        
+
         self.leftArrow.pack(side='left', anchor='w')
         self.rightArrow.pack(side='left', anchor='w')
         self.upArrow.pack(side='left', anchor='w')
         self.crumb_frame.pack(side='left', anchor='w', expand=True, fill='both')
-        
+
         self.leftArrow.config(style=f'{self.leftArrow.cget("text")}Hover.TLabel')
         self.rightArrow.config(style=f'{self.rightArrow.cget("text")}Hover.TLabel')
         self.upArrow.config(style=f'{self.upArrow.cget("text")}Hover.TLabel')
- 
+
         self.crumb_frame.bind("<Configure>", lambda event: self.on_resize(event))
-        
+
     def unbind_left(self):
         self.leftArrow.config(state='disable')
         self.leftArrow.unbind("<Enter>")
         self.leftArrow.unbind("<Leave>")
         self.leftArrow.unbind("<Button-1>")
-    
+
     def unbind_right(self):
         self.rightArrow.config(state='disable')
         self.rightArrow.unbind("<Enter>")
         self.rightArrow.unbind("<Leave>")
         self.rightArrow.unbind("<Button-1>")
-    
+
     def unbind_up(self):
         self.upArrow.config(state='disable')
         self.upArrow.unbind("<Enter>")
         self.upArrow.unbind("<Leave>")
         self.upArrow.unbind("<Button-1>")
-    
+
     def rebind_left(self):
         self.leftArrow.config(state='normal')
         self.leftArrow.bind("<Enter>", lambda event, l=self.leftArrow.cget("text"): self.on_enter(event, l))
         self.leftArrow.bind("<Leave>", lambda event, l=self.leftArrow.cget("text"): self.on_leave(event, l))
         self.leftArrow.bind("<Button-1>", self.crumb_left)
-        
+
     def rebind_right(self):
         self.rightArrow.config(state='normal')
         self.rightArrow.bind("<Enter>", lambda event, l=self.rightArrow.cget("text"): self.on_enter(event, l))
         self.rightArrow.bind("<Leave>", lambda event, l=self.rightArrow.cget("text"): self.on_leave(event, l))
         self.rightArrow.bind("<Button-1>", self.crumb_right)
-        
+
     def rebind_up(self):
         self.upArrow.config(state='normal')
         self.upArrow.bind("<Enter>", lambda event, l=self.upArrow.cget("text"): self.on_enter(event, l))
         self.upArrow.bind("<Leave>", lambda event, l=self.upArrow.cget("text"): self.on_leave(event, l))
         self.upArrow.bind("<Button-1>", self.up_one)
-    
+
     def create_compact(self, i, my_list):
         my_list = my_list[:i+1]
         option_dict = {}
         optionList = ['']
-        
+
         for i, value in reversed(list(enumerate(my_list))):
             item_data = self.tv.item(value)
             option_dict[item_data['text'].split('\\')[-1]] = value
-        
+
         for key in list(option_dict.keys()):
             optionList.append(key)
 
@@ -2288,7 +2420,7 @@ class Breadcrumb(ttk.Frame):
         om.configure(style='no_label.TMenubutton')
 
         return om
-    
+
     def create_widgets(self):
         total_width = self.total_width
         widgets = []
@@ -2305,7 +2437,7 @@ class Breadcrumb(ttk.Frame):
             optionList = list(option_dict.keys())
             v = tk.StringVar()
             v.set(optionList[0])
-            
+
             # Use lambda to pass both the selected option and the corresponding dictionary
             om = ttk.OptionMenu(self.crumb_frame, v, *optionList, command=lambda selected_option, dict_key=option_dict: self.on_option_selected(selected_option, dict_key))
             if len(optionList) == 1:
@@ -2322,14 +2454,14 @@ class Breadcrumb(ttk.Frame):
                 om = self.create_compact(i, self.my_list)
                 widgets.append(om)
                 break
-            
+
             widgets.append(om)
 
         self.crumb_length = total_width
-            
+
         for widget in reversed(widgets):
             widget.pack(side='left', fill='y')
-        
+
         widgets.clear()
 
     def clear(self):
@@ -2339,7 +2471,7 @@ class Breadcrumb(ttk.Frame):
         self.bindings()
         self.update_widgets()
         self.create_widgets()
-    
+
     def bindings(self):
         if self.crumb_trail:
             self.rebind_left()
@@ -2353,7 +2485,7 @@ class Breadcrumb(ttk.Frame):
             self.unbind_left()
             self.on_leave('', self.rightArrow.cget("text"))
             self.unbind_right()
-        
+
         if self.crumb_trail_index == -1:
             self.on_leave('', self.leftArrow.cget("text"))
             self.unbind_left()
@@ -2386,7 +2518,7 @@ class Breadcrumb(ttk.Frame):
             try:
                 if value != self.crumb_trail[-1]:
                     self.crumb_trail.append(value)
-            except:
+            except Exception:
                 if value != ():
                     self.crumb_trail.append(value)
 
@@ -2416,7 +2548,7 @@ class Breadcrumb(ttk.Frame):
         clear_search()
         self.find_parent_hierarchy(option_dict[selected_option])
         self.update_treeview(option_dict[selected_option])
-    
+
     def update_treeview(self, cur_item):
         parent = self.tv.parent(cur_item)
         self.tv.selection_set(cur_item)
@@ -2476,7 +2608,6 @@ class Breadcrumb(ttk.Frame):
 
         self.update_treeview(self.crumb_trail[self.crumb_trail_index])
 
-
     def crumb_right(self, event):
         self.update = False
         if self.crumb_trail_index < len(self.crumb_trail) - 1:
@@ -2489,7 +2620,7 @@ class Breadcrumb(ttk.Frame):
         try:
             sbf_rgb = root.winfo_rgb(hex_color)
             hex_color = "{:02X}{:02X}{:02X}".format(sbf_rgb[0] // 256, sbf_rgb[1] // 256, sbf_rgb[2] // 256)
-        except:
+        except Exception:
             pass
         rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
         hls = colorsys.rgb_to_hls(*[c / 255.0 for c in rgb])
@@ -2504,15 +2635,15 @@ class Breadcrumb(ttk.Frame):
     def iter_layout(self, layout, ind=True):
         """Recursively prints the layout children."""
         elements = ''
-    
+
         for element, child in layout:
             if 'indicator' in element and ind is True:
                 continue
             if 'label' in element and ind is False:
                 continue
-            
+
             elements += f"('{element}', {{"
-        
+
             for key, value in child.items():
                 if isinstance(value, str):
                     elements += f"'{key}': '{value}', "
@@ -2520,9 +2651,9 @@ class Breadcrumb(ttk.Frame):
                     elements += f"'{key}': ["
                     elements += self.iter_layout(value, ind=ind)
                     elements += (']')
-        
+
             elements += '})'
-    
+
         return elements
 
     def update_theme(self):
@@ -2530,25 +2661,25 @@ class Breadcrumb(ttk.Frame):
         self.style = ttk.Style(root)
 
         layout = self.style.layout('TMenubutton')
-        
+
         no_button = self.iter_layout(layout)
         no_button = no_button.replace(")(", "), (").replace(", }", "}").replace(", 'children': []", "")  # Remove trailing commas
         no_button = ast.literal_eval(no_button)
-        
+
         no_label = self.iter_layout(layout, ind=False)
         no_label = no_label.replace(")(", "), (").replace(", }", "}").replace(", 'children': []", "")  # Remove trailing commas
         no_label = ast.literal_eval(no_label)
-        
+
         self.default_background_color = self.style.lookup('TLabel', 'background')
         self.default_foreground_color = self.style.lookup('TLabel', 'foreground')
 
         try:
             style.layout('no_button.TMenubutton', [no_button])
-        except:
+        except Exception:
             style.layout('no_button.TMenubutton', list(no_button))
         try:
             style.layout('no_label.TMenubutton', [no_label])
-        except:
+        except Exception:
             style.layout('no_label.TMenubutton', list(no_label))
 
         self.leftArrow['background'] = ''
@@ -2558,59 +2689,42 @@ class Breadcrumb(ttk.Frame):
         self.upArrow['background'] = ''
         self.upArrow['foreground'] = ''
 
-class DetailsFrame(tk.Frame):
-    def __init__(self, parent, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
 
-        self.canvas = tk.Canvas(self)
-        self.scrollbar_y = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.scrollbar_x = tk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+class DetailsFrame(ttk.Frame):
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.grid(row=0, column=0, sticky="nsew")
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
-        self.frame_inner = tk.Frame(self.canvas)
-        self.text_widget = tk.Text(self.frame_inner, font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, state='disabled')
-        self.button = tk.Button(self.frame_inner, text="Metadata", image=meta_img, takefocus=False, compound='left', command=self.on_button_click)
+    def add_tab(self, tab_name):
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text=tab_name)
+        return frame
 
-        self.text_widget.grid(row=0, column=0, sticky="nsew")
-        self.button.grid(row=1, column=0, pady=10)
+    def delete_tab(self, index):
+        if 0 <= index < self.notebook.index("end"):
+            self.notebook.forget(index)
 
-        self.scrollbar_y.grid(row=0, column=1, sticky="ns")
-        self.scrollbar_x.grid(row=1, column=0, sticky="ew")
+    def add_textbox(self, tab):
+        text_box = tk.Text(tab)
+        text_box_scroll = ttk.Scrollbar(tab, orient="vertical", command=text_box.yview)
+        text_box.configure(yscrollcommand=text_box_scroll.set)
+        text_box.tag_configure('red', foreground="red")
+        text_box.grid(row=0, column=0, sticky="nsew")
+        text_box_scroll.grid(row=0, column=1, sticky='nsew')
+        tab.grid_rowconfigure(0, weight=1)
+        tab.grid_columnconfigure(0, weight=1)
+        return text_box
 
-        self.frame_inner.grid(row=0, column=0, sticky="nsew")
-        self.canvas.create_window((0, 0), window=self.frame_inner, anchor="nw")
-
-        self.canvas.update_idletasks()
-
-        self.canvas.config(scrollregion=self.canvas.bbox("all"), yscrollcommand=self.scrollbar_y.set, xscrollcommand=self.scrollbar_x.set)
-
-        # Configure grid weights to allow resizing
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
-
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-
-    def on_button_click(self):
-        # Button click handler
-        Metadata(root, df_GraphMetadata_Records)
-
-    def insert(self, position, text, tags=''):
-        self.text_widget.insert(position, text, tags)
-
-    def delete(self, start, end=None):
-        self.text_widget.delete(start, end)
-
-    def config_text(self, state):
-        self.text_widget.config(state=state)
-
-    def config_btn(self, state):
-        self.button.config(state=state)
-
-    def get(self, start, end):
-        self.text_widget.get(start, end)
+    def add_frame(self, tab):
+        frame = ttk.Frame(tab)
+        frame.grid(row=0, column=0, sticky="nsew")
+        return frame
 
 
 def ButtonNotebook():
-
     def iter_layout(layout):
         """Recursively prints the layout children."""
         elements = ''
@@ -2647,10 +2761,10 @@ def ButtonNotebook():
         elements = iter_layout(layout)
         elements = elements.replace("label', {'sticky': 'nswe', }", "label', {'side': 'left', 'sticky': '', }").replace("label', {'side': 'top'", "label', {'side': 'left'").replace(", })", "}), ('Notebook.close', {'side': 'left', 'sticky': ''})")
         elements = ast.literal_eval(elements)
-        
+
         try:
             style.layout("CustomNotebook.Tab", [elements])
-        except:
+        except Exception:
             style.layout("CustomNotebook.Tab", list(elements))
 
         style.configure('CustomNotebook.Tab', **style.configure('TNotebook.Tab'))
@@ -2659,16 +2773,16 @@ def ButtonNotebook():
         pass
 
     layout = style.layout('TNotebook.Tab')
-    
+
     no_focus = iter_layout(layout)
     no_focus = no_focus.replace(")(", "), (").replace(", }", "}").replace(", 'children': []", "")  # Remove trailing commas
     no_focus = ast.literal_eval(no_focus)
-    
+
     try:
         style.layout('TNotebook.Tab', [no_focus])
-    except:
+    except Exception:
         style.layout('TNotebook.Tab', list(no_focus))
-    
+
     def on_close_press(event):
         """Called when the button is pressed over the close button"""
 
@@ -2731,7 +2845,7 @@ def ButtonNotebook():
             widget.event_generate("<<NotebookClosedTab>>")
             if len(tv_frame.tabs()) == 1:
                 for item in infoFrame.winfo_children():
-                    if '.!notebook2.!frame.' in str(item):
+                    if '.!notebook.!frame.' in str(item):
                         item.destroy()
                 odlmenu.entryconfig("Unload all ODL logs", state='disable')
                 if len(tv.get_children()) == 0:
@@ -2841,10 +2955,13 @@ def pane_config():
     details.config(background=bgf, foreground=fgf)
     style.configure('Result.Treeview', rowheight=40)
     tv_pane_frame.configure(background=bgf)
-    details_frame.config(background=bgf)
     breadcrumb.update_theme()
+    try:
+        file_manager.update_header_labels_theme()
+    except Exception:
+        pass
     ttk.Style().theme_use()
-    
+
     # below are fixes for when changing from breeze theme
     if str(message.cget('background')) == '#eff0f1':
         message['background'] = ''
@@ -2858,6 +2975,7 @@ def pane_config():
 
     ra['background'] = ''
     ra['foreground'] = ''
+
 
 def fixed_map(option):
     # Returns the style map for 'option' with any styles starting with
@@ -2948,16 +3066,19 @@ def clear_search():
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
-    meta_btn.config(state='disable')
+    details_frame.delete_tab(2)
+    details_frame.delete_tab(1)
+
 
 def delete_item_and_descendants(tree, item=''):
     children = tree.get_children(item)
     for child in children:
         if child in file_items:
             for i in file_items[child]:
-                root.after(0, tv.delete, i) 
+                root.after(0, tv.delete, i)
             del file_items[child]
         delete_item_and_descendants(tree, child)
+
 
 def clear_all():
     global proj_name
@@ -2978,7 +3099,8 @@ def clear_all():
     search_entry.configure(state="disabled")
     search_entry.configure(cursor='arrow')
     btn.configure(state="disabled")
-    meta_btn.config(state='disabled')
+    details_frame.delete_tab(2)
+    details_frame.delete_tab(1)
     delete_item_and_descendants(tv)
     tv.delete(*tv.get_children())
     tv.grid(row=1, column=0, sticky="nsew")
@@ -2998,26 +3120,26 @@ def clear_tvr():
 
 def json_count(item='', file_count=0, del_count=0, folder_count=0):
     children = tv.get_children(item)
-    
+
     for child in children:
         values = tv.item(child, 'values')
-        
+
         folder_count += 'folder' in values[7]
-        
+
         if child in file_items:
             for i in file_items[child]:
                 values = tv.item(i, 'values')
-                
+
                 file_count += 'file' in values[7]
                 del_count += 'inRecycleBin' in values[7]
-                
+
         file_count, del_count, folder_count = json_count(
             item=child,
             file_count=file_count,
             del_count=del_count,
             folder_count=folder_count
         )
-    
+
     return file_count, del_count, folder_count
 
 
@@ -3094,8 +3216,7 @@ def parent_child(d, parent_id=None, meta=False):
             parent = tv.parent(iid)
             file_items[parent].append(iid)
             tv.detach(iid)
-    
-    
+
     if 'Folders' in d:
         for c in d['Folders']:
             x = ('', '')
@@ -3114,7 +3235,7 @@ def parent_child(d, parent_id=None, meta=False):
                              image=image,
                              text=f" {c['Name']}",
                              values=(z)), meta)    
-    
+
     if 'Scope' in d:
         for c in d['Scope']:
             image = link_folder_img
@@ -3122,10 +3243,9 @@ def parent_child(d, parent_id=None, meta=False):
                 image = vault_closed_img
             if c['siteID'] == '' and '+' in c['scopeID']:
                 image = sync_directory_img
-                
+
             x = ('', '')
             y = [f'{k}: {v}' if v is not None else f'{k}: ' for k, v in c.items() if 'Links' not in k]
-
 
             for b in c['Links']:
                 w = [f'{k}: {v}' for k, v in b.items() if 'Files' not in k and 'Folders' not in k]
@@ -3504,7 +3624,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         if not df.empty:
             cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename,  rbin_df, account, reghive, recbin, gui=True,
                                                   pb=pb, value_label=value_label)
-        
+
         dat = True
 
     if x == 'Load from SQLite':
@@ -3539,7 +3659,6 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         if not df.empty:
             cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename.name, rbin_df, account, reghive, recbin, gui=True,
                                                   pb=pb, value_label=value_label)
-
 
     if x == 'Project':
         name = filename
@@ -3653,7 +3772,7 @@ def del_logs():
             item.destroy()
 
     for item in infoFrame.winfo_children():
-        if '.!notebook2.!frame.' in str(item):
+        if '.!notebook.!frame.' in str(item):
             item.destroy()
 
     user_logs.clear()
@@ -3681,6 +3800,7 @@ def log_tab():
 
 def load_proj():
     global proj_name
+
     def thread_load():
         t1 = threading.Thread(target=clear_all, daemon=True)
         t1.start()
@@ -3722,7 +3842,7 @@ def proj_parse(q, proj_name):
     search_entry.configure(state="disabled")
     search_entry.configure(cursor='arrow')
     clear_search()
-    
+
     while True:
         data = q.get()
         if '_logs.csv' in data[0]:
@@ -3744,7 +3864,7 @@ def proj_parse(q, proj_name):
         if isinstance(data[0], pd.core.frame.DataFrame):
             df_GraphMetadata_Records = data[0]
             continue
-        
+
         if data[0] == 'done':
             pb.stop()
             break
@@ -3793,7 +3913,7 @@ def saveAs_proj(filename=None):
 
         projmenu.entryconfig("Unload", state='normal')
 
-    
+
 def thread_save(filename):
     widgets_disable()
     file_manager.tv2.delete(*file_manager.tv2.get_children())
@@ -3809,7 +3929,7 @@ def thread_save(filename):
     breadcrumb.disable_crumbs()
 
     save_project(tv, file_items, df_GraphMetadata_Records, filename, user_logs, pb, value_label)
-    
+
     widgets_normal()
     breadcrumb.bindings()
     breadcrumb.enable_crumbs()
@@ -3942,6 +4062,9 @@ def widgets_disable():
         if str(item).endswith('!frame'):
             continue
         tb.tab(item, state='disable')
+    for item in infoFrame.winfo_children():
+        if '.!notebook.!frame.' in str(item):
+            item.destroy()
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
@@ -3950,7 +4073,8 @@ def widgets_disable():
     menubar.entryconfig("View", state="disabled")
     menubar.entryconfig("Help", state="disabled")
     btn.configure(state="disabled")
-    meta_btn.config(state='disable')
+    details_frame.delete_tab(2)
+    details_frame.delete_tab(1)
     tv.grid_forget()
 
 
@@ -3970,6 +4094,7 @@ def widgets_normal():
         search_entry.configure(cursor='xterm')
         btn.configure(state="normal")
     tv.grid(row=1, column=0, sticky="nsew")
+
 
 root = ThemedTk(gif_override=True)
 ttk.Style().theme_use(menu_data['theme'])
@@ -4248,9 +4373,10 @@ message = ttk.Label(bottom_frame, text=0, background='red',
 sr = ttk.Separator(bottom_frame, orient='vertical')
 sg = ttk.Sizegrip(bottom_frame)
 
-details_frame = tk.Frame(pwh)
-details_frame.config(background=bgf)
-details = tk.Text(details_frame, font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, state='disable')
+details_frame = DetailsFrame(pwh)
+tab1 = details_frame.add_tab("Details")
+details = details_frame.add_textbox(tab1)
+details.configure(font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, padx=10, pady=10, state='disable')
 meta_btn = ttk.Button(details_frame, text="Metadata", image=meta_img, takefocus=False, compound='left', state='disable', command=lambda: Metadata(root, df_GraphMetadata_Records))
 detailsscroll = ttk.Scrollbar(details_frame, orient="vertical", command=details.yview)
 details.configure(yscrollcommand=detailsscroll.set)
@@ -4314,8 +4440,6 @@ scrollbv.grid(row=0, column=1, rowspan=2, sticky="nsew")
 scrollbh.grid(row=2, column=0, sticky="nsew")
 rscrollbv.grid(row=0, column=1, sticky="nsew")
 details.grid(row=0, column=0, sticky='nsew')
-meta_btn.grid(row=1, column=0, sticky='w')
-detailsscroll.grid(row=0, column=1, rowspan=2, sticky='nsew')
 
 value_label.grid(row=0, column=0, sticky='se')
 pb.grid(row=0, column=1, padx=5, sticky='se')
