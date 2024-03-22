@@ -52,7 +52,7 @@ ascii_chars_re = re.compile(f'[{printable_chars_for_re}]' + '{4,}')
 cparser = ''
 
 # UnObfuscation code
-dkey_dict = {}
+dkey_list = []
 utf_type = 'utf16'
 
 headers = '''
@@ -215,21 +215,21 @@ def guess_encoding(obfuscation_map_path):
     return encoding
 
 
-def decrypt(cipher_text, dkey):
+def decrypt(cipher_text):
     '''cipher_text is expected to be base64 encoded'''
-    global dkey_dict
+    global dkey_list
     global utf_type
 
     cipher_text_orig = cipher_text
 
-    if dkey_dict == '':
+    if not dkey_list:
         return cipher_text_orig
     if len(cipher_text) < 22:
         return cipher_text_orig  # invalid or it was not encrypted!
     # add proper base64 padding
     remainder = len(cipher_text) % 4
     if remainder == 1:
-        return cipher_text_orig # invalid b64 or it was not encrypted!
+        return cipher_text_orig  # invalid b64 or it was not encrypted!
     elif remainder in (2, 3):
         cipher_text += "=" * (4 - remainder)
     try:
@@ -239,29 +239,30 @@ def decrypt(cipher_text, dkey):
         return cipher_text_orig
 
     if len(cipher_text) % 16 != 0:
-        return cipher_text_orig # invalid b64 or it was not encrypted!
+        return cipher_text_orig  # invalid b64 or it was not encrypted!
 
-    try:
-        cipher = AES.new(dkey, AES.MODE_CBC, iv=b'\0'*16)
-        raw = cipher.decrypt(cipher_text)
-    except ValueError as ex:
-#        log.error(f'Exception while decrypting data {str(ex)}')
-        return cipher_text_orig
-    try:
-        plain_text = unpad(raw, 16)
-    except Exception as ex:
-        #print("Error in unpad!", str(ex), raw)
-        return cipher_text_orig
-    try:
-        plain_text = plain_text.decode(utf_type)
-    except ValueError as ex:
-        #print(f"Error decoding {utf_type}", str(ex))
-        return cipher_text_orig
-    return plain_text
+    for key in dkey_list:
+        try:
+            cipher = AES.new(key, AES.MODE_CBC, iv=b'\0'*16)
+            raw = cipher.decrypt(cipher_text)
+        except ValueError as ex:
+            # log.error(f'Exception while decrypting data {str(ex)}')
+            return cipher_text_orig
+        try:
+            plain_text = unpad(raw, 16)
+        except Exception as ex:  # possible fix to change key
+            # print("Error in unpad!", str(ex), raw)
+            continue
+        try:
+            plain_text = plain_text.decode(utf_type)
+        except ValueError as ex:
+            # print(f"Error decoding {utf_type}", str(ex))
+            return cipher_text_orig
+        return plain_text
 
 
 def read_keystore(keystore_path):
-    global dkey_dict
+    global dkey_list
     global utf_type
     encoding = guess_encoding(keystore_path)
     with open(keystore_path, 'r', encoding=encoding) as f:
@@ -270,8 +271,9 @@ def read_keystore(keystore_path):
             dkey = j[0]['Key']
             version = j[0]['Version']
             utf_type = 'utf32' if dkey.endswith('\\u0000\\u0000') else 'utf16'
-            log.info(f"Recovered Unobfuscation key {dkey}, version={version}, utf_type={utf_type}")
-            dkey_dict[os.path.dirname(keystore_path)] = base64.b64decode(dkey)
+            log.info(f"Recovered Unobfuscation key from {f.name}, key:{dkey}, version:{version}, utf_type:{utf_type}")
+            if base64.b64decode(dkey) not in dkey_list:
+                dkey_list.append(base64.b64decode(dkey))
             if version != 1:
                 log.warning(f'WARNING: Key version {version} is unsupported. This may not work. Contact the author if you see this to add support for this version.')
         except ValueError as ex:
@@ -304,7 +306,7 @@ def read_obfuscation_map(obfuscation_map_path, map):
     return map
 
 
-def tokenized_replace(string, map, dkey):
+def tokenized_replace(string, map):
     output = ''
     tokens = ':\\.@%#&*|{}!?<>;:~()//"\''
     parts = []  # [ ('word', 1), (':', 0), ..] word=1, token=0
@@ -338,7 +340,7 @@ def tokenized_replace(string, map, dkey):
             output += part[0]
         else:  # word
             word = part[0]
-            decrypted_word = decrypt(word, dkey)
+            decrypted_word = decrypt(word)
             if decrypted_word:
                 output += decrypted_word
             elif word in map:
@@ -348,13 +350,13 @@ def tokenized_replace(string, map, dkey):
     return output
 
 
-def extract_strings(data, map, dkey):
+def extract_strings(data, map):
     extracted = []
     # for match in not_control_char_re.finditer(data): # This gets all unicode chars, can include lot of garbage if you only care about English, will miss out other languages
     for match in ascii_chars_re.finditer(data):  # Matches ONLY Ascii (old behavior) , good if you only care about English
         x = match.group().rstrip('\n').rstrip('\r')
         x.replace('\r', '').replace('\n', ' ')
-        x = tokenized_replace(x, map, dkey)
+        x = tokenized_replace(x, map)
         extracted.append(x)
 
     if len(extracted) == 0:
@@ -364,7 +366,7 @@ def extract_strings(data, map, dkey):
     return extracted
 
 
-def unobfucate_strings(data, map, dkey):
+def unobfucate_strings(data, map):
     params = []
     exclude = ['_len', 'unk']
 
@@ -373,7 +375,7 @@ def unobfucate_strings(data, map, dkey):
             continue
         if isinstance(value, bytes):
             value = value.decode('utf8', 'ignore')
-            value = tokenized_replace(value, map, dkey)
+            value = tokenized_replace(value, map)
         params.append(f'{key}={str(value)}')
 
     return params
@@ -382,10 +384,7 @@ def unobfucate_strings(data, map, dkey):
 def process_odl(filename, map):
     odl_rows = []
     basename = os.path.basename(filename)
-    try:
-        dkey = [dkey_dict[key] for key in dkey_dict if key in os.path.dirname(filename)][0]
-    except Exception:
-        dkey = ''
+
     try:
         f = open(filename, 'rb')
     except Exception as e:
@@ -411,7 +410,6 @@ def process_odl(filename, map):
                 all_data = f.read()
                 z = zlib.decompressobj(31)
                 file_data = z.decompress(all_data)
-#                file_data = gzip.decompress(f.read())
             except (zlib.error, OSError) as ex:
                 log.error(f'..decompression error for file {basename}. {ex}')
                 return pd.DataFrame()
@@ -476,7 +474,7 @@ def process_odl(filename, map):
                 f.seek(- params_len, io.SEEK_CUR)
             except Exception as e:
                 log.warning(f'Unable to parse {basename}. Something went wrong! {type(e).__name__}')
-                template = "An exception of type {0} occurred. Arguments:\n{1!r}"
+                # template = "An exception of type {0} occurred. Arguments:\n{1!r}"
                 return pd.DataFrame.from_records(odl_rows)
 
             if params_len:
@@ -486,9 +484,9 @@ def process_odl(filename, map):
                         params = structure(f.read(params_len))
                         if len(params) == 0:
                             f.seek(- params_len, 1)
-                            params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map, dkey)
+                            params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
                         else:
-                            params = unobfucate_strings(params, map, dkey)
+                            params = unobfucate_strings(params, map)
                             try:
                                 odl['Param1'] = params[0]
                                 odl['Param2'] = params[1]
@@ -510,9 +508,9 @@ def process_odl(filename, map):
                     except EOFError:
                         log.error(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
                         f.seek(- params_len, 1)
-                        params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map, dkey)
+                        params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
                 except AttributeError:
-                    params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map, dkey)
+                    params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
 
             else:
                 params = ''
@@ -537,7 +535,8 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
     for path, subdirs, files in os.walk(rootDir):
         filematch = ([os.path.join(path, file) for file in files if file.endswith(('.odl', '.odlgz', '.odlsent', '.aodl'))])
         obfuscation_map = ([os.path.join(path, file) for file in files if file == "ObfuscationStringMap.txt"])
-        keystore_file = (os.path.join(path, file) for file in files if file == "general.keystore")
+        keystore_file = (os.path.join(path, file) for file in files if "general.keystore" in file or "vault.keystore" in file)
+
         if filematch:
             filenames += filematch
         if obfuscation_map:
@@ -561,7 +560,7 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
             progress_gui(total, count, pb, value_label, status=f'Parsing log files for {key}. Please wait....')
         else:
             progress(count, total, status=f'Parsing log files for {key}. Please wait....')
-#        df_filtered = df.dropna(axis=1, how='all')
+
         df = pd.concat([df, log_df], ignore_index=True, axis=0)
 
     return df

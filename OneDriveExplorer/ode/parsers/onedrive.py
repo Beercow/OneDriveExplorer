@@ -24,7 +24,6 @@
 
 import os
 import hashlib
-import json
 import logging
 import pandas as pd
 from Registry import Registry
@@ -33,6 +32,7 @@ import ode.parsers.recbin
 log = logging.getLogger(__name__)
 
 find_deleted = ode.parsers.recbin.DeleteProcessor()
+
 
 class OneDriveParser:
     def __init__(self):
@@ -58,11 +58,18 @@ class OneDriveParser:
         reg_handle = Registry.Registry(reghive)
         int_keys = reg_handle.open('SOFTWARE\\SyncEngines\\Providers\\OneDrive')
         od_keys = reg_handle.open(f'SOFTWARE\\Microsoft\\OneDrive\\Accounts\\{account}\\Tenants')
+        ac_keys = reg_handle.open('SOFTWARE\\Microsoft\\OneDrive\\Accounts')
 
         df['MountPoint'] = ''
         for providers in int_keys.subkeys():
             df.loc[(df.resourceID == providers.name()), ['MountPoint']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
             df.loc[(df.scopeID == providers.name()), ['MountPoint']] = [x.value() for x in list(providers.values()) if x.name() == 'MountPoint'][0]
+
+        for x in [value for subkey in [acc2.values() for acc in ac_keys.subkeys() for acc2 in acc.subkeys() if acc2.name() == 'ScopeIdToMountPointPathCache'] for value in subkey]:
+            if x.value() is not None:
+                df.loc[df['resourceID'] == x.name(), 'MountPoint'] = x.value()
+                df.loc[df['scopeID'] == x.name(), 'MountPoint'] = x.value()
+
         try:
             reghive.seek(0)
         except Exception:
@@ -81,7 +88,6 @@ class OneDriveParser:
 
         return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
-
     def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
         if os.path.isdir(file_path):
             directory = file_path
@@ -93,21 +99,18 @@ class OneDriveParser:
         else:
             directory, filename = os.path.split(file_path)
             hash = self.hash_file(file_path)
+
         if reghive:
             try:
                 df, od_keys = self.parse_reg(reghive, account, df)
 
-                if recbin:
-                    rbin = find_deleted.find_deleted(recbin, od_keys, account, gui=gui, pb=pb, value_label=value_label)
-                    lrbin_df = pd.DataFrame.from_records(rbin)
-                    rbin_df = pd.concat([rbin_df, lrbin_df], ignore_index=True, axis=0)
-                
                 pb.stop()
                 pb.configure(mode='indeterminate')
                 value_label['text'] = 'Building folder list. Please wait....'
                 pb.start()
 
             except Exception as e:
+                reghive = False
                 log.warning(f'Unable to read registry hive! {e}')
                 pass
 
@@ -115,7 +118,7 @@ class OneDriveParser:
             df['MountPoint'] = df['MountPoint'].where(pd.notna(df['MountPoint']), '')
         except KeyError:
             df['MountPoint'] = ''
- 
+
         id_name_dict = {
             resource_id if resource_id is not None else df.at[index, 'scopeID']:
                 df.at[index, 'MountPoint'] if name is None else name if name is not None else ''
@@ -125,14 +128,13 @@ class OneDriveParser:
         parent_dict = {resource_id if resource_id is not None else df.at[index, 'scopeID']: '' if parent_id is None else parent_id
                        for resource_id, parent_id, index in zip(df['resourceID'], df['parentResourceID'], df.index)}
 
-
         if 'Path' in df.columns:
             df['Level'] = df['Path'].str.split('\\\\').str.len()
             convert = {'fileStatus': 'Int64',
                        'volumeID': 'Int64',
                        'sharedItem': 'Int64',
                        'folderStatus': 'Int64'
-                      }
+                       }
 
         else:
             df['Path'] = df.resourceID.apply(lambda x: self.find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
@@ -143,7 +145,19 @@ class OneDriveParser:
                        'itemIndex': 'Int64',
                        'sharedItem': 'Int64',
                        'folderStatus': 'Int64'
-                      }
+                       }
+
+        parent_resource_dict = df[(df['resourceID'].notnull()) & (df['Type'] == 'Folder')].set_index('resourceID').apply(lambda x: x['Path'] + '\\' + x['Name'], axis=1).to_dict()
+
+        for index, row in rbin_df.iterrows():
+            parent_resource_id = row['parentResourceId']
+            if parent_resource_id in parent_resource_dict:
+                rbin_df.at[index, 'Path'] = parent_resource_dict[parent_resource_id]
+
+        if reghive and recbin:
+            rbin = find_deleted.find_deleted(recbin, od_keys, account, rbin_df, gui=gui, pb=pb, value_label=value_label)
+            lrbin_df = pd.DataFrame.from_records(rbin)
+            rbin_df = pd.concat([rbin_df, lrbin_df], ignore_index=True, axis=0)
 
         df['FileSort'] = ''
         df['FolderSort'] = ''
@@ -158,24 +172,25 @@ class OneDriveParser:
 
         cache = {}
         final = []
+        dcache = {}
         is_del = []
-        
+
         if not df_GraphMetadata_Records.empty:
             df_GraphMetadata_Records.set_index('resourceID', inplace=True)
 
         for row in df.sort_values(
             by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
-            ascending=[False, False, False, True, False, False]).to_dict('records'):
+                ascending=[False, False, False, True, False, False]).to_dict('records'):
             if row['Type'] == 'File':
-                file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'HydrationTime', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
                 file.setdefault('Metadata', '')
-                
+
                 try:
                     metadata = df_GraphMetadata_Records.loc[row['resourceID']].to_dict()
 
                 except Exception:
                     metadata = None
-                
+
                 if metadata:
                     file['Metadata'] = metadata
 
@@ -186,19 +201,19 @@ class OneDriveParser:
                     if row['scopeID'] not in scopeID:
                         continue
                     scope = {key: row[key] for key in (
-                    'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions')}
+                             'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions')}
                     folder = cache.get(row['scopeID'], {})
                     temp = {**scope, **folder}
                     final.insert(0, temp)
                 else:
                     sub_folder = {key: row[key] for key in (
-                    'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
-                    'itemIndex')}
+                                  'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
+                                  'itemIndex')}
                     if row['resourceID'] in scopeID:
                         scopeID.remove(row['resourceID'])
                         for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):
                             scope = {key: s[key] for key in (
-                            'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath')}
+                                     'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath')}
                             scope['MountPoint'] = row['MountPoint']
                             scope['spoPermissions'] = s['spoPermissions']
                         folder = cache.get(row['resourceID'], {})
@@ -214,12 +229,17 @@ class OneDriveParser:
 
         if not rbin_df.empty:
             for row in rbin_df.to_dict('records'):
-                file = {key: row[key] for key in ('parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'size', 'hash', 'deletingProcess')}
+                file = {key: row[key] for key in ('parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'size', 'hash', 'deletingProcess')}
+
+                # Nesting of deleted items
+                # dfolder = dcache.setdefault(row['parentResourceId'], {})
+                # dfolder.setdefault('Files', []).append(file)
+
                 is_del.append(file)
 
             deleted = {'Type': 'Root Deleted',
                        'Children': ''
-                      }
+                       }
 
             deleted['Children'] = is_del
             final.append(deleted)
@@ -231,6 +251,7 @@ class OneDriveParser:
                  }
 
         cache['Data'] = final
+
         df_GraphMetadata_Records.reset_index(inplace=True)
 
         return cache, rbin_df

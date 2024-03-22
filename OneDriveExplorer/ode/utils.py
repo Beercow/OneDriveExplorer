@@ -134,9 +134,9 @@ def parse_reg(reghive, account, df):
 def find_parent(x, id_name_dict, parent_dict):
     value = parent_dict.get(x, None)
     if value is None:
-        return x # may need to change to ''
+        return x  # may need to change to ''
     else:
-        # Incase there is a id without name.
+        # In case there is a id without name.
         if id_name_dict.get(value, None) is None:
             return find_parent(value, id_name_dict, parent_dict) + x
 
@@ -194,3 +194,79 @@ def progress_gui(total, count, pb, value_label, status=False):
     if pb['value'] != 100:
         pb['value'] = round(100.0 * count / float(total), 1)
         value_label['text'] = f"{status} {pb['value']}%"
+
+
+def permissions(_):
+    perstr = []
+    # Lists and Documents
+    if _ & 0x0:
+        perstr.append("EmptyMask")
+    if _ & 0x1:
+        perstr.append("ViewListItems")
+    if _ & 0x2:
+        perstr.append("AddListItems")
+    if _ & 0x4:
+        perstr.append("EditListItems")
+    if _ & 0x8:
+        perstr.append("DeleteListItems")
+    if _ & 0x10:
+        perstr.append("ApproveItems")
+    if _ & 0x20:
+        perstr.append("OpenItems")
+    if _ & 0x40:
+        perstr.append("ViewVersions")
+    if _ & 0x80:
+        perstr.append("DeleteVersions")
+    if _ & 0x100:
+        perstr.append("OverrideListBehaviors")
+    if _ & 0x200:
+        perstr.append("ManagePersonalViews")
+    if _ & 0x800:
+        perstr.append("ManageLists")
+    if _ & 0x1000:
+        perstr.append("ViewApplicationPages")
+    # Web Level
+    if _ & 0x10000:
+        perstr.append("Open")
+    if _ & 0x20000:
+        perstr.append("ViewPages")
+    if _ & 0x40000:
+        perstr.append("AddAndCustomizePages")
+    if _ & 0x80000:
+        perstr.append("ApplyThemAndBorder")
+    if _ & 0x100000:
+        perstr.append("ApplyStyleSheets")
+    if _ & 0x200000:
+        perstr.append("ViewAnalyticsData")
+    if _ & 0x400000:
+        perstr.append("UseSSCSiteCreation")
+    if _ & 0x800000:
+        perstr.append("CreateSubsite")
+    if _ & 0x1000000:
+        perstr.append("CreateGroups")
+    if _ & 0x2000000:
+        perstr.append("ManagePermissions")
+    if _ & 0x4000000:
+        perstr.append("BrowseDirectories")
+    if _ & 0x8000000:
+        perstr.append("BrowseUserInfo")
+    if _ & 0x10000000:
+        perstr.append("AddDelPersonalWebParts")
+    if _ & 0x20000000:
+        perstr.append("UpdatePersonalWebParts")
+    if _ & 0x40000000:
+        perstr.append("ManageWeb")
+    if _ & 0x1000000000:
+        perstr.append("UseClientIntegration")
+    if _ & 0x2000000000:
+        perstr.append("UseRemoteInterfaces")
+    if _ & 0x4000000000:
+        perstr.append("ManageAlerts")
+    if _ & 0x8000000000:
+        perstr.append("CreateAlerts")
+    if _ & 0x10000000000:
+        perstr.append("EditPersonalUserInformation")
+    # Special Permissions
+    if _ & 0x4000000000000000:
+        perstr.append("EnumeratePermissions")
+    return perstr

@@ -28,7 +28,7 @@ import tkinter.font as tkFont
 import numpy as np
 from pandastable import Table
 from pandastable.data import TableModel
-from pandastable.headers import ColumnHeader, RowHeader
+from pandastable.headers import ColumnHeader
 
 
 root = ''
@@ -100,7 +100,7 @@ def Myhandle_right_click(self, event):
 # Custom column header popup
 ColumnHeader.popupMenu = MypopupMenu
 # disables row header popup
-RowHeader.handle_right_click = Myhandle_right_click
+# RowHeader.handle_right_click = Myhandle_right_click
 
 
 class MyTable(Table):
@@ -146,7 +146,7 @@ class MyTable(Table):
         self.bind("<Control-c>", self.copy)
         # self.bind("<Control-x>", self.deleteRow)
         # self.bind_all("<Control-n>", self.addRow)
-        self.bind("<Delete>", self.clearData)
+        # self.bind("<Delete>", self.clearData)
         self.bind("<Control-v>", self.paste)
         self.bind("<Control-a>", self.selectAll)
         # self.bind("<Control-f>", self.findText)

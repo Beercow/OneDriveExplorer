@@ -40,12 +40,13 @@ def load_project(zip_name, df_GraphMetadata_Records, q, stop_event, tv, file_ite
             filenames = archive.namelist()
             pb.configure(mode='determinate')
             pb.start()
-        
+
             for filename in filenames:
                 with archive.open(filename) as data:
                     arc_name = archive.filename.split('/')[-1]
                     log.info(f'Importing {filename} from {arc_name} project.')
                     detach_items = ['fileStatus', 'inRecycleBin']
+
                     if '_OneDrive.csv' in filename:
                         value_label['text'] = "Gathering metadata. Pleas wait..."
                         count = 0
@@ -54,14 +55,15 @@ def load_project(zip_name, df_GraphMetadata_Records, q, stop_event, tv, file_ite
                         df.fillna('', inplace=True)
                         df_column = df['meta'].apply(lambda x: ast.literal_eval(x) if pd.notna(x) and x.strip() != "" else None).apply(pd.Series)
                         df_Temp = pd.DataFrame(df_column)
-                        df_GraphMetadata_Records = pd.concat([df_GraphMetadata_Records, df_Temp], ignore_index=True, axis=0).drop_duplicates(subset='resourceID')
+                        df_GraphMetadata_Records = pd.concat([df_GraphMetadata_Records.astype(df_Temp.dtypes), df_Temp.astype(df_GraphMetadata_Records.dtypes)], ignore_index=True, axis=0).drop_duplicates(subset='resourceID')
                         df_GraphMetadata_Records.dropna(inplace=True)
                         total = len(df)
+
                         for row in df.to_dict('records'):
-                            count +=1
+                            count += 1
                             try:
                                 tags = ast.literal_eval(row['tags'])
-                            except:
+                            except Exception:
                                 tags = row['tags']
                             try:
                                 tv.insert(row['parent'], row['index'], iid=row['iid'], text=row['text'], image=ast.literal_eval(row['image'])[0], values=tuple(ast.literal_eval(row['values'])), open=row['open'], tags=tags)
@@ -72,7 +74,6 @@ def load_project(zip_name, df_GraphMetadata_Records, q, stop_event, tv, file_ite
                             if any(any(detach_item in sub for sub in tv.item(row['iid'])["values"]) for detach_item in detach_items):
                                 file_items[row['parent']].append(row['iid'])
                                 tv.detach(row['iid'])
-                        
                             if count % 20 == 0:
                                 progress_gui(total, count, pb, value_label, status=f'Importing {filename} from {arc_name} project.')
 
@@ -99,11 +100,13 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
     def find_children(count, item=''):
         children = tv.get_children(item)
         pattern = r'resourceID: |resourceId: '
+
         for child in children:
             count += 1
             row = [tv.parent(child), 'end', child]
             row.extend(list(tv.item(child).values()))
             csvwriter.writerow(row)
+
             if child in file_items:
                 for i in file_items[child]:
                     count += 1
@@ -114,8 +117,10 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
                     row.extend(df_result.to_dict(orient='records'))
                     csvwriter.writerow(row)
                     progress_gui(total, count, pb, value_label, status=f'Saving {filename} to {zip_name.split("/")[-1]}.')
+
             progress_gui(total, count, pb, value_label, status=f'Saving {filename} to {zip_name.split("/")[-1]}.')
             count = find_children(count, item=child)
+
         return count
 
     def get_total_items(tree, item):
@@ -134,7 +139,7 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
     total = get_total_items(tv, "")
     total += sum(len(value) for value in file_items.values())
     count = 0
-    
+
     pb.configure(mode='determinate')
     pb.start()
 
@@ -143,6 +148,7 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
             file_count = 1
             string_buffer = StringIO()
             d = tv.get_children()
+
             for i in d:
                 filename = f"{tv.item(i)['text'].split('.')[0][1:]}_OneDrive.csv"
 
@@ -163,7 +169,7 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
 
             pb.configure(mode='indeterminate')
             pb.start()
-            
+
             for key, value in user_logs.items():
                 value_label['text'] = f"Saving {key} to {zip_name}. Please wait...."
                 log.info(f'Saving {key} to {zip_name}.')

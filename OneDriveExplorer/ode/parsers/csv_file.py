@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 def parse_csv(filename):
 
     file = open(filename.name, 'r', encoding='utf-8')
-    columns_to_drop = ['parentResourceId', 'resourceId', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'hash']
-    
+    columns_to_drop = ['parentResourceId', 'resourceId', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'hash']
+
     dtypes = {'Type': 'object',
               'scopeID': 'object',
               'siteID': 'object',
@@ -59,42 +59,51 @@ def parse_csv(filename):
               'parentScopeID': 'object',
               'folderStatus': 'Int64',
               'Path': 'object'
-             }
+              }
 
     try:
-        csv_name = (filename.name).replace('/', '\\')
+        csv_name = filename.name.replace('/', '\\')
     except AttributeError:
         csv_name = ''
+
     log.info(f'Started parsing {csv_name}')
 
     try:
         df = pd.read_csv(file, low_memory=False, quotechar='"', dtype=dtypes)
-        df_scope = df.loc[df['Type'] == 'Scope', ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'spoPermissions', 'libraryType']]
+        df_scope = df.loc[df['Type'] == 'Scope',
+                          ['Type', 'scopeID', 'siteID', 'webID', 'listID',
+                           'tenantID', 'webURL', 'remotePath', 'spoPermissions',
+                           'libraryType']]
         columns_to_fill = df_scope.columns.difference(['libraryType'])
         df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
         scopeID = df_scope['scopeID'].tolist()
+
         if 'inRecycleBin' in df.columns:
             convert = {'fileId': 'Int64',
                        'inRecycleBin': 'Int64'
-                      }
+                       }
             df = df.astype(convert)
-            rbin_df = df.loc[df['Type'] == 'Deleted', ['Type', 'parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'size', 'hash', 'deletingProcess']]
+            rbin_df = df.loc[df['Type'] == 'Deleted',
+                             ['Type', 'parentResourceId', 'resourceId', 'eTag',
+                              'Path', 'Name', 'inRecycleBin', 'volumeId',
+                              'fileId', 'DeleteTimeStamp', 'notificationTime', 'size', 'hash',
+                              'deletingProcess']]
             rbin_df = rbin_df.astype(object)
             rbin_df = rbin_df.where(pd.notna(rbin_df), '')
             df = df.drop(df[df['Type'] == 'Deleteed'].index)
             df.drop(columns=columns_to_drop, inplace=True)
         else:
             rbin_df = pd.DataFrame()
-        
-        df_GraphMetadata_Records = df.loc[(df['Type'] == 'File') & df['fileName'].notna(), 
-                                          ['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID', 
+
+        df_GraphMetadata_Records = df.loc[(df['Type'] == 'File') & df['fileName'].notna(),
+                                          ['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID',
                                            'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount']]
-        
+
         if not df_GraphMetadata_Records.empty:
             json_columns = ['graphMetadataJSON', 'filePolicies']
             df_GraphMetadata_Records[json_columns] = df_GraphMetadata_Records[json_columns].map(lambda x: ast.literal_eval(x) if pd.notna(x) and x.strip() else '')
             df_GraphMetadata_Records['lastWriteCount'] = df_GraphMetadata_Records['lastWriteCount'].astype('Int64')
-        
+
         df = df.astype(object)
         df = df.where(pd.notna(df), None)
 

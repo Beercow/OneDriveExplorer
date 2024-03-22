@@ -27,7 +27,7 @@ import struct
 import hashlib
 import quickxorhash
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from ode.utils import progress, progress_gui
 
@@ -64,11 +64,36 @@ class DeleteProcessor:
             sha1_digest = sha1.hexdigest()
             quick_xor_digest = base64.b64encode(quick_xor_hash.digest()).decode("utf-8")
 
-            return [f'SHA1({sha1_digest})', f'quickXor({quick_xor_digest})']
-        except Exception:
-            return ['', '']
+            return [f'SHA1({sha1_digest})', f'quickXor({quick_xor_digest})', '2']
 
-    def get_file_metadata(self, i_name, files, od_keys, account):
+        except PermissionError:
+            return ['', '', '2']
+
+        except Exception:
+            return ['', '', '']
+
+    def if_exists(self, path, name, delete_time_stamp, rbin_df):
+        test_date = datetime.strptime(self.from_unix_sec(delete_time_stamp), '%Y-%m-%d %H:%M:%S')
+
+        for index, row in rbin_df.iterrows():
+            try:
+                test_path = row.get('Path', '').split('\\', 1)[1]
+            except IndexError:
+                test_path = row.get('Name', '')
+
+            if path.endswith(test_path) and row.get('Name') == name:
+                delete_timestamp = datetime.strptime(row.get('notificationTime'), '%Y-%m-%d %H:%M:%S')
+                if delete_timestamp - timedelta(seconds=1) <= test_date <= delete_timestamp + timedelta(seconds=1):
+                    return index
+
+            if test_path.endswith(name):
+                delete_timestamp = datetime.strptime(row.get('notificationTime'), '%Y-%m-%d %H:%M:%S')
+                if delete_timestamp - timedelta(seconds=1) <= test_date <= delete_timestamp + timedelta(seconds=1):
+                    return index
+
+        return -1
+
+    def get_file_metadata(self, i_name, files, od_keys, account, rbin_df):
         with open(i_name, "rb") as file:
             file_record = file.read()
 
@@ -88,32 +113,19 @@ class DeleteProcessor:
 
         for acc in od_keys.subkeys():
             if any(f'{x.name()}\\' in file_name for x in list(acc.values())):
-                if len(files) != 0:
-                    for file in files:
-                        hash_func = self.hash_file(f'{i_name.replace("$I", "$R")}{file}')[0] if account == 'Personal' else \
-                            self.hash_file(f'{i_name.replace("$I", "$R")}{file}')[1]
-                        file_size = os.stat(f'{i_name.replace("$I", "$R")}{file}')
-                        name = file.split('\\')[-1]
-                        path = file.rsplit('\\', 1)[0]
-                        input_data = {
-                            'Type': 'Deleted',
-                            'parentResourceId': '',
-                            'resourceId': '',
-                            'eTag': '',
-                            'Path': f'{file_name}{path}',
-                            'Name': name,
-                            'inRecycleBin': '2',
-                            'volumeId': '',
-                            'fileId': '',
-                            'DeleteTimeStamp': self.from_unix_sec(delete_time_stamp),
-                            'size': f'{file_size.st_size // 1024 + 1} KB',
-                            'hash': hash_func,
-                            'deletingProcess': ''
-                        }
-                        yield input_data
+                full_file_path = f'{i_name.replace("$I", "$R")}'
+                parentResourceId = ''
+                get_hash = self.hash_file(full_file_path)
+                hash_func = get_hash[0] if account == 'Personal' else get_hash[1]
+                index = self.if_exists(path, name, delete_time_stamp, rbin_df)
+
+                if index >= 0:
+                    rbin_df.at[index, 'inRecycleBin'] = get_hash[2]
+                    rbin_df.at[index, 'DeleteTimeStamp'] = self.from_unix_sec(delete_time_stamp)
+                    rbin_df.at[index, 'size'] = file_size
+                    rbin_df.at[index, 'hash'] = hash_func
+                    parentResourceId = rbin_df.at[index, 'resourceId']
                 else:
-                    hash_func = self.hash_file(f'{i_name.replace("$I", "$R")}')[0] if account == 'Personal' else \
-                        self.hash_file(f'{i_name.replace("$I", "$R")}')[1]
                     input_data = {
                         'Type': 'Deleted',
                         'parentResourceId': '',
@@ -121,17 +133,53 @@ class DeleteProcessor:
                         'eTag': '',
                         'Path': f'{path}',
                         'Name': name,
-                        'inRecycleBin': '2',
+                        'inRecycleBin': get_hash[2],
                         'volumeId': '',
                         'fileId': '',
                         'DeleteTimeStamp': self.from_unix_sec(delete_time_stamp),
+                        'notificationTime': '',
                         'size': file_size,
                         'hash': hash_func,
                         'deletingProcess': ''
                     }
                     yield input_data
 
-    def find_deleted(self, recbin, od_keys, account, gui=False, pb=False, value_label=False):
+                if files:
+                    for file in files:
+                        full_file_path = f'{i_name.replace("$I", "$R")}{file}'
+                        get_hash = self.hash_file(full_file_path)
+                        hash_func = get_hash[0] if account == 'Personal' else get_hash[1]
+                        file_stat = os.stat(full_file_path)
+                        name = file.split('\\')[-1]
+                        path = file.rsplit('\\', 1)[0]
+                        index = self.if_exists(f'{file_name}{path}', name, delete_time_stamp, rbin_df)
+
+                        if index >= 0:
+                            rbin_df.at[index, 'inRecycleBin'] = get_hash[2]
+                            rbin_df.at[index, 'DeleteTimeStamp'] = self.from_unix_sec(delete_time_stamp)
+                            rbin_df.at[index, 'size'] = f'{file_stat.st_size // 1024 + 1} KB'
+                            rbin_df.at[index, 'hash'] = hash_func
+
+                        else:
+                            input_data = {
+                                'Type': 'Deleted',
+                                'parentResourceId': parentResourceId,
+                                'resourceId': '',
+                                'eTag': '',
+                                'Path': f'{file_name}{path}',
+                                'Name': name,
+                                'inRecycleBin': get_hash[2],
+                                'volumeId': '',
+                                'fileId': '',
+                                'DeleteTimeStamp': self.from_unix_sec(delete_time_stamp),
+                                'notificationTime': '',
+                                'size': f'{file_stat.st_size // 1024 + 1} KB',
+                                'hash': hash_func,
+                                'deletingProcess': ''
+                            }
+                            yield input_data
+
+    def find_deleted(self, recbin, od_keys, account, rbin_df, gui=False, pb=False, value_label=False):
         recbin = recbin.replace('/', '\\')
         log.info(f'Started parsing {recbin}')
 
@@ -140,11 +188,11 @@ class DeleteProcessor:
         for path, subdirs, files in os.walk(recbin):
             for name in files:
                 if "$I" in name:
-                    index = name[2:]
-                    file_info.setdefault(name, {'iname': os.path.join(path, name), 'files': []})
+                    file_info.setdefault(name, {'iname': os.path.join(path, name), 'files': [], 'folders': []})
 
             for x in file_info.keys():
                 if x[2:] in path:
+#                    file_info[x]['folders'].append(path.split(x[2:])[-1])
                     for name in files:
                         file_info[x]['files'].append(os.path.join(path, name).split(x[2:])[-1])
 
@@ -160,7 +208,7 @@ class DeleteProcessor:
             iname = value.get('iname', '')
             filenames = value.get('files', [])
 
-            match = self.get_file_metadata(iname, filenames, od_keys, account)
+            match = self.get_file_metadata(iname, filenames, od_keys, account, rbin_df)
             if match:
                 deleted_items.extend(match)
 

@@ -40,12 +40,12 @@ def print_csv(df, rbin_df, df_GraphMetadata_Records, name, csv_path, csv_name=Fa
                'itemIndex': 'Int64',
                'sharedItem': 'Int64',
                'folderStatus': 'Int64'
-              }
+               }
 
     df = df.astype(convert)
 
     df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
-            ascending=[False, False, False, True, False, False])
+                        ascending=[False, False, False, True, False, False])
 
     df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
 
@@ -53,7 +53,7 @@ def print_csv(df, rbin_df, df_GraphMetadata_Records, name, csv_path, csv_name=Fa
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
     merged_df = pd.merge(df, df_GraphMetadata_Records, on='resourceID', how='left', suffixes=('_df1', '_GraphMetadata_Records'))
-    
+
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
 
     if csv_name:

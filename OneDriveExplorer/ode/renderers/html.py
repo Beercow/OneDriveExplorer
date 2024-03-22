@@ -36,7 +36,7 @@ def print_html(df, rbin_df, name, html_path):
         os.makedirs(html_path)
 
     df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
-            ascending=[False, False, False, True, False, False])
+                        ascending=[False, False, False, True, False, False])
 
     df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
 

@@ -23,19 +23,19 @@
 #
 
 import os
-import sys
 import logging
 import codecs
 import csv
 from io import StringIO
 import binascii
-import json
 import urllib.parse
-import sqlite3
 from dissect import cstruct
 import pandas as pd
 import numpy as np
-from ode.utils import progress, progress_gui
+from ode.utils import progress, progress_gui, permissions
+
+log = logging.getLogger(__name__)
+
 
 class DATParser:
     def __init__(self):
@@ -44,17 +44,66 @@ class DATParser:
         self.datstruct = cstruct.cstruct()
         self.DAT_DEF = f'{self.application_path}/ode/helpers/structures'
         self.datstruct.loadfile(self.DAT_DEF)
-        self.dict_1 = {'lastChange': 0, 'sharedItem': 0, 'mediaDateTaken': 0, 'mediaWidth': 0, 'mediaHeight': 0, 'mediaDuration': 0}
-        self.dict_2 = {'mediaDateTaken': 0, 'mediaWidth': 0, 'mediaHeight': 0, 'mediaDuration': 0}
+        self.dict_1 = {'lastChange': 0,
+                       'sharedItem': 0,
+                       'mediaDateTaken': 0,
+                       'mediaWidth': 0,
+                       'mediaHeight': 0,
+                       'mediaDuration': 0
+                       }
+        self.dict_2 = {'mediaDateTaken': 0,
+                       'mediaWidth': 0,
+                       'mediaHeight': 0,
+                       'mediaDuration': 0
+                       }
         self.dict_3 = {'mediaDuration': 0}
         self.int_to_bin = ['bitMask']
-        self.int_to_hex = ['header', 'entry_offset']
-        self.bytes_to_str = ['eTag', 'listID', 'scopeID', 'siteID', 'webID', 'syncTokenData']
-        self.bytes_to_hex = ['localHashDigest', 'serverHashDigest', 'localWaterlineData', 'localWriteValidationToken', 'localSyncTokenData', 'localCobaltHashAlgorithm']
-        self.int_to_date = ['lastChange', 'serverLastChange', 'mediaDateTaken']
-        self.split_str = ['fileName', 'folderName']
-        self.id_format = ['resourceID', 'parentResourceID', 'parentScopeID', 'scopeID', 'sourceResourceID']
-        self.rem_list = ['header', 'entry_offset', 'unknown1', 'unknown2', 'unknown3', 'flags', 'unknown4', 'unknown5', 'unknown6', 'syncTokenData', 'syncTokenData_size', 'unknown7', 'shortcutVolumeID', 'shortcutItemIndex', 'sourceResourceID']
+        self.int_to_hex = ['header',
+                           'entry_offset'
+                           ]
+        self.bytes_to_str = ['eTag',
+                             'listID',
+                             'scopeID',
+                             'siteID',
+                             'webID',
+                             'syncTokenData'
+                             ]
+        self.bytes_to_hex = ['localHashDigest',
+                             'serverHashDigest',
+                             'localWaterlineData',
+                             'localWriteValidationToken',
+                             'localSyncTokenData',
+                             'localCobaltHashAlgorithm'
+                             ]
+        self.int_to_date = ['lastChange',
+                            'serverLastChange',
+                            'mediaDateTaken'
+                            ]
+        self.split_str = ['fileName',
+                          'folderName'
+                          ]
+        self.id_format = ['resourceID',
+                          'parentResourceID',
+                          'parentScopeID',
+                          'scopeID',
+                          'sourceResourceID'
+                          ]
+        self.rem_list = ['header',
+                         'entry_offset',
+                         'unknown1',
+                         'unknown2',
+                         'unknown3',
+                         'flags',
+                         'unknown4',
+                         'unknown5',
+                         'unknown6',
+                         'syncTokenData',
+                         'syncTokenData_size',
+                         'unknown7',
+                         'shortcutVolumeID',
+                         'shortcutItemIndex',
+                         'sourceResourceID'
+                         ]
 
     def format_id(self, _):
         f = _[:32].decode("utf-8")
@@ -68,68 +117,6 @@ class DATParser:
             dict_1[k] = v
         return dict_1
 
-    def permissions(self, _):
-        perstr = []
-        # Lists and Documents
-        if _ & 0x0:
-            perstr.append("EmptyMask")
-        if _ & 0x1:
-            perstr.append("ViewListItems")
-        if _ & 0x2:
-            perstr.append("AddListItems")
-        if _ & 0x4:
-            perstr.append("EditListItems")
-        if _ & 0x8:
-            perstr.append("DeleteListItems")
-        if _ & 0x10:
-            perstr.append("ApproveItems")
-        if _ & 0x20:
-            perstr.append("OpenItems")
-        if _ & 0x40:
-            perstr.append("ViewVersions")
-        if _ & 0x80:
-            perstr.append("DeleteVersions")
-        if _ & 0x100:
-            perstr.append("OverrideListBehaviors")
-        if _ & 0x200:
-            perstr.append("ManagePersonalViews")
-        if _ & 0x400:
-            perstr.append("ManageLists")
-        if _ & 0x800:
-            perstr.append("ViewApplicationPages")
-        # Web Level
-        if _ & 0x1000:
-            perstr.append("Open")
-        if _ & 0x2000:
-            perstr.append("ViewPages")
-        if _ & 0x4000:
-            perstr.append("AddAndCustomizePages")
-        if _ & 0x8000:
-            perstr.append("ApplyThemAndBorder")
-        if _ & 0x10000:
-            perstr.append("ApplyStyleSheets")
-        if _ & 0x20000:
-            perstr.append("ViewAnalyticsData")
-        if _ & 0x40000:
-            perstr.append("UseSSCSiteCreation")
-        if _ & 0x80000:
-            perstr.append("CreateSubsite")
-        if _ & 0x100000:
-            perstr.append("CreateGroups")
-        if _ & 0x200000:
-            perstr.append("ManagePermissions")
-        if _ & 0x400000:
-            perstr.append("BrowseDirectories")
-        if _ & 0x800000:
-            perstr.append("BrowseUserInfo")
-        if _ & 0x1000000:
-            perstr.append("AddDelPersonalWebParts")
-        if _ & 0x2000000:
-            perstr.append("UpdatePersonalWebParts")
-        if _ & 0x4000000:
-            perstr.append("ManageWeb")
-        return perstr
-
     def find_parent(self, x, id_name_dict, parent_dict):
         value = parent_dict.get(x, None)
         if x is None:
@@ -142,7 +129,6 @@ class DATParser:
                 return self.find_parent(value, id_name_dict, parent_dict) + x
         return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
-
     def parse_dat(self, usercid, account='Business', gui=False, pb=False, value_label=False):
         usercid = (usercid).replace('/', '\\')
         self.scope_header = False
@@ -151,7 +137,7 @@ class DATParser:
         temp_scope = StringIO()
         temp_files = StringIO()
         temp_folders = StringIO()
-        
+
         self.log.info(f'Start parsing {usercid}.')
 
         try:
@@ -192,7 +178,7 @@ class DATParser:
                     #define VAULT_CONSTANT   352
                     #define ASCOPE_CONSTANT  208
                     """)
-    
+
                 elif version == '2b':
                     chunk = 1080
                     self.datstruct.load("""
@@ -398,7 +384,7 @@ class DATParser:
                         for key in self.rem_list:
                             try:
                                 del block._values[key]
-                            except:
+                            except Exception:
                                 continue
 
                     elif ff == '0a':
@@ -407,7 +393,7 @@ class DATParser:
                         for key in self.rem_list:
                             try:
                                 del block._values[key]
-                            except:
+                            except Exception:
                                 continue
                         block._values.update([('siteID', b''), ('webID', b'')])
                         block._values.move_to_end('listID', last=True)
@@ -419,7 +405,7 @@ class DATParser:
                         for key in self.rem_list:
                             try:
                                 del block._values[key]
-                            except:
+                            except Exception:
                                 continue
                         block._values.update([('siteID', b''), ('webID', b''), ('listID', b''), ('libraryType', b''), ('spoPermissions', '')])
 
@@ -429,7 +415,7 @@ class DATParser:
                         for key in self.rem_list:
                             try:
                                 del block._values[key]
-                            except:
+                            except Exception:
                                 continue
 
                     else:
@@ -477,7 +463,7 @@ class DATParser:
                             self.scope_header = True
 
                     csvwriter.writerow(block._values.values())
-                
+
                     if count % 30 == 0:
                         if gui:
                             progress_gui(total, count, pb, value_label, status='Building folder list. Please wait....')
@@ -485,13 +471,13 @@ class DATParser:
                             progress(count, total, status='Building folder list. Please wait....')
 
         except Exception as e:
-            #log.error(e)
+            # log.error(e)
             print(e)
             return pd.DataFrame, usercid
 
         if not gui:
             print('\n')
-                    
+
         temp_scope.seek(0)
         temp_files.seek(0)
         temp_folders.seek(0)
@@ -504,38 +490,39 @@ class DATParser:
         df_scope.insert(7, 'remotePath', '')
         df_scope = df_scope.astype(object)
         df_scope['spoPermissions'].replace('', np.nan, inplace=True)
-        df_scope['spoPermissions']= df_scope['spoPermissions'].fillna(0).astype('int')
-        df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: self.permissions(x))
+        df_scope['spoPermissions'] = df_scope['spoPermissions'].fillna(0).astype('int')
+        df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: permissions(x))
         df_scope.fillna('', inplace=True)
         scopeID = df_scope['scopeID'].tolist()
 
         df_files = pd.read_csv(temp_files, usecols=['parentResourceID', 'resourceID', 'eTag', 'fileName', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'mediaDateTaken', 'mediaWidth', 'mediaHeight', 'mediaDuration'])
         temp_files.close()
+        df_files['HydrationTime'] = ''
         df_files.rename(columns={"fileName": "Name",
                                  "mediaDateTaken": "DateTaken",
                                  "mediaWidth": "Width",
                                  "mediaHeight": "Height",
                                  "mediaDuration": "Duration"
-                                }, inplace=True)
+                                 }, inplace=True)
         df_files['DateTaken'] = pd.to_datetime(df_files['DateTaken'], unit='s').astype(str)
         columns = ['DateTaken', 'Width', 'Height', 'Duration']
-        df_files['Media'] = df_files[columns].to_dict(orient='records') 
+        df_files['Media'] = df_files[columns].to_dict(orient='records')
         df_files = df_files.drop(columns=columns)
         if account == 'Personal':
             df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'SHA1({x})')
         else:
             df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'quickXor({codecs.encode(binascii.unhexlify(x), "base64").decode("utf-8").rstrip()})')
         df_files['size'] = df_files['size'].apply(lambda x: f'{x//1024 + 1:,} KB')
-        df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: self.permissions(x))
+        df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
         df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
         df_files.insert(0, 'Type', 'File')
 
         df_folders = pd.read_csv(temp_folders, usecols=['parentScopeID', 'parentResourceID', 'resourceID', 'eTag', 'folderName', 'folderStatus', 'spoPermissions', 'volumeID', 'itemIndex'])
         temp_folders.close()
         df_folders.rename(columns={"folderName": "Name"}, inplace=True)
-        df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: self.permissions(x))
+        df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
         df_folders.insert(0, 'Type', 'Folder')
         df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
         df = df.where(pd.notnull(df), None)
-    
+
         return df, pd.DataFrame(), df_scope, scopeID

@@ -101,7 +101,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2023.12.13"
+__version__ = "2024.03.22"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -118,7 +118,7 @@ cstruct_df = ''
 v = Validator()
 file_items = defaultdict(list)
 dfs_to_concat = []
-df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID', 
+df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID',
                                                  'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount'])
 
 if getattr(sys, 'frozen', False):
@@ -324,7 +324,7 @@ class Preferences:
 
     def create_path_entry(self):
         self.label = ttk.Label(self.path_frame, text="Auto Save Path")
-        self.save_path = ttk.Entry(self.path_frame, width=30, textvariable= self.auto_path, exportselection=0)
+        self.save_path = ttk.Entry(self.path_frame, width=30, textvariable=self.auto_path, exportselection=0)
         self.btn = ttk.Button(self.path_frame, text='...', width=3, takefocus=False, command=self.select_dir)
 
         self.label.grid(row=0, column=0, padx=5, sticky="w")
@@ -662,7 +662,6 @@ class Messages:
             self.pb.start()
             self.show_export_status()
 
-            ids = self.tree.get_children()
             excel_name = self.generate_excel_name(path)
 
             try:
@@ -724,7 +723,7 @@ class Messages:
         data = log_capture_string.getvalue().split('\n')
 
         for m in data:
-            m = m.split(', ', 2)
+            m = m.replace('\x00', '').split(', ', 2)
             try:
                 if m[1] == 'INFO':
                     image = minfo_img
@@ -748,8 +747,11 @@ class Messages:
         self.tb.delete('1.0', tk.END)
         curItem = self.tree.selection()
         values = self.tree.item(curItem, 'values')
-        self.tb.insert(tk.END,
-                       re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
+        try:
+            self.tb.insert(tk.END,
+                           re.sub("(.{87})", "\\1\n", values[2], 0, re.DOTALL))
+        except IndexError:
+            pass
         self.tb.config(state='disable')
 
     def sync_windows(self, event=None):
@@ -920,8 +922,7 @@ class CStructs:
         self.btn = ttk.Button(self.bottom_frame, text="Add'l. Info", takefocus=False, command=self.more_info)
 
     def close_plugins(self):
-        # Implement close_plugins logic here
-        pass
+        self.win.destroy()
 
     def disable_widgets(self):
         self.btn.configure(state='disabled')
@@ -1064,9 +1065,6 @@ class CStructs:
         x = self.root.winfo_x()
         y = self.root.winfo_y()
         window.geometry("+%d+%d" % (x, y))
-
-    def close_plugins(self):
-        self.win.destroy()
 
 
 class Help:
@@ -1352,8 +1350,11 @@ class Result:
 
             for num in ['2', '5', '6', '7', '8', '1']:
                 if num in self.args[0][7]:
-                    self.status.append(self.get_status_image(num))
-                if num in self.args[0][12]:
+                    if isinstance(self.get_status_image(num), tuple):
+                        self.status.extend(self.get_status_image(num))
+                    else:
+                        self.status.append(self.get_status_image(num))
+                if num in self.args[0][13]:
                     self.status.append(self.get_status_image(num))
 
     def get_status_image(self, num):
@@ -1362,7 +1363,7 @@ class Result:
             '2': available_big_img,
             '5': excluded_big_img,
             '6': not_sync_big_img,
-            '7': not_lync_big_img,
+            '7': (not_lync_big_img, online_not_link_big_img),
             '8': online_big_img,
             '9': sync_big_img,
             '10': not_sync_big_img,
@@ -1405,6 +1406,7 @@ class PopupManager:
         self.details_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/language_window.png'))
         self.exp_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/hierarchy1_expanded.png'))
         self.col_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/hierarchy1.png'))
+        self.log_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/table_new.png'))
 
     def do_popup(self, event):
         try:
@@ -1464,6 +1466,15 @@ class PopupManager:
                     popup.entryconfig("Collapse folders", state='normal')
                 else:
                     popup.entryconfig("Collapse folders", state='disable')
+            le = None
+            for item in infoFrame.winfo_children():
+                if '.!notebook.!frame.!mytable' in str(item):
+                    le = item
+            if le:
+                copymenu.add_command(label="Log Entries",
+                                     image=self.log_img,
+                                     compound='left', command=lambda: le.doExport())
+
             popup.tk_popup(event.x_root, event.y_root)
         except IndexError:
             pass
@@ -1562,6 +1573,12 @@ class ToolTipManager:
                 self.current_tab = event.widget.tab(index, 'text')
                 if event.widget.tab(index, 'text') == 'Details':
                     text = 'Details\n  Displays detailed information of the file/folder selected.'
+                elif event.widget.tab(index, 'text') == 'Metadata':
+                    text = 'Metadata\n  Displays metadata information of the file selected.\n  Created by, modified by, etc...'
+                elif event.widget.tab(index, 'text') == 'MetadataJSON':
+                    text = 'MetadataJSON\n  Displays metadata information of image/audio/video\n  file selected.'
+                elif event.widget.tab(index, 'text') == 'filePolicies':
+                    text = 'filePolicies\n  Displays policy information applied to the file selected.'
                 elif event.widget.tab(index, 'text') == 'Log Entries':
                     text = 'Log Entries\n  Displays related logs to the file/folder selected. This\n  will only be populated if OneDrive logs are parsed\n  along with the <userCid>.dat file.'
                 elif event.widget.tab(index, 'text') == 'OneDrive Folders  ':
@@ -1700,10 +1717,14 @@ class FileManager:
         cur_item = event.widget.selection()
         values = list(event.widget.item(cur_item, 'values'))
         if not any(('folderStatus:' in item or 'webURL:' in item) for item in values):
-            if values[2] == '':
-                pass
-            else:
+            try:
+                if values[2] == '':
+                    pass
+                else:
+                    return
+            except Exception:
                 return
+
         parent = self.tv.parent(cur_item[0])
         self.tv.selection_set(cur_item[0])
         item_id = cur_item[0]
@@ -1785,7 +1806,7 @@ class FileManager:
         values = list(event.widget.item(cur_item, 'values'))
         if len(values) > 4:
             if values[0] != '':
-                timestamp = "DeleteTimeStamp: " if 'inRecycleBin' in values[7] else "lastChange: "
+                timestamp = "notificationTime: " if 'inRecycleBin' in values[7] and values[1] == '' else ("DeleteTimeStamp: " if 'inRecycleBin' in values[7] else "lastChange: ")
                 if 'Date modified' in str(values[0]):
                     values[0] = str(values[0])[17:].split("\n")[0]
                 values[0] = f'{timestamp}{values[0]}'
@@ -1934,7 +1955,7 @@ class FileManager:
         value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
         self.value_labels.append(value_label)
 
-    def get_info(self, event):  # need to finish testing on deleted files
+    def get_info(self, event):  # need to look into click performance
         df_list = []
         curItem = event.widget.selection()
         values = event.widget.item(curItem, 'values')
@@ -1965,7 +1986,7 @@ class FileManager:
         if 'inRecycleBin' in values[7]:
             rid = values[3].split(" ")[1].split("+")[0]
             try:
-                file_hash = values[10].split("(")[1].strip(")")
+                file_hash = values[11].split("(")[1].strip(")")
             except Exception:
                 file_hash = ''
 
@@ -1978,6 +1999,7 @@ class FileManager:
                     data = ''.join(['{:02x}'.format(i) for i in base64.b64decode(file_hash)])
                     info = pd.concat([df.loc[df.Params.astype('string').str.contains(data, case=False, na=False)] for df in df_list])
             else:
+                infoNB.tab(infoFrame, text="Log Entries")
                 return
 
         # find logs for files/folders
@@ -1986,12 +2008,15 @@ class FileManager:
 
         if len(info) == 0 or stop.is_set():
             infoNB.tab(infoFrame, text="Log Entries")
-            if event.widget.selection()[0] != curItem[0]:
-                stop.clear()
-                threading.Thread(target=self.get_info,
-                                 args=(event,),
-                                 daemon=True).start()
-            return
+            try:
+                if event.widget.selection()[0] != curItem[0]:
+                    stop.clear()
+                    threading.Thread(target=self.get_info,
+                                     args=(event,),
+                                     daemon=True).start()
+                return
+            except Exception:
+                return
 
         pt = pandastablepatch.MyTable(infoFrame,
                                       dataframe=info,
@@ -2003,6 +2028,7 @@ class FileManager:
         pt.adjustColumnWidths()
         pt.show()
         pt.redraw()
+
         if stop.is_set():
             for item in infoFrame.winfo_children():
                 if '.!notebook.!frame.' in str(item):
@@ -2075,6 +2101,9 @@ class FileManager:
                     image_key_i = item_data_i["image"][0]
                     text_i = f' {item_data_i["text"]}'
                     values_i = item_data_i["values"]
+                    if values_i[0] == '':
+                        values_i[0] = values_i[10][18:]
+                        values_i[10] = 'DeleteTimeStamp: '
                     tags_i = item_data_i["tags"][0] if item_data_i["tags"] else ''
 
                     heading_text = ' Date deleted' if tags_i else ' Date modified'
@@ -2083,9 +2112,9 @@ class FileManager:
                     self.tv2.insert("", "end", image=image_key_i, text=text_i, values=values_i, tags=tags_i)
 
                     values_i_7 = values_i[7].split(' ')[1] if len(values_i) > 7 and len(values_i[7].split(' ')) > 1 else ''
-                    values_i_12 = values_i[12].split(' ')[1] if 'sharedItem' in values_i[12] else ''
+                    values_i_13 = values_i[13].split(' ')[1] if 'sharedItem' in values_i[13] else ''
 
-                    if values_i_12 == '1':
+                    if values_i_13 == '1':
                         image_value_i = share_image_mapping.get(values_i_7, onedrive_shared_img)
                     else:
                         image_value_i = image_mapping.get(values_i_7, online_img)
@@ -2108,6 +2137,23 @@ class FileManager:
             key_label.clear_highlight()
         for value_label in self.value_labels:
             value_label.clear_highlight()
+
+    def update_font(self):
+        # Update font for all key labels
+        for key_label in self.key_labels:
+            key_label.label.config(font=default_font)
+
+        # Update font for all value labels
+        for value_label in self.value_labels:
+            value_label.label.config(font=default_font)
+
+        # Update font for all header labels
+        for header_label in self.header_labels:
+            header_label.update_font()
+
+        # Update font for all header frame labels
+        if hasattr(self, 'header_frame_label'):
+            self.header_frame_label.config(font=default_font)
 
 
 class TreeviewHeaderWidget(ttk.Frame):
@@ -2143,165 +2189,12 @@ class LabelSeparator(tk.Frame):
         self.label = ttk.Label(self, text=text, font=default_font)
         self.label.grid(row=0, column=0, padx=width, sticky="w")
 
+    def update_font(self):
+        self.label.config(font=default_font)
+
     def update_theme(self):
         new_bgf = style.lookup('Label', 'background')
         self.configure(background=new_bgf)
-
-
-class Metadata:
-    def __init__(self, root, df_GraphMetadata_Records):
-        self.root = root
-        self.bgf = style.lookup('Label', 'background')
-        self.df = df_GraphMetadata_Records
-
-        self.line_number = 8
-        self.start_index = f"{self.line_number}.0"
-        self.end_index = f"{self.line_number + 1}.0"
-        self.line_value = details.get(self.start_index, self.end_index)
-        if 'file' in self.line_value:
-            self.iconbitmap = f'{application_path}/Images/titles/file_yellow.ico'
-        else:
-            self.iconbitmap = f'{application_path}/Images/titles/file_yellow_delete.ico'
-        self.create_metadata_window()
-
-    def create_metadata_window(self):
-        self.win = tk.Toplevel(self.root)
-        self.setup_window()
-        self.create_widgets()
-        self.get_resourceID()
-        self.sync_windows()
-
-    def setup_window(self):
-        self.win.wm_transient(self.root)
-        self.win.title("Properties")
-        self.win.iconbitmap(self.iconbitmap)
-        self.win.grab_set()
-        self.win.focus_force()
-        self.win.resizable(False, False)
-        self.win.protocol("WM_DELETE_WINDOW", self.__callback)
-
-    def create_widgets(self):
-        self.frame = ttk.Frame(self.win)
-        self.metaNB = ttk.Notebook(self.frame, padding=5)
-        self.meta_frame = ttk.Frame(self.metaNB, padding=10)
-        self.metaNB.add(self.meta_frame, text='Metadata')
-
-        self.frame.grid(row=0, column=0, sticky="nsew")
-        self.metaNB.grid(row=0, column=0, sticky="nsew")
-
-    def get_resourceID(self):
-        line_number = 4
-        start_index = f"{line_number}.0"
-        end_index = f"{line_number + 1}.0"
-        pattern = r'resourceID: |resourceId: '
-        line_value = re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
-        df_result = self.df[self.df['resourceID'] == line_value]
-        row_num = 0
-        for item in df_result.to_dict(orient='records'):
-            for key, value in item.items():
-                if key == 'fileName':
-                    self.win.title(f"{value} Properties")
-                if key == 'graphMetadataJSON':
-                    self.get_graphMetadataJSON(value)
-                    continue
-                if key == 'filePolicies':
-                    self.get_filePolicies(value)
-                    continue
-
-                self.add_label_to_frame(self.meta_frame, key, value, row_num)
-
-                row_num += 1
-
-    def get_graphMetadataJSON(self, value):
-        if not value:
-            return
-
-        self.json_frame = ttk.Frame(self.metaNB, padding=10)
-        self.json_frame.grid_columnconfigure(1, weight=1)
-        self.metaNB.add(self.json_frame, text='MetadataJSON')
-        row_num = 0
-        for k, v in value.items():
-            if isinstance(v, dict):
-                header_label = LabelSeparator(self.json_frame, text=f"{k}", width=15)
-                header_label.grid(row=row_num, column=0, columnspan=2, sticky="ew")
-                row_num += 1
-                for a, b in v.items():
-                    key_label = HighlightableTextBox(self.json_frame, text=f"{a}:", font=default_font, wraplength='165p')
-                    key_label.label.grid(row=row_num, column=0, padx=(0, 2), pady=(0, 5), sticky="nw")
-
-                    value_label = HighlightableTextBox(self.json_frame, text=str(b), font=default_font, wraplength='165p')
-                    value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
-
-                    row_num += 1
-            else:
-                logging.error(f'Issue parsing graphMetadataJSON. {type(v)} {k}:{v}')
-
-    def get_filePolicies(self, value):
-        if not value:
-            return
-
-        policy_frame = ttk.Frame(self.metaNB, padding=10)
-        policy_frame.grid_columnconfigure(1, weight=1)
-        self.metaNB.add(policy_frame, text='filePolicies')
-
-        row_num = 0
-
-        for k, v in value.items():
-            if isinstance(v, list):
-                self.add_list_to_frame(policy_frame, k, v, row_num)
-            else:
-                self.add_label_to_frame(policy_frame, k, v, row_num)
-            row_num += 1
-
-        return policy_frame
-
-    def add_list_to_frame(self, parent_frame, label_text, items, row_num):
-        header_label = LabelSeparator(parent_frame, text=label_text, width=15)
-        header_label.grid(row=row_num, column=0, columnspan=2, sticky="ew")
-        row_num += 1
-
-        for item in items:
-            if isinstance(item, dict):
-                self.add_dict_to_frame(parent_frame, item, row_num)
-                row_num += 1
-            else:
-                self.add_label_to_frame(parent_frame, '', item, row_num)
-                row_num += 1
-
-    def add_dict_to_frame(self, parent_frame, dictionary, row_num):
-        for key, value in dictionary.items():
-            if isinstance(value, dict):
-                self.header_frame_label = ttk.Label(parent_frame, text=f"{key}", font=default_font)
-                self.header_frame = tk.LabelFrame(parent_frame, labelwidget=self.header_frame_label, padx=5, labelanchor="nw", bg=self.bgf)
-                self.header_frame.grid(row=row_num, column=0, columnspan=2, sticky="ew")
-                row_num += 1
-                frow_num = 0
-                for k, v in value.items():
-                    self.add_label_to_frame(self.header_frame, k, v, frow_num)
-                    frow_num += 1
-            else:
-                self.add_label_to_frame(parent_frame, key, value, row_num)
-                row_num += 1
-
-    def add_label_to_frame(self, parent_frame, key, value, row_num):
-        key_label = HighlightableTextBox(parent_frame, text=f"{key}:", font=default_font, wraplength='165p')
-        key_label.label.grid(row=row_num, column=0, padx=(0, 2), pady=(0, 5), sticky="nw")
-
-        value_label = HighlightableTextBox(parent_frame, text=str(value), font=default_font, wraplength='165p')
-        value_label.label.grid(row=row_num, column=1, padx=(2, 0), pady=(0, 5), sticky="w")
-        row_num += 1
-
-    def sync_windows(self, event=None):
-        x = details_frame.winfo_x()
-        y = details_frame.winfo_y()
-        qw = self.win.winfo_width()
-        qh = self.win.winfo_height()
-        w = details_frame.winfo_width()
-        h = details_frame.winfo_height()
-        self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
-
-    def __callback(self):
-        self.win.destroy()
 
 
 class HighlightableTextBox:
@@ -2599,7 +2492,7 @@ class Breadcrumb(ttk.Frame):
             self.update_treeview('')
             return
         elif self.crumb_trail_index == -2:
-            self.crumb_trail_index = len(self.crumb_trail) -2
+            self.crumb_trail_index = len(self.crumb_trail) - 2
             if self.crumb_trail_index == -1:
                 self.update_treeview('')
                 return
@@ -3026,7 +2919,7 @@ def search(item=''):
                 if query.lower() in str(tv.item(i, 'values')).lower():
                     tags = ''
                     if tv.item(i, 'tags'):
-                        tags='red'
+                        tags = 'red'
                     values = tv.item(i, 'values')
                     Result(root, values, i, folder=False, tags=tags)
         search(item=child)
@@ -3055,7 +2948,7 @@ def clear_search():
     s_image.clear()
     position = None
     threading.Thread(target=clear_tvr,
-                         daemon=True).start()
+                     daemon=True).start()
     if len(pwh.panes()) == 3:
         position = pwh.sash_coord(1)
     pwh.remove(result_frame)
@@ -3188,10 +3081,10 @@ def parent_child(d, parent_id=None, meta=False):
                     image = od_folder_img
                 text = f" {c['MountPoint']}" if c['MountPoint'] != '' else f" {c['scopeID']}"
                 parent_child(c, tv.insert(parent_id,
-                                 "end",
-                                 image=image,
-                                 text=text,
-                                 values=(z)), meta)
+                                          "end",
+                                          image=image,
+                                          text=text,
+                                          values=(z)), meta)
 
     if 'Files' in d:
         for c in d['Files']:
@@ -3231,10 +3124,10 @@ def parent_child(d, parent_id=None, meta=False):
             else:
                 image = folder_img
             parent_child(c, tv.insert(parent_id,
-                             0,
-                             image=image,
-                             text=f" {c['Name']}",
-                             values=(z)), meta)    
+                                      0,
+                                      image=image,
+                                      text=f" {c['Name']}",
+                                      values=(z)), meta)
 
     if 'Scope' in d:
         for c in d['Scope']:
@@ -3254,10 +3147,10 @@ def parent_child(d, parent_id=None, meta=False):
                 if ('Folders' in b or 'Files' in b) and str(image) == str(vault_closed_img):
                     image = vault_open_img
                 parent_child(b, tv.insert(parent_id,
-                                 0,
-                                 image=image,
-                                 text=f" {b['Name']}",
-                                 values=(z)), meta) 
+                                          0,
+                                          image=image,
+                                          text=f" {b['Name']}",
+                                          values=(z)), meta)
 
 
 def live_system(menu):
@@ -3619,11 +3512,20 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         name = os.path.split(filename)[1]
 
         df, rbin_df, df_scope, scopeID = DATParser.parse_dat(filename, account,
-                             gui=True, pb=pb, value_label=value_label)
+                                                             gui=True, pb=pb,
+                                                             value_label=value_label)
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename,  rbin_df, account, reghive, recbin, gui=True,
-                                                  pb=pb, value_label=value_label)
+            cache, rbin_df = OneDriveParser.parse_onedrive(df,
+                                                           df_scope,
+                                                           df_GraphMetadata_Records,
+                                                           scopeID, filename,
+                                                           rbin_df, account,
+                                                           reghive,
+                                                           recbin,
+                                                           gui=True,
+                                                           pb=pb,
+                                                           value_label=value_label)
 
         dat = True
 
@@ -3642,8 +3544,18 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account = SQLiteParser.parse_sql(filename)
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename, rbin_df, account, reghive, recbin, gui=True,
-                                                  pb=pb, value_label=value_label)
+            cache, rbin_df = OneDriveParser.parse_onedrive(df,
+                                                           df_scope,
+                                                           df_GraphMetadata_Records,
+                                                           scopeID,
+                                                           filename,
+                                                           rbin_df,
+                                                           account,
+                                                           reghive,
+                                                           recbin,
+                                                           gui=True,
+                                                           pb=pb,
+                                                           value_label=value_label)
         pb.stop()
         dat = True
 
@@ -3657,8 +3569,17 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID = parse_csv(filename)
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename.name, rbin_df, account, reghive, recbin, gui=True,
-                                                  pb=pb, value_label=value_label)
+            cache, rbin_df = OneDriveParser.parse_onedrive(df,
+                                                           df_scope,
+                                                           df_GraphMetadata_Records,
+                                                           scopeID, filename.name,
+                                                           rbin_df,
+                                                           account,
+                                                           reghive,
+                                                           recbin,
+                                                           gui=True,
+                                                           pb=pb,
+                                                           value_label=value_label)
 
     if x == 'Project':
         name = filename
@@ -3685,7 +3606,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         pb.configure(mode='determinate')
 
         if menu_data['json'] and dat:
-            value_label['text'] = f"Saving JSON. Please wait...."
+            value_label['text'] = "Saving JSON. Please wait...."
             pb.configure(mode='indeterminate')
             pb.start()
             try:
@@ -3695,7 +3616,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
             pb.stop()
 
         if menu_data['csv'] and dat:
-            value_label['text'] = f"Saving CSV. Please wait...."
+            value_label['text'] = "Saving CSV. Please wait...."
             pb.configure(mode='indeterminate')
             pb.start()
             try:
@@ -3705,7 +3626,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
             pb.stop()
 
         if menu_data['html'] and dat:
-            value_label['text'] = f"Saving HTML. Please wait...."
+            value_label['text'] = "Saving HTML. Please wait...."
             pb.configure(mode='indeterminate')
             pb.start()
             try:
@@ -3997,6 +3918,7 @@ def font_changed(font):
             config.apply_options(options, item)
             item.redraw()
     menu_data['font'] = default_font
+    file_manager.update_font()
     save_settings()
 
 
@@ -4225,24 +4147,24 @@ question_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/m
 ode_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/ode_small.png'))
 
 # gui images
-search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/magnifier.png')) # main
-root_drive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/hdd.png')) # treeview 1
-del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/file_yellow_trashcan.png')) # treeview 1
-tenant_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon59.png')) # treeview 1
-vault_closed_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon109.png')) # treeview 1
-vault_open_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon114.png')) # treeview 1
-od_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon11.ico')) # treeview 1 & popup
-merror_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error_small.png')) # messages
-minfo_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info_small.png')) # messages
-warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/warning.png')) # messages
-info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info.png')) # ExportResult
-error_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error.png')) # ExportResult
-asc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_asc.png')) # pandastable
-desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_desc.png')) # pandastable
-question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/question.png')) # hive
-trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/trashcan.png')) # recbin
-ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/ode.png')) # about
-meta_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/tools.png')) # about
+search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/magnifier.png'))  # main
+root_drive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/hdd.png'))  # treeview 1
+del_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/file_yellow_trashcan.png'))  # treeview 1
+tenant_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon59.png'))  # treeview 1
+vault_closed_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon109.png'))  # treeview 1
+vault_open_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon114.png'))  # treeview 1
+od_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon11.ico'))  # treeview 1 & popup
+merror_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error_small.png'))  # messages
+minfo_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info_small.png'))  # messages
+warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/warning.png'))  # messages
+info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info.png'))  # ExportResult
+error_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error.png'))  # ExportResult
+asc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_asc.png'))  # pandastable
+desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_desc.png'))  # pandastable
+question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/question.png'))  # hive
+trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/trashcan.png'))  # recbin
+ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/ode.png'))  # about
+meta_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/tools.png'))  # about
 
 # small file images
 file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/file_yellow.png'))
@@ -4282,6 +4204,8 @@ lync_big_img = Image.open(application_path + '/Images/search/lync_big.png')
 not_lync_big_img = Image.open(application_path + '/Images/search/not_lync_big.png')
 not_sync_big_img = Image.open(application_path + '/Images/search/not_sync_big.png')
 online_big_img = Image.open(application_path + '/Images/search/online_big.png')
+online_not_sync_big_img = Image.open(application_path + '/Images/search/online_big.png')
+online_not_link_big_img = Image.open(application_path + '/Images/search/online_not_link_big.png')
 #r_locked_big_img = Image.open(application_path + '/Images/search/r_locked_big.png')
 shared_big_img = Image.open(application_path + '/Images/search/shared_big.png')
 sync_big_img = Image.open(application_path + '/Images/search/sync_big.png')
@@ -4377,7 +4301,6 @@ details_frame = DetailsFrame(pwh)
 tab1 = details_frame.add_tab("Details")
 details = details_frame.add_textbox(tab1)
 details.configure(font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, padx=10, pady=10, state='disable')
-meta_btn = ttk.Button(details_frame, text="Metadata", image=meta_img, takefocus=False, compound='left', state='disable', command=lambda: Metadata(root, df_GraphMetadata_Records))
 detailsscroll = ttk.Scrollbar(details_frame, orient="vertical", command=details.yview)
 details.configure(yscrollcommand=detailsscroll.set)
 details.tag_configure('red', foreground="red")
@@ -4426,8 +4349,8 @@ infoNB.add(infoFrame, text='Log Entries')
 pwv.add(tv_frame, minsize=100)
 pwv.add(infoNB, minsize=100)
 
-search_entry.grid(row=0, column=0, sticky="e", padx=(5,0), pady=5)
-btn.grid(row=0, column=1, padx=(0,5), pady=5, sticky="e")
+search_entry.grid(row=0, column=0, sticky="e", padx=(5, 0), pady=5)
+btn.grid(row=0, column=1, padx=(0, 5), pady=5, sticky="e")
 
 pwv.grid(row=0, column=0, sticky="nsew")
 breadcrumb.grid(row=0, column=0, sticky='ew')
@@ -4460,8 +4383,8 @@ tv.bind('<Button-1>', lambda event=None: clear_search())
 tv.bind("<Button-3>", popup_manager.do_popup)
 tvr.bind('<<TreeviewSelect>>', file_manager.new_selection)
 tvr.bind('<Double-Button-1>', file_manager.handle_double_click)
-tv.bind('<Alt-Down>', lambda event=None: open_children(tv.selection()))
-tv.bind('<Alt-Up>', lambda event=None: close_children(tv.selection()))
+tv.bind('<Alt-Down>', lambda event=None: popup_manager.open_children(tv.selection()))
+tv.bind('<Alt-Up>', lambda event=None: popup_manager.close_children(tv.selection()))
 root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
 root.bind('<Control-m>', lambda event=None: Messages(root))
 root.bind('<Alt-KeyPress-0>', lambda event=None: clear_all())
@@ -4475,6 +4398,7 @@ bind_id = message.bind('<Double-Button-1>', lambda event=None: Messages(root))
 infoNB.bind('<Motion>', tool_tip_manager.motion)
 search_entry.bind('<Motion>', tool_tip_manager.motion)
 root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', tool_tip_manager.motion)
+#root.nametowidget('.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!detailsframe.!notebook').bind('<Motion>', tool_tip_manager.motion)
 
 keyboard.is_pressed('shift')
 
@@ -4544,9 +4468,10 @@ exportmenu.add_command(label="PDF",  image=pdf_img, compound='left',
 
 file_menu.add_command(label="Live system",
                       image=live_img, compound='left',
-                      command=lambda: [message.unbind('<Double-Button-1>', bind_id), threading.Thread(target=live_system,
-                                                       args=(file_menu,),
-                                                       daemon=True).start()])
+                      command=lambda: [message.unbind('<Double-Button-1>', bind_id),
+                                       threading.Thread(target=live_system,
+                                       args=(file_menu,),
+                                       daemon=True).start()])
 
 file_menu.add_cascade(label="OneDrive settings", menu=odsmenu,
                       image=ods_img, compound='left')
@@ -4605,10 +4530,10 @@ if not ctypes.windll.shell32.IsUserAnAdmin():
     file_menu.entryconfig("Live system", state="disabled")
 
 tool_tip_manager.create_tooltip(message, text='Total messages\n'
-              '  Contains the total number of messages available. A yellow\n'
-              '  background indicates a warning message is available. A red\n'
-              '  background indicates an error message is available.',
-              flip=True)
+                                '  Contains the total number of messages available. A yellow\n'
+                                '  background indicates a warning message is available. A red\n'
+                                '  background indicates an error message is available.',
+                                flip=True)
 
 
 logging.info(f'OneDriveExplorer {__version__} ready!')
