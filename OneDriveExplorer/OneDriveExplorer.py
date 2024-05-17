@@ -30,6 +30,7 @@ import time
 import logging
 import uuid
 import pandas as pd
+import warnings
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
@@ -39,13 +40,17 @@ from ode.parsers.odl import parse_odl, load_cparser
 import ode.parsers.sqlite_db as sqlite_parser
 from ode.utils import update_from_repo
 
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.simplefilter(action='ignore', category=FutureWarning)
+pd.set_option('future.no_silent_downcasting', True)
+
 logging.basicConfig(level=logging.INFO,
                     format='\n\n%(asctime)s, %(levelname)s, %(message)s\n',
                     datefmt='%Y-%m-%d %H:%M:%S'
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.03.22"
+__version__ = "2024.05.17"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()

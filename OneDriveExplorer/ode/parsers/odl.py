@@ -69,15 +69,15 @@ typedef struct _Odl_header{
 } Odl_header;
 
 typedef struct _Data_block_V2{
-    uint64    signature;  // CCDDEEFF00000000
-    uint64    timestamp;
-    uint32    unk1;
-    uint32    unk2;
-    char      unk3_guid[16];
-    uint32    unk4;
-    uint32    unk5;
-    uint32    data_len;
-    uint32    unk6;
+    uint64     signature;  // CCDDEEFF00000000
+    uint64     timestamp;
+    uint32     unk1;
+    uint32     unk2;
+    uint128    unk3_guid;
+    uint32     unk4;
+    uint32     unk5;
+    uint32     data_len;
+    uint32     unk6;
     // followed by Data
 } Data_block_V2;
 
@@ -100,14 +100,14 @@ typedef struct _Data_v2{
 } Data_v2;
 
 typedef struct _Data_v3{
-    char      unk1_guid[16];
-    uint32    unk2;
-    uint32    unk3;
-    uint32    code_file_name_len;
-    char      code_file_name[code_file_name_len];
-    uint32    flags;
-    uint32    code_function_name_len;
-    char      code_function_name[code_function_name_len];
+    uint128    unk1_guid;
+    uint32     unk2;
+    uint32     unk3;
+    uint32     code_file_name_len;
+    char       code_file_name[code_file_name_len];
+    uint32     flags;
+    uint32     code_function_name_len;
+    char       code_function_name[code_function_name_len];
 } Data_v3;
 
 '''

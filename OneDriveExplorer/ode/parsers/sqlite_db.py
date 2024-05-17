@@ -106,19 +106,23 @@ class SQLiteParser:
                                          "mediaHeight": "Height",
                                          "mediaDuration": "Duration"
                                          }, inplace=True)
-                df_files['DateTaken'] = pd.to_datetime(df_files['DateTaken'], unit='s').astype(str)
+                df_files['Width'].fillna(0, inplace=True)
+                df_files['Height'].fillna(0, inplace=True)
+                df_files['Duration'].fillna(0, inplace=True)
+                df_files['DateTaken'] = pd.to_datetime(df_files['DateTaken'], unit='s').fillna('1970-01-01 00:00:00').astype(str)
                 columns = ['DateTaken', 'Width', 'Height', 'Duration']
                 df_files['Media'] = df_files[columns].to_dict(orient='records')
                 df_files = df_files.drop(columns=columns)
                 if account == 'Personal':
-                    df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'SHA1({x.hex()})')
+                    df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'SHA1({x.hex()})' if x else '')
                 else:
-                    df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'quickXor({codecs.encode(x, "base64").decode("utf-8").rstrip()})')
-                df_files['size'] = df_files['size'].apply(lambda x: f'{x//1024 + 1:,} KB')
+                    df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'quickXor({codecs.encode(x, "base64").decode("utf-8").rstrip()})' if x else '')
+                df_files['size'] = df_files['size'].fillna(0).apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
                 df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
                 df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
                 df_files['HydrationTime'] = pd.to_datetime(df_files['HydrationTime'], unit='s').astype(str)
                 df_files['HydrationTime'].replace('NaT', '', inplace=True)
+                df_files['sharedItem'].fillna(0, inplace=True)
                 df_files.insert(0, 'Type', 'File')
 
                 df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex FROM od_ClientFolder_Records", SyncEngineDatabase)

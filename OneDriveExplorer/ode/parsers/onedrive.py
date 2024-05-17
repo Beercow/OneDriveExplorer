@@ -166,6 +166,7 @@ class OneDriveParser:
         df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
 
         df = df.astype(convert)
+        df['volumeID'].fillna(0, inplace=True)
 
         df['volumeID'] = df['volumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
         df['volumeID'] = df['volumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')

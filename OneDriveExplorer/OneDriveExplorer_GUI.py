@@ -71,6 +71,8 @@ from ode.utils import schema
 from ode.helpers.AnimatedGif import AnimatedGif
 
 warnings.filterwarnings("ignore", category=UserWarning)
+warnings.simplefilter(action='ignore', category=FutureWarning)
+pd.set_option('future.no_silent_downcasting', True)
 
 DATParser = dat_parser.DATParser()
 OneDriveParser = onedrive_parser.OneDriveParser()
@@ -101,7 +103,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.03.22"
+__version__ = "2024.05.17"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -1294,88 +1296,123 @@ class Result:
         self.args = args
         self.folder = folder
         self.tags = tags
+        self.type = []
         self.status = []
         self.sha1 = hashlib.sha1()
+        self.lock_list = ['AddListItems',
+                          'EditListItems',
+                          'DeleteListItems',
+                          'DeleteVersions',
+                          'ManageLists']
+
         self.process_args()
 
     def process_args(self):
-        l = list(self.args[0])
+        values_list = list(self.args[0])
         text = ''
-        if len(l) == 3:
+        if len(values_list) == 3:
             text = f'  {self.args[0][1]}\n  {self.args[0][2]}'
-            self.status.append(hdd_big_img)
+            self.type.append(hdd_big_img)
             self.folder = False
-        elif len(l) == 14 and 'site' in self.args[0][3]:
+        elif len(values_list) == 14 and 'site' in self.args[0][3]:
+            values_10 = ast.literal_eval(self.args[0][10].split('spoPermissions: ')[1]) if 'spoPermissions: ' in self.args[0][10] else ''
             if '+' in self.args[0][2]:
-                self.status.append(building_big_img)
+                self.type.append(building_big_img)
             else:
-                self.status.append(cloud_big_img)
+                self.type.append(cloud_big_img)
+            if not set(self.lock_list).intersection(values_10):
+                self.status.append(locked_big_img)
             text = f'  {self.args[0][2]}\n  {self.args[0][8]}'
         else:
             text = f'  {self.args[0][6]}\n  {self.args[0][5]}'
-            self.process_folder_status(l)
+            self.process_folder_status(values_list)
 
-        values = tuple(l)
+        values = tuple(values_list)
         output_image = self.create_output_image()
         self.update_image_dictionary(output_image)
         self.insert_into_treeview(self.args[1], text, values)
 
-    def process_folder_status(self, l):
+    def process_folder_status(self, values_list):
         if self.folder:
-            self.status.append(directory_big_img)
+            self.type.append(directory_big_img)
 
             for num in ['5', '7', '9', '10', '11']:
                 if num in self.args[0][7]:
-                    self.handle_folder_status(num, l)
+                    self.handle_folder_status(num, values_list)
 
         else:
-            self.process_non_folder_status(l)
+            self.process_non_folder_status(values_list)
 
-    def handle_folder_status(self, num, l):
-        if num == '7' and len(l) > 11:
+    def handle_folder_status(self, num, values_list):
+        values_8 = ast.literal_eval(self.args[0][8].split('spoPermissions: ')[1]) if 'spoPermissions: ' in self.args[0][8] else ''
+
+        if num == '7' and len(values_list) > 11:
             if self.args[0][14].split(' ')[1] == '' and '+' not in self.args[0][11]:
-                self.status.clear()
-                self.status.append(vault_big_img) if self.args[0][10] == 'itemIndex: 0' else self.status.append(vault_open_big_img)
+                self.type.clear()
+                self.type.append(vault_big_img) if self.args[0][10] == 'itemIndex: 0' else self.type.append(vault_open_big_img)
             else:
-                self.status.append(lync_big_img)
+                self.type.append(link_big_img)
         elif num == '7':
             pass
         else:
-            self.status.append(self.get_status_image(num))
+            self.type.append(self.get_type_image(num))
 
-    def process_non_folder_status(self, l):
-        if len(l) != 3:
-            self.status.append(file_del_big_img) if self.tags == 'red' else self.status.append(file_yellow_big_img)
-            l[0] = f'  Date modified: {self.args[0][0]}\n  Size: {self.args[0][1]}'
+        if not set(self.lock_list).intersection(values_8):
+            if num not in ('10', '11'):
+                self.status.append(locked_big_img)
 
-            for num in ['2', '5', '6', '7', '8', '1']:
+    def process_non_folder_status(self, values_list):
+        if len(values_list) != 3:
+            self.type.append(file_del_big_img) if self.tags == 'red' else self.type.append(file_yellow_big_img)
+            values_list[0] = f'  Date modified: {self.args[0][0]}\n  Size: {self.args[0][1]}'
+            values_9 = ast.literal_eval(self.args[0][9].split('spoPermissions: ')[1]) if 'spoPermissions: ' in self.args[0][9] else ''
+            values_13 = self.args[0][13].split(' ')[1] if 'sharedItem' in self.args[0][13] else ''
+            for num in ['2', '5', '6', '7', '8']:
                 if num in self.args[0][7]:
-                    if isinstance(self.get_status_image(num), tuple):
-                        self.status.extend(self.get_status_image(num))
+                    if num == '6' or num == '7':
+                        self.type.append(self.get_type_image(num))
+                        self.status.append(self.get_status_image(num))
                     else:
                         self.status.append(self.get_status_image(num))
-                if num in self.args[0][13]:
-                    self.status.append(self.get_status_image(num))
+
+            if values_13 == '1':
+                self.status.append(shared_big_img)
+
+            if not set(self.lock_list).intersection(values_9) and 'inRecycleBin' not in self.args[0][7]:
+                self.status.append(locked_big_img)
+
+    def get_type_image(self, num):
+        type_dict = {
+            '6': not_sync_big_img,  # files
+            '7': not_link_big_img,  # files
+            '10': not_sync_big_img,  # folders
+            '11': not_link_big_img  # folders
+        }
+        return type_dict[num]
 
     def get_status_image(self, num):
         status_dict = {
-            '1': shared_big_img,
             '2': available_big_img,
             '5': excluded_big_img,
-            '6': not_sync_big_img,
-            '7': (not_lync_big_img, online_not_link_big_img),
+            '6': online_not_sync_big_img,
+            '7': online_not_link_big_img,
             '8': online_big_img,
             '9': sync_big_img,
             '10': not_sync_big_img,
-            '11': not_lync_big_img
+            '11': not_link_big_img
         }
         return status_dict[num]
 
     def create_output_image(self):
-        output_image = self.status[0].copy()
-        self.status.pop(0)
-        for s in self.status:
+        total_width = sum(img.width for img in self.status) + 33
+        output_image = Image.new("RGBA", (84, 32), (0, 0, 0, 0))
+        for s in self.type:
             output_image.paste(s, (0, 0), s)
+        width = 33
+        for s in self.status:
+            output_image.paste(s, (width, 0))
+            width += s.width
+
         return output_image
 
     def update_image_dictionary(self, output_image):
@@ -1662,6 +1699,8 @@ class FileManager:
         self.cur_sel = cur_sel
         self.breadcrumb_list = breadcrumb
         self.stop = threading.Event()
+        self.status = []
+        self.sha1 = hashlib.sha1()
 
         # Treeview for the current directory
         self.tv2 = ttk.Treeview(parent, selectmode='browse', takefocus='false')
@@ -2041,6 +2080,13 @@ class FileManager:
         infoNB.tab(infoFrame, text="Log Entries")
 
     def file_pane(self):
+        self.status.clear()
+        lock_list = ['AddListItems',
+                     'EditListItems',
+                     'DeleteListItems',
+                     'DeleteVersions',
+                     'ManageLists']
+
         cur_item = self.tv.selection()
         if len(cur_item) == 0:
             self.tv2.delete(*self.tv2.get_children())
@@ -2059,20 +2105,12 @@ class FileManager:
         image_mapping = {
             '2': available_img,
             '5': excluded_img,
-            '6': online_not_sync_img,
-            '7': online_not_link_img,
+            '6': online_not_sync_img,  # fileStatus
+            '7': online_not_link_img,  # fileStatus
             '8': online_img,
             '9': online_sync_img,
-            '10': online_not_sync_img,
-            '11': online_not_link_img
-        }
-
-        share_image_mapping = {
-            '2': available_shared_img,
-            '5': excluded_shared_img,
-            '6': not_sync_share_img,
-            '7': not_link_share_img,
-            '8': online_shared_img
+            '10': online_not_sync_img,  # folderStatus
+            '11': online_not_link_img  # folderStatus
         }
 
         for child in self.tv.get_children(cur_item):
@@ -2085,18 +2123,33 @@ class FileManager:
             self.tv2.insert("", "end", iid=child, image=image_key, text=text, values=values, tags=tags)
 
             values_7 = values[7].split(' ')[1] if len(values) > 7 and len(values[7].split(' ')) > 1 else ''
+
+            try:
+                values_8 = ast.literal_eval(values[8].split('spoPermissions: ')[1]) if 'spoPermissions: ' in values[8] else ast.literal_eval(values[10].split('spoPermissions: ')[1]) if 'spoPermissions: ' in values[10] else ''
+            except IndexError:
+                values_8 = ''
+
             if values_7 == '7':
                 if image_key == str(link_folder_img):
-                    image_value = online_link_img
+                    self.status.append(online_link_img)
                 else:
-                    image_value = online_img
+                    self.status.append(online_img)
             else:
-                image_value = image_mapping.get(values_7, online_img)
-            self.tv3.insert("", "end", iid=child, image=image_value, values=values, tags=tags)
+                self.status.append(image_mapping.get(values_7, online_img))
+
+            if not set(lock_list).intersection(values_8) and str(tags) != 'red':
+                if values_7 not in ('10', '11'):
+                    self.status.append(locked_img)
+
+            output_image = self.create_output_image()
+            self.update_image_dictionary(output_image)
+            self.insert_into_treeview(child, values, tags)
+            self.status.clear()
 
         try:
             if cur_item[0] in file_items:
                 for i in file_items[cur_item[0]]:
+                    self.status.clear()
                     item_data_i = self.tv.item(i)
                     image_key_i = item_data_i["image"][0]
                     text_i = f' {item_data_i["text"]}'
@@ -2112,18 +2165,49 @@ class FileManager:
                     self.tv2.insert("", "end", image=image_key_i, text=text_i, values=values_i, tags=tags_i)
 
                     values_i_7 = values_i[7].split(' ')[1] if len(values_i) > 7 and len(values_i[7].split(' ')) > 1 else ''
+                    values_i_9 = ast.literal_eval(values_i[9].split('spoPermissions: ')[1]) if 'spoPermissions: ' in values_i[9] else ''
                     values_i_13 = values_i[13].split(' ')[1] if 'sharedItem' in values_i[13] else ''
 
-                    if values_i_13 == '1':
-                        image_value_i = share_image_mapping.get(values_i_7, onedrive_shared_img)
-                    else:
-                        image_value_i = image_mapping.get(values_i_7, online_img)
+                    self.status.append(image_mapping.get(values_i_7, online_img))
 
-                    self.tv3.insert("", "end", image=image_value_i, values=values_i, tags=tags_i)
+                    if values_i_13 == '1':
+                        self.status.append(shared_img)
+
+                    if not set(lock_list).intersection(values_i_9) and str(tags_i) != 'red':
+                        self.status.append(locked_img)
+
+                    output_image = self.create_output_image()
+                    self.update_image_dictionary(output_image)
+                    self.insert_into_treeview(None, values_i, tags_i)
+
         except Exception:
             pass
 
         self.parent.update_idletasks()
+
+    def create_output_image(self):
+        total_width = sum(img.width for img in self.status)
+        output_image = Image.new("RGBA", (total_width, 16), (0, 0, 0, 0))
+        width = 0
+        for s in self.status:
+            output_image.paste(s, (width, 0))
+            width += s.width
+        return output_image
+
+    def update_image_dictionary(self, output_image):
+        fp = BytesIO()
+        output_image.save(fp, 'png')
+        fp.seek(0)
+        self.sha1.update(fp.read())
+        image = ImageTk.PhotoImage(Image.open(fp))
+        if self.sha1.hexdigest() not in s_image:
+            s_image[self.sha1.hexdigest()] = image
+
+    def insert_into_treeview(self, iid, values, tags):
+        if iid:
+            self.tv3.insert("", "end", iid=iid, image=s_image[self.sha1.hexdigest()], values=values, tags=tags)
+        else:
+            self.tv3.insert("", "end", image=s_image[self.sha1.hexdigest()], values=values, tags=tags)
 
     def update_theme(self):
         # Update background color and other theme-related properties
@@ -4180,41 +4264,37 @@ link_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/fold
 not_link_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/not_link_folder.png'))
 
 # small status images
-online_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online-8.png'))
-online_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online-shared.png'))
-online_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online_sync.png'))
-online_not_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online_not_sync.png'))
-online_link_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online-link.png'))
-online_not_link_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/online_not_link.png'))
-available_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/available-8.png'))
-available_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/available-shared.png'))
-onedrive_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/shared-8.png'))
-excluded_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/excluded-10.png'))
-excluded_shared_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/excluded_shared.png'))
-not_link_share_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/not_link_share.png'))
-not_sync_share_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/status/not_sync_share.png'))
+online_img = Image.open(application_path + '/Images/status/online.png')
+online_link_img = Image.open(application_path + '/Images/status/online-link.png')
+online_not_link_img = Image.open(application_path + '/Images/status/online_not_link.png')
+online_sync_img = Image.open(application_path + '/Images/status/online_sync.png')
+online_not_sync_img = Image.open(application_path + '/Images/status/online_not_sync.png')
+excluded_img = Image.open(application_path + '/Images/status/excluded.png')
+available_img = Image.open(application_path + '/Images/status/available.png')
+shared_img = Image.open(application_path + '/Images/status/shared.png')
+locked_img = Image.open(application_path + '/Images/status/locked.png')
 
 # search images
-available_big_img = Image.open(application_path + '/Images/search/available_big.png')
+hdd_big_img = Image.open(application_path + '/Images/search/hdd.png')
+cloud_big_img = Image.open(application_path + '/Images/search/cloud_big.png')
+building_big_img = Image.open(application_path + '/Images/search/building_big.png')
 directory_big_img = Image.open(application_path + '/Images/search/directory_big.png')
-excluded_big_img = Image.open(application_path + '/Images/search/excluded_big.png')
+vault_big_img = Image.open(application_path + '/Images/search/vault_big.png')
+vault_open_big_img = Image.open(application_path + '/Images/search/vault_open_big.png')
 file_yellow_big_img = Image.open(application_path + '/Images/search/file_yellow_big.png')
-#locked_big_img = Image.open(application_path + '/Images/search/locked_big.png')
-lync_big_img = Image.open(application_path + '/Images/search/lync_big.png')
-not_lync_big_img = Image.open(application_path + '/Images/search/not_lync_big.png')
+file_del_big_img = Image.open(application_path + '/Images/search/file_yellow_delete_big.png')
+link_big_img = Image.open(application_path + '/Images/search/link_big.png')
+not_link_big_img = Image.open(application_path + '/Images/search/not_link_big.png')
+sync_big_img = Image.open(application_path + '/Images/search/sync_big.png')
 not_sync_big_img = Image.open(application_path + '/Images/search/not_sync_big.png')
 online_big_img = Image.open(application_path + '/Images/search/online_big.png')
-online_not_sync_big_img = Image.open(application_path + '/Images/search/online_big.png')
+online_not_sync_big_img = Image.open(application_path + '/Images/search/online_not_sync_big.png')
 online_not_link_big_img = Image.open(application_path + '/Images/search/online_not_link_big.png')
-#r_locked_big_img = Image.open(application_path + '/Images/search/r_locked_big.png')
+available_big_img = Image.open(application_path + '/Images/search/available_big.png')
+excluded_big_img = Image.open(application_path + '/Images/search/excluded_big.png')
 shared_big_img = Image.open(application_path + '/Images/search/shared_big.png')
-sync_big_img = Image.open(application_path + '/Images/search/sync_big.png')
-building_big_img = Image.open(application_path + '/Images/search/Icon56.png')
-cloud_big_img = Image.open(application_path + '/Images/search/Icon7.png')
-hdd_big_img = Image.open(application_path + '/Images/search/hdd.png')
-file_del_big_img = Image.open(application_path + '/Images/search/file_yellow_delete_big.png')
-vault_big_img = Image.open(application_path + '/Images/search/Icon111.png')
-vault_open_big_img = Image.open(application_path + '/Images/search/Icon116.png')
+locked_big_img = Image.open(application_path + '/Images/search/locked_big.png')
+
 
 pandastablepatch.asc_img = asc_img
 pandastablepatch.desc_img = desc_img
@@ -4253,7 +4333,7 @@ tv_inner_frame = ttk.Frame(tv_frame)
 tv_frame.add(tv_inner_frame, text='OneDrive Folders  ')
 
 pwh = tk.PanedWindow(tv_inner_frame, orient=tk.HORIZONTAL,
-                     background=bgf, sashwidth=6)
+                     background=bgf, sashwidth=6, showhandle=False)
 
 tv_pane_frame = tk.Frame(pwh, background=bgf)
 

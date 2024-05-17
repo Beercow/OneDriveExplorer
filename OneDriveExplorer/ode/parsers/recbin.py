@@ -192,7 +192,6 @@ class DeleteProcessor:
 
             for x in file_info.keys():
                 if x[2:] in path:
-#                    file_info[x]['folders'].append(path.split(x[2:])[-1])
                     for name in files:
                         file_info[x]['files'].append(os.path.join(path, name).split(x[2:])[-1])
 
