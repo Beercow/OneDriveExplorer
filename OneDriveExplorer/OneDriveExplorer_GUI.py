@@ -103,7 +103,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.05.17"
+__version__ = "2024.05.20"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -1320,7 +1320,9 @@ class Result:
                 self.type.append(building_big_img)
             else:
                 self.type.append(cloud_big_img)
-            if not set(self.lock_list).intersection(values_10):
+            if not set(self.lock_list).intersection(values_10) and '!' not in self.args[0][2]:
+                print(values_list)
+                print(type(values_10))
                 self.status.append(locked_big_img)
             text = f'  {self.args[0][2]}\n  {self.args[0][8]}'
         else:
@@ -2138,7 +2140,8 @@ class FileManager:
                 self.status.append(image_mapping.get(values_7, online_img))
 
             if not set(lock_list).intersection(values_8) and str(tags) != 'red':
-                if values_7 not in ('10', '11'):
+                if values_7 not in ('10', '11', ''):
+                    print(values_7)
                     self.status.append(locked_img)
 
             output_image = self.create_output_image()

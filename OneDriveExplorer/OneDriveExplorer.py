@@ -50,7 +50,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.05.17"
+__version__ = "2024.05.20"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()

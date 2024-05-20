@@ -253,6 +253,6 @@ class OneDriveParser:
 
         cache['Data'] = final
 
-        df_GraphMetadata_Records.reset_index(inplace=True)
+        df_GraphMetadata_Records.reset_index(drop=True, inplace=True)
 
         return cache, rbin_df

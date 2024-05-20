@@ -327,7 +327,7 @@ class DATParser:
                     if not gui:
                         print(f'Unknown dat verison: {version} (Please report issue)')
                     log.error(f'Unknown dat verison: {version} (Please report issue)')
-                    return pd.DataFrame(), f.name
+                    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
 
                 while True:
                     count = f.tell()
@@ -472,8 +472,7 @@ class DATParser:
 
         except Exception as e:
             # log.error(e)
-            print(e)
-            return pd.DataFrame, usercid
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
 
         if not gui:
             print('\n')
