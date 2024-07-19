@@ -103,7 +103,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.05.20"
+__version__ = "2024.07.19"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -1310,23 +1310,32 @@ class Result:
     def process_args(self):
         values_list = list(self.args[0])
         text = ''
-        if len(values_list) == 3:
+        image_key = self.args[2]
+
+        if image_key == str(root_drive_img):
             text = f'  {self.args[0][1]}\n  {self.args[0][2]}'
             self.type.append(hdd_big_img)
             self.folder = False
-        elif len(values_list) == 14 and 'site' in self.args[0][3]:
-            values_10 = ast.literal_eval(self.args[0][10].split('spoPermissions: ')[1]) if 'spoPermissions: ' in self.args[0][10] else ''
+
+        elif image_key in [str(od_folder_img), str(tenant_sync_img)]:
+            spoPermissions = next(
+                (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
+                ''
+            )
+
             if '+' in self.args[0][2]:
                 self.type.append(building_big_img)
             else:
                 self.type.append(cloud_big_img)
-            if not set(self.lock_list).intersection(values_10) and '!' not in self.args[0][2]:
-                print(values_list)
-                print(type(values_10))
+            if not set(self.lock_list).intersection(spoPermissions) and '!' not in self.args[0][2]:
                 self.status.append(locked_big_img)
-            text = f'  {self.args[0][2]}\n  {self.args[0][8]}'
+            scope_item = next((value for value in self.args[0] if 'scopeid:' in value.lower()), None)
+            remote_path_item = next((value for value in self.args[0] if 'remotepath:' in value.lower()), None)
+            text = f'  {scope_item}\n  {remote_path_item}'
         else:
-            text = f'  {self.args[0][6]}\n  {self.args[0][5]}'
+            name_item = next((value for value in self.args[0] if 'name:' in value.lower()), None)
+            path_item = next((value for value in self.args[0] if 'path:' in value.lower()), None)
+            text = f'  {name_item}\n  {path_item}'
             self.process_folder_status(values_list)
 
         values = tuple(values_list)
@@ -1339,19 +1348,23 @@ class Result:
             self.type.append(directory_big_img)
 
             for num in ['5', '7', '9', '10', '11']:
-                if num in self.args[0][7]:
+                if any('folderstatus:' in item.lower() and num in item for item in self.args[0]):
                     self.handle_folder_status(num, values_list)
 
         else:
             self.process_non_folder_status(values_list)
 
     def handle_folder_status(self, num, values_list):
-        values_8 = ast.literal_eval(self.args[0][8].split('spoPermissions: ')[1]) if 'spoPermissions: ' in self.args[0][8] else ''
+        spoPermissions = next(
+            (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
+            ''
+        )
 
         if num == '7' and len(values_list) > 11:
-            if self.args[0][14].split(' ')[1] == '' and '+' not in self.args[0][11]:
+            shortcut_item = next((item for item in self.args[0] if 'shortcutitemindex:' in item.lower()), None)
+            if shortcut_item and int(shortcut_item.split(' ')[1]) > 0:
                 self.type.clear()
-                self.type.append(vault_big_img) if self.args[0][10] == 'itemIndex: 0' else self.type.append(vault_open_big_img)
+                self.type.append(vault_big_img if any(item == 'itemIndex: 0' for item in self.args[0]) else vault_open_big_img)
             else:
                 self.type.append(link_big_img)
         elif num == '7':
@@ -1359,7 +1372,7 @@ class Result:
         else:
             self.type.append(self.get_type_image(num))
 
-        if not set(self.lock_list).intersection(values_8):
+        if not set(self.lock_list).intersection(spoPermissions):
             if num not in ('10', '11'):
                 self.status.append(locked_big_img)
 
@@ -1367,26 +1380,34 @@ class Result:
         if len(values_list) != 3:
             self.type.append(file_del_big_img) if self.tags == 'red' else self.type.append(file_yellow_big_img)
             values_list[0] = f'  Date modified: {self.args[0][0]}\n  Size: {self.args[0][1]}'
-            values_9 = ast.literal_eval(self.args[0][9].split('spoPermissions: ')[1]) if 'spoPermissions: ' in self.args[0][9] else ''
-            values_13 = self.args[0][13].split(' ')[1] if 'sharedItem' in self.args[0][13] else ''
+            spoPermissions = next(
+                (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
+                ''
+            )
+            sharedItem = next(
+                (item.split(' ')[1] for item in self.args[0] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1), 
+                ''
+            )
+
             for num in ['2', '5', '6', '7', '8']:
-                if num in self.args[0][7]:
+                if any(('filestatus:' in item.lower() or 'inrecyclebin:' in item.lower()) and num in item for item in self.args[0]):
                     if num == '6' or num == '7':
                         self.type.append(self.get_type_image(num))
                         self.status.append(self.get_status_image(num))
                     else:
                         self.status.append(self.get_status_image(num))
 
-            if values_13 == '1':
+            if sharedItem == '1':
                 self.status.append(shared_big_img)
 
-            if not set(self.lock_list).intersection(values_9) and 'inRecycleBin' not in self.args[0][7]:
+            if not set(self.lock_list).intersection(spoPermissions) and not any('inrecyclebin:' in item.lower() for item in self.args[0]):
                 self.status.append(locked_big_img)
 
     def get_type_image(self, num):
         type_dict = {
             '6': not_sync_big_img,  # files
             '7': not_link_big_img,  # files
+            '9': sync_big_img,
             '10': not_sync_big_img,  # folders
             '11': not_link_big_img  # folders
         }
@@ -1535,13 +1556,23 @@ class PopupManager:
         self.root.clipboard_append(self.details.get("1.0", tk.END))
 
     def copy_path(self, values):
-        line = f'{values[6].split("Name: ")[1]}: {values[5].split("Path: ")[1]}\\{values[6].split("Name: ")[1]}'
+        # Find the items containing 'Name:' and 'Path:'
+        name_item = next((value for value in values if 'name:' in value.lower()), None)
+        path_item = next((value for value in values if 'path:' in value.lower()), None)
+
+        # Construct the line if both items are found
+        if name_item and path_item:
+            line = f'{name_item.split("Name: ")[1]}: {path_item.split("Path: ")[1]}\\{name_item.split("Name: ")[1]}'
+        else:
+            line = ''
+
         self.root.clipboard_clear()
         self.root.clipboard_append(line)
 
     def copy_name(self, values):
+        name_item = next((value for value in values if 'name:' in value.lower()), None)
         self.root.clipboard_clear()
-        self.root.clipboard_append(values[6].split("Name: ")[1])
+        self.root.clipboard_append(name_item.split("Name: ")[1])
 
     def thread_del_folder(self, iid):
         message.unbind('<Double-Button-1>', bind_id)
@@ -1847,7 +1878,11 @@ class FileManager:
         values = list(event.widget.item(cur_item, 'values'))
         if len(values) > 4:
             if values[0] != '':
-                timestamp = "notificationTime: " if 'inRecycleBin' in values[7] and values[1] == '' else ("DeleteTimeStamp: " if 'inRecycleBin' in values[7] else "lastChange: ")
+                # Check for 'inRecycleBin' in any value
+                in_recycle_bin = any('inrecyclebin' in value.lower() for value in values)
+                # Determine the timestamp based on the conditions
+                timestamp = "notificationTime: " if in_recycle_bin and values[1] == '' else ("DeleteTimeStamp: " if in_recycle_bin else "lastChange: ")
+                
                 if 'Date modified' in str(values[0]):
                     values[0] = str(values[0])[17:].split("\n")[0]
                 values[0] = f'{timestamp}{values[0]}'
@@ -1871,7 +1906,11 @@ class FileManager:
         if len(values) > 4:
             details_frame.delete_tab(2)
             details_frame.delete_tab(1)
-            if ('fileStatus' in values[7] or 'inRecycleBin' in values[7]) and not df_GraphMetadata_Records.empty:
+            
+            # Check if 'fileStatus' or 'inRecycleBin' is in any value
+            condition_met = any('fileStatus' in value or 'inRecycleBin' in value for value in values)
+            
+            if condition_met and not df_GraphMetadata_Records.empty:
                 line_number = 4
                 start_index = f"{line_number}.0"
                 end_index = f"{line_number + 1}.0"
@@ -2024,19 +2063,20 @@ class FileManager:
         info = []
 
         # find logs for deleted files
-        if 'inRecycleBin' in values[7]:
-            rid = values[3].split(" ")[1].split("+")[0]
-            try:
-                file_hash = values[11].split("(")[1].strip(")")
-            except Exception:
-                file_hash = ''
+        if any('inrecyclebin' in value.lower() for value in values):
+            rid = next((value.split(" ")[1].split("+")[0] for value in values if 'resourceid:' in value.lower()), '')
+
+            file_hash = next(
+                (value.split("(")[1].strip(")") for value in values if 'sha1(' in value.lower() or 'quickxor(' in value.lower()),
+                ''
+            )
 
             if len(rid) != 0:
                 info = pd.concat([df.loc[df.Params.astype('string').str.contains(rid, case=False, na=False)] for df in df_list])
             elif len(file_hash) != 0:
-                if 'SHA1' in values[10]:
+                if any('sha1(' in value.lower() for value in values):
                     info = pd.concat([df.loc[df.Params.astype('string').str.contains(file_hash, case=False, na=False)] for df in df_list])
-                if 'quickXor' in values[10]:
+                if any('quickxor(' in value.lower() for value in values):
                     data = ''.join(['{:02x}'.format(i) for i in base64.b64decode(file_hash)])
                     info = pd.concat([df.loc[df.Params.astype('string').str.contains(data, case=False, na=False)] for df in df_list])
             else:
@@ -2044,8 +2084,11 @@ class FileManager:
                 return
 
         # find logs for files/folders
-        if 'Status' in values[7]:
-            info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{values[3].split(" ")[1].split("+")[0]}', case=False, na=False)] for df in df_list])
+        if any('status:' in value.lower() for value in values):
+            # Find the item containing 'resourceID:' and extract the desired part
+            resourceID = next((value.split(" ")[1].split("+")[0] for value in values if 'resourceid:' in value.lower()), '')
+            # Concatenate DataFrames containing the resource_id
+            info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{resourceID}', case=False, na=False)] for df in df_list])
 
         if len(info) == 0 or stop.is_set():
             infoNB.tab(infoFrame, text="Log Entries")
@@ -2124,24 +2167,23 @@ class FileManager:
 
             self.tv2.insert("", "end", iid=child, image=image_key, text=text, values=values, tags=tags)
 
-            values_7 = values[7].split(' ')[1] if len(values) > 7 and len(values[7].split(' ')) > 1 else ''
+            folderStatus = next((item.split(' ')[1] for item in values if 'folderstatus:' in item.lower() and len(item.split(' ')) > 1), '')
+            
+            spoPermissions = next(
+                    (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in values if 'spoPermissions: ' in item),
+                    ''
+            )
 
-            try:
-                values_8 = ast.literal_eval(values[8].split('spoPermissions: ')[1]) if 'spoPermissions: ' in values[8] else ast.literal_eval(values[10].split('spoPermissions: ')[1]) if 'spoPermissions: ' in values[10] else ''
-            except IndexError:
-                values_8 = ''
-
-            if values_7 == '7':
-                if image_key == str(link_folder_img):
+            if folderStatus == '7':
+                if image_key == str(link_directory_img):
                     self.status.append(online_link_img)
                 else:
                     self.status.append(online_img)
             else:
-                self.status.append(image_mapping.get(values_7, online_img))
+                self.status.append(image_mapping.get(folderStatus, online_img))
 
-            if not set(lock_list).intersection(values_8) and str(tags) != 'red':
-                if values_7 not in ('10', '11', ''):
-                    print(values_7)
+            if not set(lock_list).intersection(spoPermissions) and str(tags) != 'red':
+                if folderStatus not in ('10', '11', ''):
                     self.status.append(locked_img)
 
             output_image = self.create_output_image()
@@ -2157,9 +2199,15 @@ class FileManager:
                     image_key_i = item_data_i["image"][0]
                     text_i = f' {item_data_i["text"]}'
                     values_i = item_data_i["values"]
+
                     if values_i[0] == '':
-                        values_i[0] = values_i[10][18:]
-                        values_i[10] = 'DeleteTimeStamp: '
+                        # Find the item containing 'notificationtime:' and perform the operations
+                        notification_time_item = next((value for value in values_i if 'notificationtime:' in value.lower()), '')
+                        
+                        values_i[0] = notification_time_item[18:]
+                        index = values_i.index(notification_time_item)
+                        values_i[index] = 'DeleteTimeStamp: '
+
                     tags_i = item_data_i["tags"][0] if item_data_i["tags"] else ''
 
                     heading_text = ' Date deleted' if tags_i else ' Date modified'
@@ -2167,16 +2215,24 @@ class FileManager:
 
                     self.tv2.insert("", "end", image=image_key_i, text=text_i, values=values_i, tags=tags_i)
 
-                    values_i_7 = values_i[7].split(' ')[1] if len(values_i) > 7 and len(values_i[7].split(' ')) > 1 else ''
-                    values_i_9 = ast.literal_eval(values_i[9].split('spoPermissions: ')[1]) if 'spoPermissions: ' in values_i[9] else ''
-                    values_i_13 = values_i[13].split(' ')[1] if 'sharedItem' in values_i[13] else ''
+                    fileStatus = next((item.split(' ')[1] for item in values_i if ('filestatus:' in item.lower() or 'inrecyclebin' in item.lower()) and len(item.split(' ')) > 1), '')
 
-                    self.status.append(image_mapping.get(values_i_7, online_img))
+                    spoPermissions_i = next(
+                        (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in values_i if 'spopermissions: ' in item.lower()), 
+                        ''
+                    )
 
-                    if values_i_13 == '1':
+                    sharedItem = next(
+                        (item.split(' ')[1] for item in values_i if 'shareditem:' in item.lower() and len(item.split(' ')) > 1), 
+                        ''
+                    )
+
+                    self.status.append(image_mapping.get(fileStatus, online_img))
+
+                    if sharedItem == '1':
                         self.status.append(shared_img)
 
-                    if not set(lock_list).intersection(values_i_9) and str(tags_i) != 'red':
+                    if not set(lock_list).intersection(spoPermissions_i) and str(tags_i) != 'red':
                         self.status.append(locked_img)
 
                     output_image = self.create_output_image()
@@ -3000,7 +3056,8 @@ def search(item=''):
     for child in children:
         if query.lower() in str(tv.item(child, 'values')).lower():
             values = tv.item(child, 'values')
-            Result(root, values, child)
+            image_key = tv.item(child, 'image')[0]
+            Result(root, values, child, image_key)
         if child in file_items:
             for i in file_items[child]:
                 if query.lower() in str(tv.item(i, 'values')).lower():
@@ -3008,7 +3065,8 @@ def search(item=''):
                     if tv.item(i, 'tags'):
                         tags = 'red'
                     values = tv.item(i, 'values')
-                    Result(root, values, i, folder=False, tags=tags)
+                    image_key = tv.item(i, 'image')[0]
+                    Result(root, values, i, image_key, folder=False, tags=tags)
         search(item=child)
 
 
@@ -3104,14 +3162,14 @@ def json_count(item='', file_count=0, del_count=0, folder_count=0):
     for child in children:
         values = tv.item(child, 'values')
 
-        folder_count += 'folder' in values[7]
+        folder_count += any('folderstatus:' in item.lower() for item in values)
 
         if child in file_items:
             for i in file_items[child]:
                 values = tv.item(i, 'values')
 
-                file_count += 'file' in values[7]
-                del_count += 'inRecycleBin' in values[7]
+                file_count += any('filestatus:' in item.lower() for item in values)
+                del_count += any('inRecycleBin:' in item.lower() for item in values)
 
         file_count, del_count, folder_count = json_count(
             item=child,
@@ -3207,9 +3265,9 @@ def parent_child(d, parent_id=None, meta=False):
             elif c['folderStatus'] == 10:
                 image = not_sync_directory_img
             elif c['folderStatus'] == 11:
-                image = not_link_folder_img
+                image = not_link_directory_img
             else:
-                image = folder_img
+                image = directory_img
             parent_child(c, tv.insert(parent_id,
                                       0,
                                       image=image,
@@ -3218,8 +3276,8 @@ def parent_child(d, parent_id=None, meta=False):
 
     if 'Scope' in d:
         for c in d['Scope']:
-            image = link_folder_img
-            if c['listID'] == '' and '+' not in c['scopeID']:
+            image = link_directory_img
+            if c['shortcutItemIndex'] > 0:
                 image = vault_closed_img
             if c['siteID'] == '' and '+' in c['scopeID']:
                 image = sync_directory_img
@@ -4260,11 +4318,11 @@ not_sync_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/fi
 not_link_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/not_link_file.png'))
 
 # small folder images
-folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/directory_closed.png'))
+directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/directory_closed.png'))
 sync_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/sync_directory.png'))
 not_sync_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/not_sync_directory.png'))
-link_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/67.png'))
-not_link_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/not_link_folder.png'))
+link_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/67.png'))
+not_link_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/not_link_folder.png'))
 
 # small status images
 online_img = Image.open(application_path + '/Images/status/online.png')
@@ -4481,7 +4539,6 @@ bind_id = message.bind('<Double-Button-1>', lambda event=None: Messages(root))
 infoNB.bind('<Motion>', tool_tip_manager.motion)
 search_entry.bind('<Motion>', tool_tip_manager.motion)
 root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', tool_tip_manager.motion)
-#root.nametowidget('.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!detailsframe.!notebook').bind('<Motion>', tool_tip_manager.motion)
 
 keyboard.is_pressed('shift')
 
@@ -4560,7 +4617,7 @@ file_menu.add_cascade(label="OneDrive settings", menu=odsmenu,
                       image=ods_img, compound='left')
 
 file_menu.add_cascade(label="OneDrive logs", menu=odlmenu,
-                      image=folder_img, compound='left')
+                      image=directory_img, compound='left')
 file_menu.entryconfig("OneDrive logs", state='disable')
 if menu_data['odl'] is True:
     file_menu.entryconfig("OneDrive logs", state='normal')

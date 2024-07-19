@@ -43,7 +43,7 @@ def print_html(df, rbin_df, name, html_path):
     if not rbin_df.empty:
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
-    df = df.fillna('')
+    df = df.apply(lambda x: x.fillna(0) if x.dtype == 'Int64' else x.fillna('') if x.dtype == 'object' else x)
 
     html_file = os.path.basename(name).split('.')[0]+"_OneDrive.html"
     file_extension = os.path.splitext(name)[1][1:]

@@ -39,17 +39,18 @@ class SQLiteParser:
         self.scope_header = False
         self.files_header = False
         self.folders_header = False
-        self.dict_1 = {'lastChange': 0, 'sharedItem': 0, 'mediaDateTaken': 0, 'mediaWidth': 0, 'mediaHeight': 0, 'mediaDuration': 0}
-        self.dict_2 = {'mediaDateTaken': 0, 'mediaWidth': 0, 'mediaHeight': 0, 'mediaDuration': 0}
-        self.dict_3 = {'mediaDuration': 0}
-        self.int_to_bin = ['bitMask']
-        self.int_to_hex = ['header', 'entry_offset']
-        self.bytes_to_str = ['eTag', 'listID', 'scopeID', 'siteID', 'webID', 'syncTokenData']
-        self.bytes_to_hex = ['localHashDigest', 'serverHashDigest', 'localWaterlineData', 'localWriteValidationToken', 'localSyncTokenData', 'localCobaltHashAlgorithm']
-        self.int_to_date = ['lastChange', 'serverLastChange', 'mediaDateTaken']
-        self.split_str = ['fileName', 'folderName']
-        self.id_format = ['resourceID', 'parentResourceID', 'parentScopeID', 'scopeID', 'sourceResourceID']
-        self.rem_list = ['header', 'entry_offset', 'unknown1', 'unknown2', 'unknown3', 'flags', 'unknown4', 'unknown5', 'unknown6', 'syncTokenData', 'syncTokenData_size', 'spoPermissions', 'unknown7', 'shortcutVolumeID', 'shortcutItemIndex', 'sourceResourceID']
+        self.dict_1 = {'lastChange': 0,
+                       'sharedItem': 0,
+                       'mediaDateTaken': 0,
+                       'mediaWidth': 0,
+                       'mediaHeight': 0,
+                       'mediaDuration': 0
+                       }
+        self.dict_2 = {'mediaDateTaken': 0,
+                       'mediaWidth': 0,
+                       'mediaHeight': 0,
+                       'mediaDuration': 0
+                       }
 
     def format_id(self, _):
         f = _[:32].decode("utf-8")
@@ -83,9 +84,18 @@ class SQLiteParser:
         try:
             SyncEngineDatabase = sqlite3.connect(f'file:/{sql_dir}/SyncEngineDatabase.db?mode=ro', uri=True)
             cursor = SyncEngineDatabase.execute("SELECT value FROM __oddbm_schema WHERE name = 'version'")
-#            print(cursor.fetchall()[0][0])
+
             try:
-                df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, tenantID, webURL, remotePath, spoPermissions, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
+                df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, tenantID, webURL, remotePath, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
+                convert = {'shortcutVolumeID': 'Int64',
+                           'shortcutItemIndex': 'Int64'
+                           }
+                df_scope = df_scope.astype(convert)
+                df_scope['shortcutVolumeID'].fillna(0, inplace=True)
+                df_scope['shortcutItemIndex'].fillna(0, inplace=True)
+
+                df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+                df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
                 df_scope.insert(0, 'Type', 'Scope')
                 columns_to_fill = df_scope.columns.difference(['libraryType'])
                 df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
@@ -96,16 +106,34 @@ class SQLiteParser:
                 scopeID = df_scope['scopeID'].tolist()
 
                 if cursor.fetchall()[0][0] <= 20:
-                    df_files = pd.read_sql_query("SELECT parentResourceID, resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration FROM od_ClientFile_Records", SyncEngineDatabase)
-                    df_files['HydrationTime'] = ''
+                    df_files = pd.read_sql_query("SELECT parentResourceID, resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration FROM od_ClientFile_Records", SyncEngineDatabase)
+
                 else:
-                    df_files = pd.read_sql_query("SELECT parentResourceID, od_ClientFile_Records.resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration, od_HydrationData.notificationTime AS HydrationTime FROM od_ClientFile_Records LEFT OUTER JOIN od_HydrationData ON od_ClientFile_Records.resourceID = od_HydrationData.resourceID", SyncEngineDatabase)
+                    df_files = pd.read_sql_query("SELECT parentResourceID, od_ClientFile_Records.resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration, od_HydrationData.* FROM od_ClientFile_Records LEFT OUTER JOIN od_HydrationData ON od_ClientFile_Records.resourceID = od_HydrationData.resourceID", SyncEngineDatabase)
+                    df_files = df_files.loc[:, ~df_files.columns.duplicated(keep='first')]
+                    
                 df_files.rename(columns={"fileName": "Name",
                                          "mediaDateTaken": "DateTaken",
                                          "mediaWidth": "Width",
                                          "mediaHeight": "Height",
                                          "mediaDuration": "Duration"
                                          }, inplace=True)
+                
+                if 'notificationTime' in df_files:
+                    df_files.rename(columns={"notificationTime" : "HydrationTime"}, inplace=True)
+                    df_files['HydrationTime'] = pd.to_datetime(df_files['HydrationTime'], unit='s').astype(str)
+                    df_files['HydrationTime'].replace('NaT', '', inplace=True)
+                
+                if 'firstHydrationTime' in df_files:
+                    convert = {'hydrationCount': 'Int64'}
+                    df_files = df_files.astype(convert)
+                    df_files['hydrationCount'].fillna(0, inplace=True)
+                    df_files['lastHydrationType'].fillna('', inplace=True)
+                    df_files['firstHydrationTime'] = pd.to_datetime(df_files['firstHydrationTime'], unit='s').astype(str)
+                    df_files['firstHydrationTime'].replace('NaT', '', inplace=True)
+                    df_files['lastHydrationTime'] = pd.to_datetime(df_files['lastHydrationTime'], unit='s').astype(str)
+                    df_files['lastHydrationTime'].replace('NaT', '', inplace=True)
+               
                 df_files['Width'].fillna(0, inplace=True)
                 df_files['Height'].fillna(0, inplace=True)
                 df_files['Duration'].fillna(0, inplace=True)
@@ -113,15 +141,16 @@ class SQLiteParser:
                 columns = ['DateTaken', 'Width', 'Height', 'Duration']
                 df_files['Media'] = df_files[columns].to_dict(orient='records')
                 df_files = df_files.drop(columns=columns)
-                if account == 'Personal':
-                    df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'SHA1({x.hex()})' if x else '')
-                else:
-                    df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'quickXor({codecs.encode(x, "base64").decode("utf-8").rstrip()})' if x else '')
+                df_files['localHashDigest'] = df_files.apply(
+                    lambda row: f'SHA1({row["localHashDigest"].hex()})' if row['localHashAlgorithm'] == 4 and row['localHashDigest'] not in (None, '')
+                    else f'quickXor({codecs.encode(row["localHashDigest"], "base64").decode("utf-8").rstrip()})' if row['localHashAlgorithm'] == 5 and row['localHashDigest'] not in (None, '')
+                    else f'{row["localHashAlgorithm"]}:{row["localHashDigest"]}' if row['localHashDigest'] not in (None, '')
+                    else '',
+                    axis=1
+                )
                 df_files['size'] = df_files['size'].fillna(0).apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
                 df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
                 df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
-                df_files['HydrationTime'] = pd.to_datetime(df_files['HydrationTime'], unit='s').astype(str)
-                df_files['HydrationTime'].replace('NaT', '', inplace=True)
                 df_files['sharedItem'].fillna(0, inplace=True)
                 df_files.insert(0, 'Type', 'File')
 

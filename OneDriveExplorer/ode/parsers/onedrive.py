@@ -88,6 +88,7 @@ class OneDriveParser:
 
         return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
+    # Generate scopeID list instead of passing
     def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
         if os.path.isdir(file_path):
             directory = file_path
@@ -167,6 +168,7 @@ class OneDriveParser:
 
         df = df.astype(convert)
         df['volumeID'].fillna(0, inplace=True)
+        df['itemIndex'].fillna(0, inplace=True)
 
         df['volumeID'] = df['volumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
         df['volumeID'] = df['volumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
@@ -176,14 +178,25 @@ class OneDriveParser:
         dcache = {}
         is_del = []
 
+        # Need to look into this
         if not df_GraphMetadata_Records.empty:
             df_GraphMetadata_Records.set_index('resourceID', inplace=True)
 
+        column_len = len(df.columns)
+            
         for row in df.sort_values(
             by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                 ascending=[False, False, False, True, False, False]).to_dict('records'):
             if row['Type'] == 'File':
-                file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'HydrationTime', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                if column_len == 32:
+                    file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+            
+                if column_len == 33:
+                    file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+            
+                if column_len == 36:
+                    file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+
                 file.setdefault('Metadata', '')
 
                 try:
@@ -202,7 +215,7 @@ class OneDriveParser:
                     if row['scopeID'] not in scopeID:
                         continue
                     scope = {key: row[key] for key in (
-                             'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions')}
+                             'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex')}
                     folder = cache.get(row['scopeID'], {})
                     temp = {**scope, **folder}
                     final.insert(0, temp)
@@ -217,6 +230,8 @@ class OneDriveParser:
                                      'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath')}
                             scope['MountPoint'] = row['MountPoint']
                             scope['spoPermissions'] = s['spoPermissions']
+                            scope['shortcutVolumeID'] = s['shortcutVolumeID']
+                            scope['shortcutItemIndex'] = s['shortcutItemIndex']
                         folder = cache.get(row['resourceID'], {})
                         temp = {**sub_folder, **folder}
                         scope.setdefault('Links', []).append(temp)
@@ -253,6 +268,6 @@ class OneDriveParser:
 
         cache['Data'] = final
 
-        df_GraphMetadata_Records.reset_index(drop=True, inplace=True)
+        df_GraphMetadata_Records.reset_index(inplace=True)
 
         return cache, rbin_df

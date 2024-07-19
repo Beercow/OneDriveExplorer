@@ -75,10 +75,6 @@ class DATParser:
                              'localSyncTokenData',
                              'localCobaltHashAlgorithm'
                              ]
-        self.int_to_date = ['lastChange',
-                            'serverLastChange',
-                            'mediaDateTaken'
-                            ]
         self.split_str = ['fileName',
                           'folderName'
                           ]
@@ -100,8 +96,6 @@ class DATParser:
                          'syncTokenData',
                          'syncTokenData_size',
                          'unknown7',
-                         'shortcutVolumeID',
-                         'shortcutItemIndex',
                          'sourceResourceID'
                          ]
 
@@ -149,7 +143,7 @@ class DATParser:
                 if header.syncTokenData_size != 0:
                     account = 'Personal'
                     csvwriter = csv.writer(temp_scope, escapechar='\\')
-                    csvwriter.writerow(['scopeID', 'siteID', 'webID', 'listID', 'libraryType', 'spoPermissions'])
+                    csvwriter.writerow(['scopeID', 'siteID', 'webID', 'listID', 'libraryType', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex'])
                     self.scope_header = True
                     syncTokenData = urllib.parse.unquote(header.syncTokenData[:int(header.syncTokenData_size)].decode('utf-8'))
                     syncDict = dict(item.split("=") for item in syncTokenData.split(";"))
@@ -386,6 +380,7 @@ class DATParser:
                                 del block._values[key]
                             except Exception:
                                 continue
+                        block._values.update([('shortcutVolumeID', ''), ('shortcutItemIndex', '')])
 
                     elif ff == '0a':
                         data_type = 'Scope'
@@ -397,7 +392,7 @@ class DATParser:
                                 continue
                         block._values.update([('siteID', b''), ('webID', b'')])
                         block._values.move_to_end('listID', last=True)
-                        block._values.update([('libraryType', b''), ('spoPermissions', '')])
+                        block._values.update([('libraryType', b''), ('spoPermissions', ''), ('shortcutVolumeID', ''), ('shortcutItemIndex', '')])
 
                     elif ff == '0b':
                         data_type = 'Scope'
@@ -408,6 +403,8 @@ class DATParser:
                             except Exception:
                                 continue
                         block._values.update([('siteID', b''), ('webID', b''), ('listID', b''), ('libraryType', b''), ('spoPermissions', '')])
+                        block._values.move_to_end('shortcutVolumeID', last=True)
+                        block._values.move_to_end('shortcutItemIndex', last=True)
 
                     elif ff == '0c':
                         data_type = 'Scope'
@@ -417,6 +414,7 @@ class DATParser:
                                 del block._values[key]
                             except Exception:
                                 continue
+                        block._values.update([('shortcutVolumeID', ''), ('shortcutItemIndex', '')])
 
                     else:
                         block = self.datstruct.DAT_BLOCK(f.read(chunk))
@@ -481,6 +479,10 @@ class DATParser:
         temp_files.seek(0)
         temp_folders.seek(0)
 
+        convert = {'shortcutVolumeID': 'Int64',
+                   'shortcutItemIndex': 'Int64'
+                   }
+
         df_scope = pd.read_csv(temp_scope)
         temp_scope.close()
         df_scope.insert(0, 'Type', 'Scope')
@@ -488,6 +490,12 @@ class DATParser:
         df_scope.insert(6, 'webURL', '')
         df_scope.insert(7, 'remotePath', '')
         df_scope = df_scope.astype(object)
+        df_scope = df_scope.astype(convert)
+        df_scope['shortcutVolumeID'].fillna(0, inplace=True)
+        df_scope['shortcutItemIndex'].fillna(0, inplace=True)
+
+        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
         df_scope['spoPermissions'].replace('', np.nan, inplace=True)
         df_scope['spoPermissions'] = df_scope['spoPermissions'].fillna(0).astype('int')
         df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: permissions(x))

@@ -220,26 +220,24 @@ def decrypt(cipher_text):
     global dkey_list
     global utf_type
 
-    cipher_text_orig = cipher_text
-
     if not dkey_list:
-        return cipher_text_orig
+        return ''
     if len(cipher_text) < 22:
-        return cipher_text_orig  # invalid or it was not encrypted!
+        return ''  # invalid or it was not encrypted!
     # add proper base64 padding
     remainder = len(cipher_text) % 4
     if remainder == 1:
-        return cipher_text_orig  # invalid b64 or it was not encrypted!
+        return ''  # invalid b64 or it was not encrypted!
     elif remainder in (2, 3):
         cipher_text += "=" * (4 - remainder)
     try:
         cipher_text = cipher_text.replace('_', '/').replace('-', '+')
         cipher_text = base64.b64decode(cipher_text)
     except Exception:
-        return cipher_text_orig
+        return ''
 
     if len(cipher_text) % 16 != 0:
-        return cipher_text_orig  # invalid b64 or it was not encrypted!
+        return ''  # invalid b64 or it was not encrypted!
 
     for key in dkey_list:
         try:
@@ -247,7 +245,7 @@ def decrypt(cipher_text):
             raw = cipher.decrypt(cipher_text)
         except ValueError as ex:
             # log.error(f'Exception while decrypting data {str(ex)}')
-            return cipher_text_orig
+            return ''
         try:
             plain_text = unpad(raw, 16)
         except Exception as ex:  # possible fix to change key
@@ -257,7 +255,7 @@ def decrypt(cipher_text):
             plain_text = plain_text.decode(utf_type)
         except ValueError as ex:
             # print(f"Error decoding {utf_type}", str(ex))
-            return cipher_text_orig
+            return ''
         return plain_text
 
 
@@ -287,6 +285,7 @@ def read_obfuscation_map(obfuscation_map_path, map):
     repeated_items_found = False
     encoding = guess_encoding(obfuscation_map_path)
     with open(obfuscation_map_path, 'r', encoding=encoding) as f:
+        log.info(f"Building map from {f.name}")
         for line in f.readlines():
             line = line.rstrip('\n')
             terms = line.split('\t')
@@ -400,7 +399,7 @@ def process_odl(filename, map):
         if header.signature == b'EBFGONED':  # Odl header
             pass
         else:
-            log.warning(f'{basename} wrong header! Did not find EBFGONED')
+            log.error(f'{basename} wrong header! Did not find EBFGONED')
             return pd.DataFrame()
         signature = f.read(8)
         # Now either we have the gzip header here or the CDEF header (compressed or uncompressed handles both)
@@ -417,7 +416,7 @@ def process_odl(filename, map):
             f = io.BytesIO(file_data)
             signature = f.read(8)
         if signature != b'\xCC\xDD\xEE\xFF\0\0\0\0':  # CDEF header
-            log.warning(f'{basename} wrong header! Did not find 0xCCDDEEFF')
+            log.error(f'{basename} wrong header! Did not find 0xCCDDEEFF')
             return pd.DataFrame()
         else:
             f.seek(-8, 1)
@@ -460,7 +459,7 @@ def process_odl(filename, map):
             else:
                 log.error(f'Unknown odl_version = {header.odl_version}')
             if data_block.signature != 0xffeeddcc:
-                log.warning(f'{basename} wrong data_block signature! Did not find 0xCCDDEEFF')
+                log.warning(f'Unable to parse {basename} completely. Did not find 0xCCDDEEFF')
                 return pd.DataFrame.from_records(odl_rows)
             timestamp = ReadUnixMsTime(data_block.timestamp)
             odl['Timestamp'] = timestamp
@@ -473,8 +472,7 @@ def process_odl(filename, map):
                     params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
                 f.seek(- params_len, io.SEEK_CUR)
             except Exception as e:
-                log.warning(f'Unable to parse {basename}. Something went wrong! {type(e).__name__}')
-                # template = "An exception of type {0} occurred. Arguments:\n{1!r}"
+                log.warning(f'Unable to parse {basename} completely. {type(e).__name__}')
                 return pd.DataFrame.from_records(odl_rows)
 
             if params_len:
@@ -506,7 +504,7 @@ def process_odl(filename, map):
                             params = ', '.join(params)
                         description = ''.join([v for (k, v) in cparser.consts.items() if k == f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}_des"])
                     except EOFError:
-                        log.error(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
+                        log.warning(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
                         f.seek(- params_len, 1)
                         params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
                 except AttributeError:

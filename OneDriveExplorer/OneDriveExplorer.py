@@ -50,7 +50,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.05.20"
+__version__ = "2024.07.19"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()
@@ -89,7 +89,6 @@ def main():
         if ((args.csv or args.html) and args.json) or (not args.csv and not args.html):
             if not args.json:
                 args.json = '.'
-#            print_json(df, rbin_df, name, args.pretty, args.json)
             print_json(cache, name, args.pretty, args.json)
 
         try:

@@ -67,7 +67,6 @@ def directoryRecurse(directoryObject, parentPath, user, filedata=False):
 
             else:
                 continue
-#                log.warning(f'This went wrong, {entryObject.info.name.name} {f_type}')
 
         except IOError as e:
             log.error(e)

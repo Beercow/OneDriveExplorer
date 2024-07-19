@@ -33,6 +33,7 @@ def parse_csv(filename):
 
     file = open(filename.name, 'r', encoding='utf-8')
     columns_to_drop = ['parentResourceId', 'resourceId', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'hash']
+    columns_to_drop_2 = ['MountPoint', 'Path', 'fileName', 'graphMetadataJSON', 'spoCompositeID', 'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount']
 
     dtypes = {'Type': 'object',
               'scopeID': 'object',
@@ -73,7 +74,7 @@ def parse_csv(filename):
         df_scope = df.loc[df['Type'] == 'Scope',
                           ['Type', 'scopeID', 'siteID', 'webID', 'listID',
                            'tenantID', 'webURL', 'remotePath', 'spoPermissions',
-                           'libraryType']]
+                           'shortcutVolumeID', 'shortcutItemIndex', 'libraryType']]
         columns_to_fill = df_scope.columns.difference(['libraryType'])
         df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
         scopeID = df_scope['scopeID'].tolist()
@@ -106,6 +107,7 @@ def parse_csv(filename):
 
         df = df.astype(object)
         df = df.where(pd.notna(df), None)
+        df.drop(columns=columns_to_drop_2, inplace=True)
 
     except Exception as e:
         print(e)
