@@ -103,7 +103,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.07.19"
+__version__ = "2024.07.24"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -203,7 +203,7 @@ class QuitDialog:
         set_window_long(hwnd, GWL_STYLE, new_style)
 
     def create_widgets(self):
-        self.frame = ttk.Frame(self.win, relief='groove')
+        self.frame = ttk.Frame(self.win, relief='flat')
         self.inner_frame = ttk.Frame(self.frame, relief='groove', padding=5)
 
         self.frame.grid(row=0, column=0)

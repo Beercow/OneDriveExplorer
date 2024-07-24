@@ -32,7 +32,7 @@ import urllib.parse
 from dissect import cstruct
 import pandas as pd
 import numpy as np
-from ode.utils import progress, progress_gui, permissions
+from ode.utils import progress, progress_gui, permissions, change_dtype
 
 log = logging.getLogger(__name__)
 
@@ -392,7 +392,7 @@ class DATParser:
                                 continue
                         block._values.update([('siteID', b''), ('webID', b'')])
                         block._values.move_to_end('listID', last=True)
-                        block._values.update([('libraryType', b''), ('spoPermissions', ''), ('shortcutVolumeID', ''), ('shortcutItemIndex', '')])
+                        block._values.update([('libraryType', ''), ('spoPermissions', ''), ('shortcutVolumeID', ''), ('shortcutItemIndex', '')])
 
                     elif ff == '0b':
                         data_type = 'Scope'
@@ -402,7 +402,7 @@ class DATParser:
                                 del block._values[key]
                             except Exception:
                                 continue
-                        block._values.update([('siteID', b''), ('webID', b''), ('listID', b''), ('libraryType', b''), ('spoPermissions', '')])
+                        block._values.update([('siteID', b''), ('webID', b''), ('listID', b''), ('libraryType', ''), ('spoPermissions', '')])
                         block._values.move_to_end('shortcutVolumeID', last=True)
                         block._values.move_to_end('shortcutItemIndex', last=True)
 
@@ -479,32 +479,20 @@ class DATParser:
         temp_files.seek(0)
         temp_folders.seek(0)
 
-        convert = {'shortcutVolumeID': 'Int64',
-                   'shortcutItemIndex': 'Int64'
-                   }
-
         df_scope = pd.read_csv(temp_scope)
         temp_scope.close()
         df_scope.insert(0, 'Type', 'Scope')
         df_scope.insert(5, 'tenantID', '')
         df_scope.insert(6, 'webURL', '')
         df_scope.insert(7, 'remotePath', '')
-        df_scope = df_scope.astype(object)
-        df_scope = df_scope.astype(convert)
-        df_scope['shortcutVolumeID'].fillna(0, inplace=True)
-        df_scope['shortcutItemIndex'].fillna(0, inplace=True)
-
-        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
-        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
-        df_scope['spoPermissions'].replace('', np.nan, inplace=True)
-        df_scope['spoPermissions'] = df_scope['spoPermissions'].fillna(0).astype('int')
+        df_scope = change_dtype(df_scope, df_name='df_scope')
         df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: permissions(x))
-        df_scope.fillna('', inplace=True)
         scopeID = df_scope['scopeID'].tolist()
 
         df_files = pd.read_csv(temp_files, usecols=['parentResourceID', 'resourceID', 'eTag', 'fileName', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'mediaDateTaken', 'mediaWidth', 'mediaHeight', 'mediaDuration'])
         temp_files.close()
-        df_files['HydrationTime'] = ''
+        df_files['localHashAlgorithm'] = 0
+        df_files.insert(0, 'Type', 'File')
         df_files.rename(columns={"fileName": "Name",
                                  "mediaDateTaken": "DateTaken",
                                  "mediaWidth": "Width",
@@ -512,6 +500,7 @@ class DATParser:
                                  "mediaDuration": "Duration"
                                  }, inplace=True)
         df_files['DateTaken'] = pd.to_datetime(df_files['DateTaken'], unit='s').astype(str)
+        df_files = change_dtype(df_files, df_name='df_files')
         columns = ['DateTaken', 'Width', 'Height', 'Duration']
         df_files['Media'] = df_files[columns].to_dict(orient='records')
         df_files = df_files.drop(columns=columns)
@@ -519,16 +508,16 @@ class DATParser:
             df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'SHA1({x})')
         else:
             df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'quickXor({codecs.encode(binascii.unhexlify(x), "base64").decode("utf-8").rstrip()})')
-        df_files['size'] = df_files['size'].apply(lambda x: f'{x//1024 + 1:,} KB')
+        df_files['size'] = df_files['size'].apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
         df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
         df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
-        df_files.insert(0, 'Type', 'File')
-
         df_folders = pd.read_csv(temp_folders, usecols=['parentScopeID', 'parentResourceID', 'resourceID', 'eTag', 'folderName', 'folderStatus', 'spoPermissions', 'volumeID', 'itemIndex'])
         temp_folders.close()
-        df_folders.rename(columns={"folderName": "Name"}, inplace=True)
-        df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
         df_folders.insert(0, 'Type', 'Folder')
+        df_folders.rename(columns={"folderName": "Name"}, inplace=True)
+        df_folders = change_dtype(df_folders, df_name='df_folders')
+        df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
+
         df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
         df = df.where(pd.notnull(df), None)
 

@@ -179,6 +179,38 @@ def unicode_strings(buf, ouuid):
     return '??????????'
 
 
+def change_dtype(df, df_name=False, schema_version=0):
+    # Define new data types and fill values
+    if df_name == 'df_scope':
+        dtype_changes = {'Type': 'str', 'scopeID': 'str', 'siteID': 'str', 'webID': 'str', 'listID': 'str', 'tenantID': 'str', 'webURL': 'str', 'remotePath': 'str', 'spoPermissions': 'Int64', 'shortcutVolumeID': 'Int64', 'shortcutItemIndex': 'Int64',}
+        fill_values = {'Type': 'Scope', 'scopeID': '', 'siteID': '', 'webID': '', 'listID': '', 'tenantID': '', 'webURL': '', 'remotePath': '', 'spoPermissions': 0, 'shortcutVolumeID': 0, 'shortcutItemIndex': 0,}
+
+    if df_name == 'df_files':
+        dtype_changes = {'Type': 'str', 'parentResourceID': 'str', 'resourceID': 'str', 'eTag': 'str', 'Name': 'str', 'fileStatus': 'Int64', 'spoPermissions': 'Int64', 'volumeID': 'Int64', 'itemIndex': 'Int64', 'size': 'Int64', 'sharedItem': 'Int64', 'Width': 'Int64', 'Height': 'Int64', 'Duration': 'Int64'}
+        fill_values = {'Type': 'File', 'parentResourceID': '', 'resourceID': '', 'eTag': '', 'Name': '', 'fileStatus': 0, 'spoPermissions': 0, 'volumeID': 0, 'itemIndex': 0, 'size': 0, 'sharedItem': 0, 'Width': 0, 'Height': 0, 'Duration': 0}
+        
+        if schema_version >= 27:
+            dtype_changes = dtype_changes | {'hydrationCount': 'Int64'}
+            fill_values = fill_values | {'hydrationCount': 0}
+
+    if df_name == 'df_folders':
+        dtype_changes = {'Type': 'str', 'parentScopeID': 'str', 'parentResourceID': 'str', 'resourceID': 'str', 'eTag': 'str', 'Name': 'str', 'folderStatus': 'Int64', 'spoPermissions': 'Int64', 'volumeID': 'Int64', 'itemIndex': 'Int64'}
+        fill_values = {'Type': 'Folder', 'parentScopeID': '', 'parentResourceID': '', 'resourceID': '', 'eTag': '', 'Name': '', 'folderStatus': 0, 'spoPermissions': 0, 'volumeID': 0, 'itemIndex': 0}
+
+    if df_name == 'df_GraphMetadata_Records':
+        dtype_changes = {'fileName': 'str', 'resourceID': 'str', 'graphMetadataJSON': 'str', 'spoCompositeID': 'str', 'createdBy': 'str', 'modifiedBy': 'str', 'filePolicies': 'str', 'fileExtension': 'str', 'lastWriteCount': 'Int64'}
+        fill_values = {'fileName': '', 'resourceID': '', 'graphMetadataJSON': '', 'spoCompositeID': '', 'createdBy': '', 'modifiedBy': '', 'filePolicies': '', 'fileExtension': '', 'lastWriteCount': 0}
+
+    if df_name == 'rbin_df':
+        dtype_changes = {'Type', 'parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'size', 'hash', 'deletingProcess'}
+        fill_values = {'Type', 'parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'size', 'hash', 'deletingProcess'}
+
+    # Change data types and fill NaN values
+    df.fillna(fill_values, inplace=True)
+    df = df.astype(dtype_changes)
+
+    return df
+
 def progress(count, total, status=''):
     bar_len = 60
     filled_len = int(round(bar_len * count / float(total)))

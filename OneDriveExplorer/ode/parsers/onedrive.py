@@ -90,6 +90,10 @@ class OneDriveParser:
 
     # Generate scopeID list instead of passing
     def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
+        
+        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+
         if os.path.isdir(file_path):
             directory = file_path
             filename = ['SyncEngineDatabase.db', 'SafeDelete.db']
@@ -134,7 +138,9 @@ class OneDriveParser:
             convert = {'fileStatus': 'Int64',
                        'volumeID': 'Int64',
                        'sharedItem': 'Int64',
-                       'folderStatus': 'Int64'
+                       'folderStatus': 'Int64',
+                       'shortcutVolumeID': 'Int64',
+                       'shortcutItemIndex': 'Int64'
                        }
 
         else:
@@ -145,7 +151,9 @@ class OneDriveParser:
                        'volumeID': 'Int64',
                        'itemIndex': 'Int64',
                        'sharedItem': 'Int64',
-                       'folderStatus': 'Int64'
+                       'folderStatus': 'Int64',
+                       'shortcutVolumeID': 'Int64',
+                       'shortcutItemIndex': 'Int64'
                        }
 
         parent_resource_dict = df[(df['resourceID'].notnull()) & (df['Type'] == 'Folder')].set_index('resourceID').apply(lambda x: x['Path'] + '\\' + x['Name'], axis=1).to_dict()
@@ -169,33 +177,45 @@ class OneDriveParser:
         df = df.astype(convert)
         df['volumeID'].fillna(0, inplace=True)
         df['itemIndex'].fillna(0, inplace=True)
+        df['shortcutVolumeID'].fillna(0, inplace=True)
+        df['shortcutItemIndex'].fillna(0, inplace=True)
 
         df['volumeID'] = df['volumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
         df['volumeID'] = df['volumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+        df['shortcutVolumeID'] = df['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+        df['shortcutVolumeID'] = df['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+        
 
         cache = {}
         final = []
         dcache = {}
         is_del = []
 
-        # Need to look into this
         if not df_GraphMetadata_Records.empty:
             df_GraphMetadata_Records.set_index('resourceID', inplace=True)
 
         column_len = len(df.columns)
-            
+       
         for row in df.sort_values(
             by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                 ascending=[False, False, False, True, False, False]).to_dict('records'):
             if row['Type'] == 'File':
-                if column_len == 32:
-                    file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                try:
+                    if column_len == 32:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
             
-                if column_len == 33:
-                    file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                    if column_len == 33:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media')}
             
-                if column_len == 36:
-                    file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                    if column_len == 36:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+
+                except Exception as e:
+                    if gui:
+                        log.error(f'Unable to read dataframe. Something went wrong. {e}')
+                    else:
+                        print(f'Unable to read dataframe. Something went wrong. {e}')
+                    return {}, rbin_df
 
                 file.setdefault('Metadata', '')
 
@@ -269,5 +289,9 @@ class OneDriveParser:
         cache['Data'] = final
 
         df_GraphMetadata_Records.reset_index(inplace=True)
+        try:
+            df_GraphMetadata_Records.drop('index', axis=1, inplace=True)
+        except:
+            pass
 
         return cache, rbin_df

@@ -59,7 +59,9 @@ def parse_csv(filename):
               'Media': 'object',
               'parentScopeID': 'object',
               'folderStatus': 'Int64',
-              'Path': 'object'
+              'Path': 'object',
+              'shortcutVolumeID': 'Int64',
+              'shortcutItemIndex': 'Int64'
               }
 
     try:

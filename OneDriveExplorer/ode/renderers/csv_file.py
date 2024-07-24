@@ -39,7 +39,9 @@ def print_csv(df, rbin_df, df_GraphMetadata_Records, name, csv_path, csv_name=Fa
                'volumeID': 'Int64',
                'itemIndex': 'Int64',
                'sharedItem': 'Int64',
-               'folderStatus': 'Int64'
+               'folderStatus': 'Int64',
+               'localHashAlgorithm': 'Int64',
+               'libraryType': 'Int64'
                }
 
     df = df.astype(convert)

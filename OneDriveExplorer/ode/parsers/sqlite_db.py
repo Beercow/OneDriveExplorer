@@ -29,7 +29,7 @@ import sqlite3
 from dissect import cstruct
 import pandas as pd
 import numpy as np
-from ode.utils import permissions
+from ode.utils import permissions, change_dtype
 
 
 class SQLiteParser:
@@ -64,18 +64,6 @@ class SQLiteParser:
             dict_1[k] = v
         return dict_1
 
-    def find_parent(self, x, id_name_dict, parent_dict):
-        value = parent_dict.get(x, None)
-        if x is None:
-            return ''
-        elif value is None:
-            return x + "\\\\"
-        else:
-            # Incase there is a id without name.
-            if id_name_dict.get(value, None) is None:
-                return self.find_parent(value, id_name_dict, parent_dict) + x
-        return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
-
     def parse_sql(self, sql_dir):
         account = sql_dir.rsplit('\\', 1)[-1]
 
@@ -87,31 +75,21 @@ class SQLiteParser:
 
             try:
                 df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, tenantID, webURL, remotePath, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
-                convert = {'shortcutVolumeID': 'Int64',
-                           'shortcutItemIndex': 'Int64'
-                           }
-                df_scope = df_scope.astype(convert)
-                df_scope['shortcutVolumeID'].fillna(0, inplace=True)
-                df_scope['shortcutItemIndex'].fillna(0, inplace=True)
-
-                df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
-                df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
                 df_scope.insert(0, 'Type', 'Scope')
-                columns_to_fill = df_scope.columns.difference(['libraryType'])
-                df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
-                df_scope['spoPermissions'].replace('', np.nan, inplace=True)
-                df_scope['spoPermissions'] = df_scope['spoPermissions'].fillna(0).astype('int')
+                df_scope = change_dtype(df_scope, df_name='df_scope')
                 df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: permissions(x))
 
                 scopeID = df_scope['scopeID'].tolist()
 
-                if cursor.fetchall()[0][0] <= 20:
+                schema_version = cursor.fetchall()[0][0]
+                if schema_version <= 20:
                     df_files = pd.read_sql_query("SELECT parentResourceID, resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration FROM od_ClientFile_Records", SyncEngineDatabase)
 
                 else:
                     df_files = pd.read_sql_query("SELECT parentResourceID, od_ClientFile_Records.resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration, od_HydrationData.* FROM od_ClientFile_Records LEFT OUTER JOIN od_HydrationData ON od_ClientFile_Records.resourceID = od_HydrationData.resourceID", SyncEngineDatabase)
                     df_files = df_files.loc[:, ~df_files.columns.duplicated(keep='first')]
                     
+                df_files.insert(0, 'Type', 'File')
                 df_files.rename(columns={"fileName": "Name",
                                          "mediaDateTaken": "DateTaken",
                                          "mediaWidth": "Width",
@@ -125,19 +103,14 @@ class SQLiteParser:
                     df_files['HydrationTime'].replace('NaT', '', inplace=True)
                 
                 if 'firstHydrationTime' in df_files:
-                    convert = {'hydrationCount': 'Int64'}
-                    df_files = df_files.astype(convert)
-                    df_files['hydrationCount'].fillna(0, inplace=True)
                     df_files['lastHydrationType'].fillna('', inplace=True)
                     df_files['firstHydrationTime'] = pd.to_datetime(df_files['firstHydrationTime'], unit='s').astype(str)
                     df_files['firstHydrationTime'].replace('NaT', '', inplace=True)
                     df_files['lastHydrationTime'] = pd.to_datetime(df_files['lastHydrationTime'], unit='s').astype(str)
                     df_files['lastHydrationTime'].replace('NaT', '', inplace=True)
                
-                df_files['Width'].fillna(0, inplace=True)
-                df_files['Height'].fillna(0, inplace=True)
-                df_files['Duration'].fillna(0, inplace=True)
                 df_files['DateTaken'] = pd.to_datetime(df_files['DateTaken'], unit='s').fillna('1970-01-01 00:00:00').astype(str)
+                df_files = change_dtype(df_files, df_name='df_files', schema_version=schema_version)
                 columns = ['DateTaken', 'Width', 'Height', 'Duration']
                 df_files['Media'] = df_files[columns].to_dict(orient='records')
                 df_files = df_files.drop(columns=columns)
@@ -148,26 +121,24 @@ class SQLiteParser:
                     else '',
                     axis=1
                 )
-                df_files['size'] = df_files['size'].fillna(0).apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
+
+                df_files['size'] = df_files['size'].apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
                 df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
                 df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
-                df_files['sharedItem'].fillna(0, inplace=True)
-                df_files.insert(0, 'Type', 'File')
-
                 df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex FROM od_ClientFolder_Records", SyncEngineDatabase)
-                df_folders.rename(columns={"folderName": "Name"}, inplace=True)
-                df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
                 df_folders.insert(0, 'Type', 'Folder')
+                df_folders.rename(columns={"folderName": "Name"}, inplace=True)
+                df_folders = change_dtype(df_folders, df_name='df_folders')
+                df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
 
                 df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
                 df = df.where(pd.notnull(df), None)
 
                 df_GraphMetadata_Records = pd.read_sql_query("SELECT fileName, od_GraphMetadata_Records.* FROM od_GraphMetadata_Records INNER JOIN od_ClientFile_Records ON od_ClientFile_Records.resourceID = od_GraphMetadata_Records.resourceID", SyncEngineDatabase)
+                df_GraphMetadata_Records = change_dtype(df_GraphMetadata_Records, df_name='df_GraphMetadata_Records')
                 if not df_GraphMetadata_Records.empty:
                     json_columns = ['graphMetadataJSON', 'filePolicies']
                     df_GraphMetadata_Records[json_columns] = df_GraphMetadata_Records[json_columns].map(lambda x: json.loads(x) if pd.notna(x) and x.strip() else '')
-                    df_GraphMetadata_Records['lastWriteCount'] = df_GraphMetadata_Records['lastWriteCount'].astype('Int64')
-                df_GraphMetadata_Records['fileExtension'].replace('nan', '', inplace=True)
 
             except Exception as e:
                 self.log.warning(f'Unable to parse {sql_dir}\SyncEngineDatabase.db. {e}')
@@ -222,6 +193,7 @@ class SQLiteParser:
                 filter_delete_info_df['Path'] = filter_delete_info_df['Path'].str.rsplit('\\', n=1).str[0]
 
                 rbin_df = pd.concat([rbin_df, filter_delete_info_df], ignore_index=True, axis=0)
+                print(rbin_df.columns)
 
                 rbin_df['notificationTime'] = pd.to_datetime(rbin_df['notificationTime'], unit='s').astype(str)
                 rbin_df['volumeId'] = rbin_df['volumeId'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*format(x, '08x')).upper())
