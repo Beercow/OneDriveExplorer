@@ -50,7 +50,6 @@ import time
 import keyboard
 from ruamel.yaml import YAML
 import logging
-from io import StringIO as StringBuffer
 from datetime import datetime
 from cerberus import Validator
 import warnings
@@ -95,7 +94,7 @@ GWL_STYLE = -16
 WS_MINIMIZEBOX = 131072
 WS_MAXIMIZEBOX = 65536
 
-log_capture_string = StringBuffer()
+log_capture_string = StringIO()
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s, %(levelname)s, %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
@@ -103,7 +102,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.07.24"
+__version__ = "2024.09.20"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -1291,10 +1290,11 @@ s_image = {}
 
 class Result:
 
-    def __init__(self, master, *args, folder=True, tags=''):
+    def __init__(self, master, *args, folder=True, folderShared='', tags=''):
         self.master = master
         self.args = args
         self.folder = folder
+        self.folderShared = folderShared
         self.tags = tags
         self.type = []
         self.status = []
@@ -1360,7 +1360,7 @@ class Result:
             ''
         )
 
-        if num == '7' and len(values_list) > 11:
+        if num == '7' and len(values_list) > 12:
             shortcut_item = next((item for item in self.args[0] if 'shortcutitemindex:' in item.lower()), None)
             if shortcut_item and int(shortcut_item.split(' ')[1]) > 0:
                 self.type.clear()
@@ -1371,6 +1371,14 @@ class Result:
             pass
         else:
             self.type.append(self.get_type_image(num))
+
+        sharedItem = next(
+                (item.split(' ')[1] for item in self.args[0] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1), 
+                ''
+            )
+
+        if sharedItem == '1':
+                self.status.append(shared_big_img)
 
         if not set(self.lock_list).intersection(spoPermissions):
             if num not in ('10', '11'):
@@ -1397,7 +1405,7 @@ class Result:
                     else:
                         self.status.append(self.get_status_image(num))
 
-            if sharedItem == '1':
+            if sharedItem == '1' or self.folderShared == '1':
                 self.status.append(shared_big_img)
 
             if not set(self.lock_list).intersection(spoPermissions) and not any('inrecyclebin:' in item.lower() for item in self.args[0]):
@@ -2086,7 +2094,7 @@ class FileManager:
         # find logs for files/folders
         if any('status:' in value.lower() for value in values):
             # Find the item containing 'resourceID:' and extract the desired part
-            resourceID = next((value.split(" ")[1].split("+")[0] for value in values if 'resourceid:' in value.lower()), '')
+            resourceID = next((value.split(" ")[1].split("+")[0] for value in values if value.lower().startswith('resourceid:')), '')
             # Concatenate DataFrames containing the resource_id
             info = pd.concat([df.loc[df.Params.astype('string').str.contains(f'{resourceID}', case=False, na=False)] for df in df_list])
 
@@ -2182,6 +2190,14 @@ class FileManager:
             else:
                 self.status.append(image_mapping.get(folderStatus, online_img))
 
+            sharedItemF = next(
+                        (item.split(' ')[1] for item in values if 'shareditem:' in item.lower() and len(item.split(' ')) > 1), 
+                        ''
+                    )
+
+            if sharedItemF == '1':
+                        self.status.append(shared_img)
+
             if not set(lock_list).intersection(spoPermissions) and str(tags) != 'red':
                 if folderStatus not in ('10', '11', ''):
                     self.status.append(locked_img)
@@ -2193,6 +2209,11 @@ class FileManager:
 
         try:
             if cur_item[0] in file_items:
+                folderShared = next(
+                    (item.split(' ')[1] for item in self.tv.item(cur_item[0])["values"] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1),
+                    ''
+                )
+
                 for i in file_items[cur_item[0]]:
                     self.status.clear()
                     item_data_i = self.tv.item(i)
@@ -2229,7 +2250,7 @@ class FileManager:
 
                     self.status.append(image_mapping.get(fileStatus, online_img))
 
-                    if sharedItem == '1':
+                    if sharedItem == '1' or folderShared == '1':
                         self.status.append(shared_img)
 
                     if not set(lock_list).intersection(spoPermissions_i) and str(tags_i) != 'red':
@@ -3059,6 +3080,10 @@ def search(item=''):
             image_key = tv.item(child, 'image')[0]
             Result(root, values, child, image_key)
         if child in file_items:
+            folderShared = next(
+                (item.split(' ')[1] for item in tv.item(child, 'values') if 'shareditem:' in item.lower() and len(item.split(' ')) > 1),
+                ''
+            )
             for i in file_items[child]:
                 if query.lower() in str(tv.item(i, 'values')).lower():
                     tags = ''
@@ -3066,7 +3091,7 @@ def search(item=''):
                         tags = 'red'
                     values = tv.item(i, 'values')
                     image_key = tv.item(i, 'image')[0]
-                    Result(root, values, i, image_key, folder=False, tags=tags)
+                    Result(root, values, i, image_key, folder=False, folderShared=folderShared, tags=tags)
         search(item=child)
 
 
@@ -3532,16 +3557,11 @@ def odl(folder_name, csv=False):
     file_manager.tv2.delete(*file_manager.tv2.get_children())
     file_manager.tv3.delete(*file_manager.tv3.get_children())
     key_find = re.compile(r'Users/(?P<user>.*)?/AppData')
+    pb.stop()
+    start = time.time()
+
     if csv:
         key = folder_name.name.split('/')[-1].split('_')[0]
-    else:
-        key = re.findall(key_find, folder_name)
-        if len(key) == 0:
-            key = 'ODL'
-        else:
-            key = key[0]
-    pb.stop()
-    if csv:
         header_list = ['Filename',
                        'File_Index',
                        'Timestamp',
@@ -3576,6 +3596,11 @@ def odl(folder_name, csv=False):
             odl = pd.DataFrame()
             logging.error(f'{folder_name.name} not a valid ODL csv.')
     else:
+        key = re.findall(key_find, folder_name)
+        if len(key) == 0:
+            key = 'ODL'
+        else:
+            key = key[0]
         odl = parse_odl(folder_name, key, pb, value_label, gui=True)
 
     tb = ttk.Frame()
@@ -3606,7 +3631,7 @@ def odl(folder_name, csv=False):
 
     pb.stop()
     pb.configure(mode='determinate')
-    value_label['text'] = "Parsing complete"
+    value_label['text'] = f'Parsing complete. {format((time.time() - start), ".4f")} seconds'
 
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
     message['text'] = mcount
@@ -3656,7 +3681,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
         name = os.path.split(filename)[1]
 
-        df, rbin_df, df_scope, scopeID = DATParser.parse_dat(filename, account,
+        df, rbin_df, df_scope, scopeID, localHashAlgorithm = DATParser.parse_dat(filename, account,
                                                              gui=True, pb=pb,
                                                              value_label=value_label)
 
@@ -3668,13 +3693,14 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
                                                            rbin_df, account,
                                                            reghive,
                                                            recbin,
+                                                           localHashAlgorithm=localHashAlgorithm,
                                                            gui=True,
                                                            pb=pb,
                                                            value_label=value_label)
 
         dat = True
 
-    if x == 'Load from SQLite':
+    elif x == 'Load from SQLite':
         filename = filename.replace('/', '\\')
         sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
         sql_find = re.findall(sql_dir, filename)
@@ -3686,7 +3712,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         pb.configure(mode='indeterminate')
         value_label['text'] = 'Building folder list. Please wait....'
         pb.start()
-        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account = SQLiteParser.parse_sql(filename)
+        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, localHashAlgorithm = SQLiteParser.parse_sql(filename)
 
         if not df.empty:
             cache, rbin_df = OneDriveParser.parse_onedrive(df,
@@ -3698,18 +3724,19 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
                                                            account,
                                                            reghive,
                                                            recbin,
+                                                           localHashAlgorithm=localHashAlgorithm,
                                                            gui=True,
                                                            pb=pb,
                                                            value_label=value_label)
         pb.stop()
         dat = True
 
-    if x == 'Import JSON':
+    elif x == 'Import JSON':
         cache = json.load(filename)
         df = pd.DataFrame()
         rbin_df = pd.DataFrame()
 
-    if x == 'Import CSV':
+    elif x == 'Import CSV':
         account = ''
         df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID = parse_csv(filename)
 
@@ -3722,11 +3749,12 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
                                                            account,
                                                            reghive,
                                                            recbin,
+                                                           localHashAlgorithm=False,
                                                            gui=True,
                                                            pb=pb,
                                                            value_label=value_label)
 
-    if x == 'Project':
+    elif x == 'Project':
         name = filename
         pass
 
@@ -3741,11 +3769,10 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         if x == 'Import JSON':
             parent_child(cache, None, True)
             df_GraphMetadata_Records = pd.DataFrame(dfs_to_concat)
-        else:
-            parent_child(cache)
-        if x == 'Import JSON':
             curItem = tv.get_children()[-1]
             file_count, del_count, folder_count = json_count(item=curItem)
+        else:
+            parent_child(cache)
 
         pb.stop()
         pb.configure(mode='determinate')

@@ -43,6 +43,7 @@ class DATParser:
         self.log = logging.getLogger(__name__)
         self.datstruct = cstruct.cstruct()
         self.DAT_DEF = f'{self.application_path}/ode/helpers/structures'
+        self.localHashAlgorithm = 0
         self.datstruct.loadfile(self.DAT_DEF)
         self.dict_1 = {'lastChange': 0,
                        'sharedItem': 0,
@@ -371,6 +372,8 @@ class DATParser:
                             block = self.datstruct.DAT_FOLDER_v29_v2c(f.read(chunk))
                         else:
                             block = self.datstruct.DAT_FOLDER_v2d_v36(f.read(chunk))
+                        block._values.update([('sharedItem', '')])
+                        print(dict(block._values))
 
                     elif ff == '09':
                         data_type = 'Scope'
@@ -506,12 +509,14 @@ class DATParser:
         df_files = df_files.drop(columns=columns)
         if account == 'Personal':
             df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'SHA1({x})')
+            self.localHashAlgorithm = 4
         else:
             df_files['localHashDigest'] = df_files['localHashDigest'].apply(lambda x: f'quickXor({codecs.encode(binascii.unhexlify(x), "base64").decode("utf-8").rstrip()})')
+            self.localHashAlgorithm = 5
         df_files['size'] = df_files['size'].apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
         df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
         df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
-        df_folders = pd.read_csv(temp_folders, usecols=['parentScopeID', 'parentResourceID', 'resourceID', 'eTag', 'folderName', 'folderStatus', 'spoPermissions', 'volumeID', 'itemIndex'])
+        df_folders = pd.read_csv(temp_folders, usecols=['parentScopeID', 'parentResourceID', 'resourceID', 'eTag', 'folderName', 'folderStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'sharedItem'])
         temp_folders.close()
         df_folders.insert(0, 'Type', 'Folder')
         df_folders.rename(columns={"folderName": "Name"}, inplace=True)
@@ -521,4 +526,4 @@ class DATParser:
         df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
         df = df.where(pd.notnull(df), None)
 
-        return df, pd.DataFrame(), df_scope, scopeID
+        return df, pd.DataFrame(), df_scope, scopeID, self.localHashAlgorithm

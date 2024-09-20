@@ -93,7 +93,7 @@ class DeleteProcessor:
 
         return -1
 
-    def get_file_metadata(self, i_name, files, od_keys, account, rbin_df):
+    def get_file_metadata(self, i_name, files, od_keys, localHashAlgorithm, rbin_df):
         with open(i_name, "rb") as file:
             file_record = file.read()
 
@@ -116,7 +116,7 @@ class DeleteProcessor:
                 full_file_path = f'{i_name.replace("$I", "$R")}'
                 parentResourceId = ''
                 get_hash = self.hash_file(full_file_path)
-                hash_func = get_hash[0] if account == 'Personal' else get_hash[1]
+                hash_func = get_hash[1] if localHashAlgorithm == 5 else get_hash[0]
                 index = self.if_exists(path, name, delete_time_stamp, rbin_df)
 
                 if index >= 0:
@@ -148,7 +148,7 @@ class DeleteProcessor:
                     for file in files:
                         full_file_path = f'{i_name.replace("$I", "$R")}{file}'
                         get_hash = self.hash_file(full_file_path)
-                        hash_func = get_hash[0] if account == 'Personal' else get_hash[1]
+                        hash_func = get_hash[1] if localHashAlgorithm == 5 else get_hash[0]
                         file_stat = os.stat(full_file_path)
                         name = file.split('\\')[-1]
                         path = file.rsplit('\\', 1)[0]
@@ -179,7 +179,7 @@ class DeleteProcessor:
                             }
                             yield input_data
 
-    def find_deleted(self, recbin, od_keys, account, rbin_df, gui=False, pb=False, value_label=False):
+    def find_deleted(self, recbin, od_keys, localHashAlgorithm, rbin_df, gui=False, pb=False, value_label=False):
         recbin = recbin.replace('/', '\\')
         log.info(f'Started parsing {recbin}')
 
@@ -207,7 +207,7 @@ class DeleteProcessor:
             iname = value.get('iname', '')
             filenames = value.get('files', [])
 
-            match = self.get_file_metadata(iname, filenames, od_keys, account, rbin_df)
+            match = self.get_file_metadata(iname, filenames, od_keys, localHashAlgorithm, rbin_df)
             if match:
                 deleted_items.extend(match)
 

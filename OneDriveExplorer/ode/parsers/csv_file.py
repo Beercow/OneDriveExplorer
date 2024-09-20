@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 def parse_csv(filename):
 
     file = open(filename.name, 'r', encoding='utf-8')
-    columns_to_drop = ['parentResourceId', 'resourceId', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'hash']
-    columns_to_drop_2 = ['MountPoint', 'Path', 'fileName', 'graphMetadataJSON', 'spoCompositeID', 'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount']
+    columns_to_drop = ['parentResourceId', 'resourceId', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'hash', 'deletingProcess']
+    columns_to_drop_2 = ['MountPoint', 'fileName', 'graphMetadataJSON', 'spoCompositeID', 'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount']
 
     dtypes = {'Type': 'object',
               'scopeID': 'object',
@@ -93,7 +93,7 @@ def parse_csv(filename):
                               'deletingProcess']]
             rbin_df = rbin_df.astype(object)
             rbin_df = rbin_df.where(pd.notna(rbin_df), '')
-            df = df.drop(df[df['Type'] == 'Deleteed'].index)
+            df = df.drop(df[df['Type'] == 'Deleted'].index)
             df.drop(columns=columns_to_drop, inplace=True)
         else:
             rbin_df = pd.DataFrame()
@@ -110,7 +110,6 @@ def parse_csv(filename):
         df = df.astype(object)
         df = df.where(pd.notna(df), None)
         df.drop(columns=columns_to_drop_2, inplace=True)
-
     except Exception as e:
         print(e)
         log.error(f'Not a valid csv. {csv_name}')

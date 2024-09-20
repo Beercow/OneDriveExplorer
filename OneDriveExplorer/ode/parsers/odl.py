@@ -60,13 +60,23 @@ headers = '''
 typedef struct _Odl_header{
     char    signature[8];  // EBFGONED
     uint32    odl_version;
+} Odl_header;
+
+typedef struct _Odl_header_V1{
+    uint32    unk1;
+    uint64    unk2;
+    uint32    unk3;
+    char      one_drive_version[0x44];
+} Odl_header_V1;
+
+typedef struct _Odl_header_V2_3{
     uint32    unk1;
     uint64    unk2;
     uint32    unk3;
     char      one_drive_version[0x40];
     char      windows_version[0x40];
     char      reserved[0x64];
-} Odl_header;
+} Odl_header_V2_3;
 
 typedef struct _Data_block_V2{
     uint64     signature;  // CCDDEEFF00000000
@@ -392,7 +402,12 @@ def process_odl(filename, map):
     with f:
         i = 1
         try:
-            header = cparser.Odl_header(f.read(0x100))
+            header = cparser.Odl_header(f.read(12))
+            if header.odl_version == 1:
+                header_con = cparser.Odl_header_V1(f.read(84))
+                header_con._values.update([('windows_version', b'')])
+            else:
+                header_con = cparser.Odl_header_V2_3(f.read(244))
         except Exception:
             log.warning(f'Unable to parse {basename}. Not a valid log file.')
             return pd.DataFrame()
@@ -431,8 +446,8 @@ def process_odl(filename, map):
                 'Filename': basename,
                 'File_Index': i,
                 'Timestamp': None,
-                'One_Drive_Version': header.one_drive_version.decode('utf8').split('\x00', 1)[0],
-                'OS_Version': header.windows_version.decode('utf8').split('\x00', 1)[0],
+                'One_Drive_Version': header_con.one_drive_version.decode('utf8').split('\x00', 1)[0],
+                'OS_Version': header_con.windows_version.decode('utf8').split('\x00', 1)[0],
                 'Code_File': '',
                 'Flags': '',
                 'Function': '',
@@ -452,7 +467,7 @@ def process_odl(filename, map):
                 'Param12': '',
                 'Param13': ''
             }
-            if header.odl_version == 2:
+            if header.odl_version in [1, 2]:
                 data_block = cparser.Data_block_V2(data_block)
             elif header.odl_version == 3:
                 data_block = cparser.Data_block_V3(data_block)

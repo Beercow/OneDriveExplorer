@@ -89,7 +89,7 @@ class OneDriveParser:
         return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
     # Generate scopeID list instead of passing
-    def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, gui=False, pb=False, value_label=False):
+    def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, localHashAlgorithm=False, gui=False, pb=False, value_label=False):
         
         df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
         df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
@@ -164,7 +164,7 @@ class OneDriveParser:
                 rbin_df.at[index, 'Path'] = parent_resource_dict[parent_resource_id]
 
         if reghive and recbin:
-            rbin = find_deleted.find_deleted(recbin, od_keys, account, rbin_df, gui=gui, pb=pb, value_label=value_label)
+            rbin = find_deleted.find_deleted(recbin, od_keys, localHashAlgorithm, rbin_df, gui=gui, pb=pb, value_label=value_label)
             lrbin_df = pd.DataFrame.from_records(rbin)
             rbin_df = pd.concat([rbin_df, lrbin_df], ignore_index=True, axis=0)
 
@@ -242,7 +242,7 @@ class OneDriveParser:
                 else:
                     sub_folder = {key: row[key] for key in (
                                   'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
-                                  'itemIndex')}
+                                  'itemIndex', 'sharedItem')}
                     if row['resourceID'] in scopeID:
                         scopeID.remove(row['resourceID'])
                         for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):

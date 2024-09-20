@@ -39,6 +39,7 @@ class SQLiteParser:
         self.scope_header = False
         self.files_header = False
         self.folders_header = False
+        self.localHashAlgorithm = 0
         self.dict_1 = {'lastChange': 0,
                        'sharedItem': 0,
                        'mediaDateTaken': 0,
@@ -63,6 +64,19 @@ class SQLiteParser:
         for k, v in dict_2.items():
             dict_1[k] = v
         return dict_1
+
+    def compute_hash(self, row):
+        self.localHashAlgorithm = row['localHashAlgorithm']  # Set the value to the global variable
+
+        # Perform the logic based on the algorithm
+        if self.localHashAlgorithm == 4 and row['localHashDigest'] not in (None, ''):
+            return f'SHA1({row["localHashDigest"].hex()})'
+        elif self.localHashAlgorithm == 5 and row['localHashDigest'] not in (None, ''):
+            return f'quickXor({codecs.encode(row["localHashDigest"], "base64").decode("utf-8").rstrip()})'
+        elif row['localHashDigest'] not in (None, ''):
+            return f'{self.localHashAlgorithm}:{row["localHashDigest"]}'
+        else:
+            return ''
 
     def parse_sql(self, sql_dir):
         account = sql_dir.rsplit('\\', 1)[-1]
@@ -114,18 +128,11 @@ class SQLiteParser:
                 columns = ['DateTaken', 'Width', 'Height', 'Duration']
                 df_files['Media'] = df_files[columns].to_dict(orient='records')
                 df_files = df_files.drop(columns=columns)
-                df_files['localHashDigest'] = df_files.apply(
-                    lambda row: f'SHA1({row["localHashDigest"].hex()})' if row['localHashAlgorithm'] == 4 and row['localHashDigest'] not in (None, '')
-                    else f'quickXor({codecs.encode(row["localHashDigest"], "base64").decode("utf-8").rstrip()})' if row['localHashAlgorithm'] == 5 and row['localHashDigest'] not in (None, '')
-                    else f'{row["localHashAlgorithm"]}:{row["localHashDigest"]}' if row['localHashDigest'] not in (None, '')
-                    else '',
-                    axis=1
-                )
-
+                df_files['localHashDigest'] = df_files.apply(self.compute_hash, axis=1)
                 df_files['size'] = df_files['size'].apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
                 df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
                 df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
-                df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex FROM od_ClientFolder_Records", SyncEngineDatabase)
+                df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
                 df_folders.insert(0, 'Type', 'Folder')
                 df_folders.rename(columns={"folderName": "Name"}, inplace=True)
                 df_folders = change_dtype(df_folders, df_name='df_folders')
@@ -193,7 +200,6 @@ class SQLiteParser:
                 filter_delete_info_df['Path'] = filter_delete_info_df['Path'].str.rsplit('\\', n=1).str[0]
 
                 rbin_df = pd.concat([rbin_df, filter_delete_info_df], ignore_index=True, axis=0)
-                print(rbin_df.columns)
 
                 rbin_df['notificationTime'] = pd.to_datetime(rbin_df['notificationTime'], unit='s').astype(str)
                 rbin_df['volumeId'] = rbin_df['volumeId'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*format(x, '08x')).upper())
@@ -208,4 +214,4 @@ class SQLiteParser:
             self.log.info('SafeDelete.db does not exist')
             rbin_df = pd.DataFrame()
 
-        return df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account
+        return df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, self.localHashAlgorithm
