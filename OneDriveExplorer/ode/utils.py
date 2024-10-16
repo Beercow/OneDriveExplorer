@@ -183,8 +183,8 @@ def change_dtype(df, df_name=None, schema_version=0):
     # Define mappings for dtype changes and fill values
     dtype_fill_map = {
         'df_scope': {
-            'dtype_changes': {'Type': 'str', 'scopeID': 'str', 'siteID': 'str', 'webID': 'str', 'listID': 'str', 'tenantID': 'str', 'webURL': 'str', 'remotePath': 'str', 'spoPermissions': 'Int64', 'shortcutVolumeID': 'Int64', 'shortcutItemIndex': 'Int64'},
-            'fill_values': {'Type': 'Scope', 'scopeID': '', 'siteID': '', 'webID': '', 'listID': '', 'tenantID': '', 'webURL': '', 'remotePath': '', 'spoPermissions': 0, 'shortcutVolumeID': 0, 'shortcutItemIndex': 0}
+            'dtype_changes': {'Type': 'str', 'scopeID': 'str', 'siteID': 'str', 'webID': 'str', 'listID': 'str', 'spoPermissions': 'Int64', 'shortcutVolumeID': 'Int64', 'shortcutItemIndex': 'Int64'},
+            'fill_values': {'Type': 'Scope', 'scopeID': '', 'siteID': '', 'webID': '', 'listID': '', 'spoPermissions': 0, 'shortcutVolumeID': 0, 'shortcutItemIndex': 0}
         },
         'df_files': {
             'dtype_changes': {'Type': 'str', 'parentResourceID': 'str', 'resourceID': 'str', 'eTag': 'str', 'Name': 'str', 'fileStatus': 'Int64', 'spoPermissions': 'Int64', 'volumeID': 'Int64', 'itemIndex': 'Int64', 'size': 'Int64', 'sharedItem': 'Int64', 'Width': 'Int64', 'Height': 'Int64', 'Duration': 'Int64'},
@@ -195,19 +195,35 @@ def change_dtype(df, df_name=None, schema_version=0):
             'fill_values': {'Type': 'Folder', 'parentScopeID': '', 'parentResourceID': '', 'resourceID': '', 'eTag': '', 'Name': '', 'folderStatus': 0, 'spoPermissions': 0, 'volumeID': 0, 'itemIndex': 0, 'sharedItem': 0}
         },
         'df_GraphMetadata_Records': {
-            'dtype_changes': {'fileName': 'str', 'resourceID': 'str', 'graphMetadataJSON': 'str', 'spoCompositeID': 'str', 'createdBy': 'str', 'modifiedBy': 'str', 'filePolicies': 'str', 'fileExtension': 'str', 'lastWriteCount': 'Int64'},
-            'fill_values': {'fileName': '', 'resourceID': '', 'graphMetadataJSON': '', 'spoCompositeID': '', 'createdBy': '', 'modifiedBy': '', 'filePolicies': '', 'fileExtension': '', 'lastWriteCount': 0}
+            'dtype_changes': {'fileName': 'str', 'resourceID': 'str', 'graphMetadataJSON': 'str', 'spoCompositeID': 'str', 'createdBy': 'str', 'modifiedBy': 'str', 'lastWriteCount': 'Int64'},
+            'fill_values': {'fileName': '', 'resourceID': '', 'graphMetadataJSON': '', 'spoCompositeID': '', 'createdBy': '', 'modifiedBy': '', 'lastWriteCount': 0}
         },
         'rbin_df': {
             'dtype_changes': {'Type': 'str', 'parentResourceId': 'str', 'resourceId': 'str', 'eTag': 'str', 'Path': 'str', 'Name': 'str', 'inRecycleBin': 'Int64', 'volumeId': 'Int64', 'fileId': 'str', 'DeleteTimeStamp': 'Int64', 'notificationTime': 'Int64', 'size': 'Int64', 'hash': 'str', 'deletingProcess': 'str'},
             'fill_values': {'Type': '', 'parentResourceId': '', 'resourceId': '', 'eTag': '', 'Path': '', 'Name': '', 'inRecycleBin': 0, 'volumeId': 0, 'fileId': '', 'DeleteTimeStamp': 0, 'notificationTime': 0, 'size': 0, 'hash': '', 'deletingProcess': ''}
         }
     }
-    
+
     # Handle special cases
     if df_name == 'df_files' and schema_version >= 27:
         dtype_fill_map['df_files']['dtype_changes']['hydrationCount'] = 'Int64'
         dtype_fill_map['df_files']['fill_values']['hydrationCount'] = 0
+
+    if df_name == 'df_scope' and schema_version > 8:
+        dtype_fill_map['df_files']['dtype_changes']['tenantID'] = 'str'
+        dtype_fill_map['df_files']['fill_values']['tenantID'] = ''
+        dtype_fill_map['df_files']['dtype_changes']['webURL'] = 'str'
+        dtype_fill_map['df_files']['fill_values']['webURL'] = ''
+        dtype_fill_map['df_files']['dtype_changes']['remotePath'] = 'str'
+        dtype_fill_map['df_files']['fill_values']['remotePath'] = ''
+    
+    if df_name == 'df_GraphMetadata_Records' and schema_version > 13:
+        dtype_fill_map['df_files']['dtype_changes']['filePolicies'] = 'str'
+        dtype_fill_map['df_files']['fill_values']['filePolicies'] = ''
+        dtype_fill_map['df_files']['dtype_changes']['fileExtension'] = 'str'
+        dtype_fill_map['df_files']['fill_values']['fileExtension'] = ''
+        dtype_fill_map['df_files']['dtype_changes']['lastWriteCount'] = 'Int64'
+        dtype_fill_map['df_files']['fill_values']['lastWriteCount'] = 0
     
     # Apply changes if df_name is recognized
     if df_name in dtype_fill_map:

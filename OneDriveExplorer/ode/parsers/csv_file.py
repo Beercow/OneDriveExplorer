@@ -61,7 +61,8 @@ def parse_csv(filename):
               'folderStatus': 'Int64',
               'Path': 'object',
               'shortcutVolumeID': 'Int64',
-              'shortcutItemIndex': 'Int64'
+              'shortcutItemIndex': 'Int64',
+              'hydrationCount': 'Int64'
               }
 
     try:
@@ -79,6 +80,10 @@ def parse_csv(filename):
                            'shortcutVolumeID', 'shortcutItemIndex', 'libraryType']]
         columns_to_fill = df_scope.columns.difference(['libraryType'])
         df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
+
+        if 'remotePath' in df_scope:
+            df_scope.remotePath.fillna('', inplace=True)
+
         scopeID = df_scope['scopeID'].tolist()
 
         if 'inRecycleBin' in df.columns:
@@ -107,9 +112,31 @@ def parse_csv(filename):
             df_GraphMetadata_Records[json_columns] = df_GraphMetadata_Records[json_columns].map(lambda x: ast.literal_eval(x) if pd.notna(x) and x.strip() else '')
             df_GraphMetadata_Records['lastWriteCount'] = df_GraphMetadata_Records['lastWriteCount'].astype('Int64')
 
-        df = df.astype(object)
-        df = df.where(pd.notna(df), None)
+            if 'fileExtension' in df_GraphMetadata_Records:
+                df_GraphMetadata_Records.fileExtension.fillna('', inplace=True)
+
         df.drop(columns=columns_to_drop_2, inplace=True)
+        df.localHashDigest.fillna('', inplace=True)
+        if 'notificationTime' in df:
+            df.HydrationTime.fillna('', inplace=True)
+
+        if 'firstHydrationTime' in df:
+            df.lastHydrationType.fillna('', inplace=True)
+            df.firstHydrationTime.fillna('', inplace=True)
+            df.lastHydrationTime.fillna('', inplace=True)
+
+        if 'diskLastAccessTime' in df:
+            df.diskLastAccessTime.fillna('', inplace=True)
+
+        if 'diskCreationTime' in df:
+            df.diskCreationTime.fillna('', inplace=True)
+
+        if 'lastKnownPinState' in df:
+                    df.lastKnownPinState = df.lastKnownPinState.apply(lambda x: '' if pd.isna(x) else int(x))
+
+        if 'remotePath' in df:
+            df.remotePath.fillna('', inplace=True)
+
     except Exception as e:
         print(e)
         log.error(f'Not a valid csv. {csv_name}')

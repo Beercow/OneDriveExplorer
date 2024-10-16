@@ -91,6 +91,8 @@ class OneDriveParser:
     # Generate scopeID list instead of passing
     def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, localHashAlgorithm=False, gui=False, pb=False, value_label=False):
         
+        allowed_keys = ['scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex']
+        
         df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
         df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
 
@@ -184,7 +186,6 @@ class OneDriveParser:
         df['volumeID'] = df['volumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
         df['shortcutVolumeID'] = df['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
         df['shortcutVolumeID'] = df['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
-        
 
         cache = {}
         final = []
@@ -195,20 +196,25 @@ class OneDriveParser:
             df_GraphMetadata_Records.set_index('resourceID', inplace=True)
 
         column_len = len(df.columns)
-       
+
         for row in df.sort_values(
             by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                 ascending=[False, False, False, True, False, False]).to_dict('records'):
             if row['Type'] == 'File':
                 try:
-                    if column_len == 32:
-                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
-            
-                    if column_len == 33:
-                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media')}
-            
-                    if column_len == 36:
+                    if column_len == 39:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'lastKnownPinState','spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'diskCreationTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                    if column_len == 37:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime','lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+
+                    elif column_len == 36:
                         file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+
+                    elif column_len == 33:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+
+                    elif column_len == 32:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
 
                 except Exception as e:
                     if gui:
@@ -234,8 +240,7 @@ class OneDriveParser:
                 if 'Scope' in row['Type']:
                     if row['scopeID'] not in scopeID:
                         continue
-                    scope = {key: row[key] for key in (
-                             'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex')}
+                    scope = {key: row[key] for key in row if key in allowed_keys}
                     folder = cache.get(row['scopeID'], {})
                     temp = {**scope, **folder}
                     final.insert(0, temp)
@@ -246,8 +251,7 @@ class OneDriveParser:
                     if row['resourceID'] in scopeID:
                         scopeID.remove(row['resourceID'])
                         for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):
-                            scope = {key: s[key] for key in (
-                                     'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath')}
+                            scope = {key: s[key] for key in s if key in allowed_keys}
                             scope['MountPoint'] = row['MountPoint']
                             scope['spoPermissions'] = s['spoPermissions']
                             scope['shortcutVolumeID'] = s['shortcutVolumeID']

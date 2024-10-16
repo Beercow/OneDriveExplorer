@@ -49,7 +49,7 @@ cstruct = {
     }
 }
 
-# menu_data schema version 1.4
+# menu_data schema version 2.1
 menu_data = {
     'theme': {
         'required': True,
@@ -83,6 +83,10 @@ menu_data = {
         'required': True,
         'type': 'boolean'
     },
+	'odl_cor': {
+        'required': True,
+        'type': 'boolean'
+    },
     'odl_save': {
         'required': True,
         'type': 'boolean'
@@ -91,5 +95,21 @@ menu_data = {
         'required': True,
         'nullable': True,
         'type': 'string'
+    },
+	'create': {
+        'required': True,
+        'type': 'boolean'
+    },
+	'access': {
+        'required': True,
+        'type': 'boolean'
+    },
+	'modify': {
+        'required': True,
+        'type': 'boolean'
+    },
+	'size': {
+        'required': True,
+        'type': 'boolean'
     }
 }

@@ -86,23 +86,31 @@ class SQLiteParser:
         try:
             SyncEngineDatabase = sqlite3.connect(f'file:/{sql_dir}/SyncEngineDatabase.db?mode=ro', uri=True)
             cursor = SyncEngineDatabase.execute("SELECT value FROM __oddbm_schema WHERE name = 'version'")
+            schema_version = cursor.fetchall()[0][0]
 
             try:
-                df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, tenantID, webURL, remotePath, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
+                if schema_version == 8:
+                    df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
+                else:
+                    df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, tenantID, webURL, remotePath, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
                 df_scope.insert(0, 'Type', 'Scope')
-                df_scope = change_dtype(df_scope, df_name='df_scope')
+                df_scope = change_dtype(df_scope, df_name='df_scope', schema_version=schema_version)
                 df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: permissions(x))
 
                 scopeID = df_scope['scopeID'].tolist()
 
-                schema_version = cursor.fetchall()[0][0]
-                if schema_version <= 20:
-                    df_files = pd.read_sql_query("SELECT parentResourceID, resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration FROM od_ClientFile_Records", SyncEngineDatabase)
-
-                else:
+                if schema_version >= 32:
+                    df_files = pd.read_sql_query("SELECT parentResourceID, od_ClientFile_Records.resourceID, eTag, fileName, fileStatus, lastKnownPinState, spoPermissions, volumeID, itemIndex, diskLastAccessTime, diskCreationTime, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration, od_HydrationData.* FROM od_ClientFile_Records LEFT OUTER JOIN od_HydrationData ON od_ClientFile_Records.resourceID = od_HydrationData.resourceID", SyncEngineDatabase)
+                    df_files = df_files.loc[:, ~df_files.columns.duplicated(keep='first')]
+                elif 29 < schema_version <= 31:
+                    df_files = pd.read_sql_query("SELECT parentResourceID, od_ClientFile_Records.resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, diskLastAccessTime, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration, od_HydrationData.* FROM od_ClientFile_Records LEFT OUTER JOIN od_HydrationData ON od_ClientFile_Records.resourceID = od_HydrationData.resourceID", SyncEngineDatabase)
+                    df_files = df_files.loc[:, ~df_files.columns.duplicated(keep='first')]
+                elif 20 < schema_version <= 29:
                     df_files = pd.read_sql_query("SELECT parentResourceID, od_ClientFile_Records.resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration, od_HydrationData.* FROM od_ClientFile_Records LEFT OUTER JOIN od_HydrationData ON od_ClientFile_Records.resourceID = od_HydrationData.resourceID", SyncEngineDatabase)
                     df_files = df_files.loc[:, ~df_files.columns.duplicated(keep='first')]
-                    
+                elif schema_version <= 20:
+                    df_files = pd.read_sql_query("SELECT parentResourceID, resourceID, eTag, fileName, fileStatus, spoPermissions, volumeID, itemIndex, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration FROM od_ClientFile_Records", SyncEngineDatabase)
+
                 df_files.insert(0, 'Type', 'File')
                 df_files.rename(columns={"fileName": "Name",
                                          "mediaDateTaken": "DateTaken",
@@ -110,19 +118,31 @@ class SQLiteParser:
                                          "mediaHeight": "Height",
                                          "mediaDuration": "Duration"
                                          }, inplace=True)
-                
+
+                # All need to be moved to utils.change_dtype
                 if 'notificationTime' in df_files:
                     df_files.rename(columns={"notificationTime" : "HydrationTime"}, inplace=True)
                     df_files['HydrationTime'] = pd.to_datetime(df_files['HydrationTime'], unit='s').astype(str)
                     df_files['HydrationTime'].replace('NaT', '', inplace=True)
-                
+
                 if 'firstHydrationTime' in df_files:
                     df_files['lastHydrationType'].fillna('', inplace=True)
                     df_files['firstHydrationTime'] = pd.to_datetime(df_files['firstHydrationTime'], unit='s').astype(str)
                     df_files['firstHydrationTime'].replace('NaT', '', inplace=True)
                     df_files['lastHydrationTime'] = pd.to_datetime(df_files['lastHydrationTime'], unit='s').astype(str)
                     df_files['lastHydrationTime'].replace('NaT', '', inplace=True)
-               
+
+                if 'diskLastAccessTime' in df_files:
+                    df_files['diskLastAccessTime'] = pd.to_datetime(df_files['diskLastAccessTime'], unit='s').astype(str)
+                    df_files['diskLastAccessTime'].replace('NaT', '', inplace=True)
+
+                if 'diskCreationTime' in df_files:
+                    df_files['diskCreationTime'] = pd.to_datetime(df_files['diskCreationTime'], unit='s').astype(str)
+                    df_files['diskCreationTime'].replace('NaT', '', inplace=True)
+
+                if 'lastKnownPinState' in df_files:
+                    df_files.lastKnownPinState = df_files.lastKnownPinState.apply(lambda x: '' if pd.isna(x) else int(x))
+
                 df_files['DateTaken'] = pd.to_datetime(df_files['DateTaken'], unit='s').fillna('1970-01-01 00:00:00').astype(str)
                 df_files = change_dtype(df_files, df_name='df_files', schema_version=schema_version)
                 columns = ['DateTaken', 'Width', 'Height', 'Duration']
@@ -132,6 +152,7 @@ class SQLiteParser:
                 df_files['size'] = df_files['size'].apply(lambda x: '0 KB' if x == 0 else f'{x//1024 + 1:,} KB')
                 df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
                 df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
+
                 df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
                 df_folders.insert(0, 'Type', 'Folder')
                 df_folders.rename(columns={"folderName": "Name"}, inplace=True)
@@ -140,12 +161,18 @@ class SQLiteParser:
 
                 df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
                 df = df.where(pd.notnull(df), None)
+                
+                if df.empty:
+                    self.log.warning(f'{sql_dir}\SyncEngineDatabase.db is empty.')
 
-                df_GraphMetadata_Records = pd.read_sql_query("SELECT fileName, od_GraphMetadata_Records.* FROM od_GraphMetadata_Records INNER JOIN od_ClientFile_Records ON od_ClientFile_Records.resourceID = od_GraphMetadata_Records.resourceID", SyncEngineDatabase)
-                df_GraphMetadata_Records = change_dtype(df_GraphMetadata_Records, df_name='df_GraphMetadata_Records')
-                if not df_GraphMetadata_Records.empty:
-                    json_columns = ['graphMetadataJSON', 'filePolicies']
-                    df_GraphMetadata_Records[json_columns] = df_GraphMetadata_Records[json_columns].map(lambda x: json.loads(x) if pd.notna(x) and x.strip() else '')
+                if schema_version >=10:
+                    df_GraphMetadata_Records = pd.read_sql_query("SELECT fileName, od_GraphMetadata_Records.* FROM od_GraphMetadata_Records INNER JOIN od_ClientFile_Records ON od_ClientFile_Records.resourceID = od_GraphMetadata_Records.resourceID", SyncEngineDatabase)
+                    df_GraphMetadata_Records = change_dtype(df_GraphMetadata_Records, df_name='df_GraphMetadata_Records', schema_version=schema_version)
+                    if not df_GraphMetadata_Records.empty:
+                        json_columns = ['graphMetadataJSON', 'filePolicies']
+                        df_GraphMetadata_Records[json_columns] = df_GraphMetadata_Records[json_columns].map(lambda x: json.loads(x) if pd.notna(x) and x.strip() else '')
+                else:
+                    df_GraphMetadata_Records = pd.DataFrame()
 
             except Exception as e:
                 self.log.warning(f'Unable to parse {sql_dir}\SyncEngineDatabase.db. {e}')

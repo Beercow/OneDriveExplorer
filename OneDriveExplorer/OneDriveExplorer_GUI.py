@@ -102,10 +102,11 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.09.20"
+__version__ = "2024.10.16"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
+s_image = {}
 reghive = ''
 recbin = ''
 proj_name = None
@@ -168,8 +169,13 @@ if menu_data is None:
                              "path": ".",\
                              "hive": false,\
                              "odl": false,\
+                             "odl_cor": false,\
                              "odl_save": false,\
-                             "font": null}'
+                             "font": null,\
+                             "create": false,\
+                             "access": false,\
+                             "modify": true,\
+                             "size": true}'
                            )
 
     with open("ode.settings", "w") as jsonfile:
@@ -255,6 +261,7 @@ class Preferences:
         self.auto_path = tk.StringVar(value=menu_data['path'])
         self.skip_hive = tk.BooleanVar(value=menu_data['hive'])
         self.odl = tk.BooleanVar(value=menu_data['odl'])
+        self.odl_cor = tk.BooleanVar(value=menu_data['odl_cor'])
         self.odl_save = tk.BooleanVar(value=menu_data['odl_save'])
 
     def create_preferences_window(self):
@@ -313,6 +320,7 @@ class Preferences:
         self.auto_html = ttk.Checkbutton(self.select_frame, text="Auto Save to HTML", var=self.html_save, offvalue=False, onvalue=True, takefocus=False)
         self.reghive = ttk.Checkbutton(self.hive_frame, text="Disable loading user hive dialog", var=self.skip_hive, offvalue=False, onvalue=True, takefocus=False)
         self.en_odl = ttk.Checkbutton(self.odl_frame, text="Enable ODL log parsing", var=self.odl, offvalue=False, onvalue=True, takefocus=False, command=self.odl_config)
+        self.en_cor = ttk.Checkbutton(self.odl_frame, text="Enable ODL log correlation", var=self.odl_cor, offvalue=False, onvalue=True, takefocus=False)
         self.auto_odl = ttk.Checkbutton(self.odl_frame, text="Auto Save ODL", var=self.odl_save, offvalue=False, onvalue=True, takefocus=False)
 
         self.auto_json.grid(row=0, column=0, padx=5)
@@ -321,7 +329,8 @@ class Preferences:
         self.auto_html.grid(row=2, column=0, columnspan=2, padx=5, sticky="w")
         self.reghive.grid(row=0, column=2, padx=5)
         self.en_odl.grid(row=0, column=0, padx=5, sticky="w")
-        self.auto_odl.grid(row=1, column=0, padx=5, sticky="w")
+        self.en_cor.grid(row=1, column=0, padx=(15,5), sticky="w")
+        self.auto_odl.grid(row=2, column=0, padx=5, sticky="w")
 
     def create_path_entry(self):
         self.label = ttk.Label(self.path_frame, text="Auto Save Path")
@@ -343,6 +352,7 @@ class Preferences:
         if not menu_data['json']:
             self.pretty.configure(state="disabled")
         if not menu_data['odl']:
+            self.en_cor.configure(state="disabled")
             self.auto_odl.configure(state="disabled")
 
     def sync_windows(self, event=None):
@@ -364,9 +374,12 @@ class Preferences:
 
     def odl_config(self):
         if self.odl.get() is True:
+            self.en_cor.configure(state="normal")
             self.auto_odl.configure(state="normal")
         else:
+            self.en_cor.configure(state="disabled")
             self.auto_odl.configure(state="disabled")
+            self.odl_cor.set(False)
             self.odl_save.set(False)
 
     def select_dir(self):
@@ -386,12 +399,18 @@ class Preferences:
         menu_data['path'] = self.auto_path.get()
         menu_data['hive'] = self.skip_hive.get()
         menu_data['odl'] = self.odl.get()
+        menu_data['odl_cor'] = self.odl_cor.get()
         menu_data['odl_save'] = self.odl_save.get()
 
         if menu_data['odl']:
             file_menu.entryconfig("OneDrive logs", state='normal')
         else:
             file_menu.entryconfig("OneDrive logs", state='disable')
+
+        if not menu_data['odl_cor']:
+            for item in infoFrame.winfo_children():
+                if '.!notebook.!frame.' in str(item):
+                    item.destroy()
 
         if not os.path.exists(menu_data['path']):
             os.makedirs(menu_data['path'])
@@ -1285,9 +1304,6 @@ class CustomText(tk.Text):
             self.tag_add(tag, "matchStart", "matchEnd")
 
 
-s_image = {}
-
-
 class Result:
 
     def __init__(self, master, *args, folder=True, folderShared='', tags=''):
@@ -1347,7 +1363,7 @@ class Result:
         if self.folder:
             self.type.append(directory_big_img)
 
-            for num in ['5', '7', '9', '10', '11']:
+            for num in ['5', '7', '9', '10', '11', '12']:
                 if any('folderstatus:' in item.lower() and num in item for item in self.args[0]):
                     self.handle_folder_status(num, values_list)
 
@@ -1381,7 +1397,7 @@ class Result:
                 self.status.append(shared_big_img)
 
         if not set(self.lock_list).intersection(spoPermissions):
-            if num not in ('10', '11'):
+            if len(spoPermissions) > 0:
                 self.status.append(locked_big_img)
 
     def process_non_folder_status(self, values_list):
@@ -1397,9 +1413,17 @@ class Result:
                 ''
             )
 
+            hydrationType = next((item.split(' ')[1] for item in self.args[0] if 'lasthydrationtype:' in item.lower() and len(item.split(' ')) > 1), '')
+            
+            lastKnownPinState = next((item.split(' ')[1] for item in self.args[0] if 'lastknownpinstate:' in item.lower() and len(item.split(' ')) > 1), '')
+            
             for num in ['2', '5', '6', '7', '8']:
                 if any(('filestatus:' in item.lower() or 'inrecyclebin:' in item.lower()) and num in item for item in self.args[0]):
-                    if num == '6' or num == '7':
+                    if lastKnownPinState in ['0', '1'] and num == '2':
+                        self.status.append(self.get_pin_state(lastKnownPinState))
+                    elif hydrationType.lower() == 'passive' and num == '2':
+                        self.status.append(always_available_big_img)
+                    elif num == '6' or num == '7':
                         self.type.append(self.get_type_image(num))
                         self.status.append(self.get_status_image(num))
                     else:
@@ -1417,7 +1441,8 @@ class Result:
             '7': not_link_big_img,  # files
             '9': sync_big_img,
             '10': not_sync_big_img,  # folders
-            '11': not_link_big_img  # folders
+            '11': not_link_big_img,  # folders
+            '12': unknown_img
         }
         return type_dict[num]
 
@@ -1434,6 +1459,13 @@ class Result:
         }
         return status_dict[num]
 
+    def get_pin_state(self, num):
+        pin_state = {
+            '0': available_big_img,
+            '1': always_available_big_img
+        }
+        return pin_state[num]
+    
     def create_output_image(self):
         total_width = sum(img.width for img in self.status) + 33
         output_image = Image.new("RGBA", (84, 32), (0, 0, 0, 0))
@@ -1732,7 +1764,7 @@ class ToolTipManager:
 
 
 class FileManager:
-    def __init__(self, tv, parent, cur_sel, columns=('Date_modified', 'Size')):
+    def __init__(self, tv, parent, cur_sel, columns=('Date_created', 'Date_accessed', 'Date_modified', 'Size')):
         self.tv = tv
         self.bgf = style.lookup('Label', 'background')
         self.parent = parent
@@ -1742,11 +1774,16 @@ class FileManager:
         self.stop = threading.Event()
         self.status = []
         self.sha1 = hashlib.sha1()
+        self.file = False
+        
+        # Boolean variables for checkbuttons
+        self.dateCreated = tk.BooleanVar(value=menu_data['create'])
+        self.dateAccessed = tk.BooleanVar(value=menu_data['access'])
+        self.dateModified = tk.BooleanVar(value=menu_data['modify'])
+        self.size = tk.BooleanVar(value=menu_data['size'])
 
         # Treeview for the current directory
         self.tv2 = ttk.Treeview(parent, selectmode='browse', takefocus='false')
-        self.tv2.heading('#0', text=' Name', anchor='w')
-        self.tv2.column('#0', minwidth=80, width=340, stretch=True, anchor='w')
 
         # Treeview for the detailed information in a separate tab
         self.tab2 = ttk.Frame(parent)
@@ -1757,15 +1794,22 @@ class FileManager:
         self.tv3.configure(yscrollcommand=self.fscrollbv.set)
 
         self.configure_treeview()
+        self.configure_columns()
         self.configure_tags()
         self.configure_bindings()
 
     def configure_treeview(self):
+        self.tv2.heading('#0', text=' Name', command=lambda c='#0': self.sort_treeviews_mixed(self.tv2, self.tv3, c, True), anchor='w')
+        self.tv2.column('#0', minwidth=80, width=340, stretch=True, anchor='w')
         self.tv3.heading('#0', text=' Status', anchor='w')
-        self.tv3.heading('Date_modified', text=' Date_modified', anchor='w')
-        self.tv3.heading('Size', text=' Size', anchor='w')
+        self.tv3.heading('Date_created', text=' Date_created', command=lambda c='Date_created': self.sort_treeviews_mixed(self.tv3, self.tv2, c, False), anchor='w')
+        self.tv3.heading('Date_accessed', text=' Date_accessed', command=lambda c='Date_accessed': self.sort_treeviews_mixed(self.tv3, self.tv2, c, False), anchor='w')
+        self.tv3.heading('Date_modified', text=' Date_modified', command=lambda c='Date_modified': self.sort_treeviews_mixed(self.tv3, self.tv2, c, False), anchor='w')
+        self.tv3.heading('Size', text=' Size', command=lambda c='Size': self.sort_treeviews_mixed(self.tv3, self.tv2, c, False), anchor='w')
         self.tv3.column('#0', minwidth=80, width=100, stretch=False, anchor='w')
-        self.tv3.column('Date_modified', minwidth=80, width=180, stretch=False, anchor='w')
+        self.tv3.column('Date_created', minwidth=120, width=120, stretch=False, anchor='w')
+        self.tv3.column('Date_accessed', minwidth=120, width=120, stretch=False, anchor='w')
+        self.tv3.column('Date_modified', minwidth=120, width=120, stretch=False, anchor='w')
         self.tv3.column('Size', minwidth=70, width=80, stretch=False, anchor='e')
 
         self.tv3.grid(row=0, column=0, sticky="nsew")
@@ -1785,10 +1829,94 @@ class FileManager:
             tv.bind('<MouseWheel>', self.multiple_yview_scroll)
 
         self.tv2.bind('<Button-1>', self.handle_click)
+        self.tv3.bind('<Button-3>', self.on_click)
         self.tv2.bind('<Motion>', self.handle_click)
         self.tv2.bind('<Double-Button-1>', self.handle_double_click)
         self.tv3.bind('<Double-Button-1>', self.handle_double_click)
 
+    def configure_columns(self):
+        visableColumns = []
+        if self.dateCreated.get():
+            visableColumns.append("Date_created")
+        if self.dateAccessed.get():
+            visableColumns.append("Date_accessed")
+        if self.dateModified.get():
+            visableColumns.append("Date_modified")
+        if self.size.get():
+            visableColumns.append("Size")
+        
+        menu_data['create'] = self.dateCreated.get()
+        menu_data['access'] = self.dateAccessed.get()
+        menu_data['modify'] = self.dateModified.get()
+        menu_data['size'] = self.size.get()
+        
+        with open("ode.settings", "w") as jsonfile:
+            json.dump(menu_data, jsonfile)
+        
+        self.tv3["displaycolumns"] = visableColumns
+
+    def on_click(self, event):
+        region = self.tv3.identify("region", event.x, event.y)
+        if region == "heading" or region == "separator":
+
+            # Create a Toplevel window to act as the "menu"
+            headerMenu = tk.Toplevel(self.parent)
+            headerMenu.wm_overrideredirect(True)  # Remove window decorations (border, title bar)
+            headerMenu.geometry(f"+{event.x_root}+{event.y_root}")  # Position at the cursor location
+
+            headerFrame = ttk.Frame(headerMenu, borderwidth=2, relief="solid")
+            headerFrame.pack()
+
+            ttk.Label(headerFrame, text="Select Columns").pack(padx=10, pady=(10, 0))
+            # Create checkbuttons inside the Toplevel window
+            ttk.Checkbutton(headerFrame, text="Date created", variable=self.dateCreated).pack(anchor='w', padx=10, pady=(10, 0))
+            ttk.Checkbutton(headerFrame, text="Date accessed", variable=self.dateAccessed).pack(anchor='w', padx=10)
+            ttk.Checkbutton(headerFrame, text="Date modified", variable=self.dateModified).pack(anchor='w', padx=10)
+            ttk.Checkbutton(headerFrame, text="Size", variable=self.size).pack(anchor='w', padx=10, pady=(0, 10))
+
+            # Function to close the menu when clicking outside
+            def close_menu(event):
+                self.configure_columns()
+                headerMenu.destroy()  # Destroy the Toplevel window
+
+            # Bind the FocusOut event to close the menu
+            headerFrame.bind("<FocusOut>", close_menu)
+
+            # Ensure the Toplevel menu is focused, so that it closes when clicking outside
+            headerMenu.focus_set()
+
+    def sort_treeviews_mixed(self, tree1, tree2, col, descending):
+        # Sort tree1 by the tag first and then the specified column
+        if col == '#0':  # If sorting by the tree's label column
+            data = [(tree1.item(item, 'text'), item) for item in tree1.get_children('')]
+        else:
+            data = [(tree1.set(item, col), item) for item in tree1.get_children('')]
+            
+        # Get the tags for each item
+        data_with_tags = [(self.tv3.item(item, 'tags')[0], row, item) for row, item in data]
+        
+        # Sort first by tag and then by the selected column
+        if col == 'Size':
+            sorted_data = sorted(data_with_tags, key=lambda x: (int(x[0]), self.extract_number(x[1])), reverse=descending)
+        else:
+            sorted_data = sorted(data_with_tags, key=lambda x: (x[0], x[1].lower()), reverse=descending)
+
+        # Apply the sorted order to tree1 and tree2
+        for index, (tags, val, item) in enumerate(sorted_data):
+            tree1.move(item, '', index)
+            tree2.move(item, '', index)
+
+        # Reverse sort next time for both treeviews
+        try:
+            tree1.heading(col, command=lambda: self.sort_treeviews_mixed(tree1, tree2, col, not descending))
+            tree2.heading(col, command=lambda: self.sort_treeviews_mixed(tree1, tree2, col, not descending))
+        except:
+            pass
+
+    def extract_number(self, s):
+        match = re.search(r'\d+', s.replace(',', ''))
+        return int(match.group()) if match else 0
+    
     def handle_click(self, event):
         if self.tv2.identify_region(event.x, event.y) == "separator":
             return "break"
@@ -1797,17 +1925,25 @@ class FileManager:
         cur_item = event.widget.selection()
         values = list(event.widget.item(cur_item, 'values'))
         if not any(('folderStatus:' in item or 'webURL:' in item) for item in values):
+            # This is were I need to look for file selection
             try:
                 if values[2] == '':
                     pass
+                elif len(pwh.panes()) == 3:
+                    for key, val in file_items.items():
+                        if cur_item[0] in val:
+                            self.file = cur_item[0]
+                            parent = self.tv.parent(key)
+                            self.tv.selection_set(key)
+                            item_id = key
                 else:
                     return
             except Exception:
                 return
-
-        parent = self.tv.parent(cur_item[0])
-        self.tv.selection_set(cur_item[0])
-        item_id = cur_item[0]
+        else:
+            parent = self.tv.parent(cur_item[0])
+            self.tv.selection_set(cur_item[0])
+            item_id = cur_item[0]
         while True:
             parent = self.tv.parent(item_id)
             if parent:
@@ -1869,21 +2005,25 @@ class FileManager:
         else:
             self.cur_sel = f'{event.widget}{cur_item[0]}'
 
-            t1 = threading.Thread(target=self.get_info,
-                                  args=(event,),
-                                  daemon=True)
+            if menu_data['odl_cor']:
+                t1 = threading.Thread(target=self.get_info,
+                                      args=(event,),
+                                      daemon=True)
 
-            if 'get_info' not in str(threading.enumerate()):
-                self.stop.clear()
-                t1.start()
-            else:
-                self.stop.set()
+                if 'get_info' not in str(threading.enumerate()):
+                    self.stop.clear()
+                    t1.start()
+                else:
+                    self.stop.set()
 
     def select_item(self, event):
         cur_item = event.widget.selection()
         if cur_item == ():
             return
-        values = list(event.widget.item(cur_item, 'values'))
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame3.!treeview':
+            values = list(self.tv2.item(cur_item, 'values'))
+        else:
+            values = list(event.widget.item(cur_item, 'values'))
         if len(values) > 4:
             if values[0] != '':
                 # Check for 'inRecycleBin' in any value
@@ -2046,7 +2186,10 @@ class FileManager:
     def get_info(self, event):  # need to look into click performance
         df_list = []
         curItem = event.widget.selection()
-        values = event.widget.item(curItem, 'values')
+        if str(event.widget) == '.!frame.!frame.!myscrollablenotebook.!frame2.!panedwindow.!frame3.!treeview':
+            values = self.tv2.item(curItem, 'values')
+        else:
+            values = event.widget.item(curItem, 'values')
 
         for item in root.winfo_children():
             for i in item.winfo_children():
@@ -2140,6 +2283,22 @@ class FileManager:
                      'DeleteVersions',
                      'ManageLists']
 
+        image_mapping = {
+            '2': available_img,
+            '5': excluded_img,
+            '6': online_not_sync_img,  # fileStatus
+            '7': online_not_link_img,  # fileStatus
+            '8': online_img,
+            '9': online_sync_img,
+            '10': online_not_sync_img,  # folderStatus
+            '11': online_not_link_img  # folderStatus
+        }
+
+        pin_state = {
+            '0': available_img,
+            '1': always_available_img
+        }
+
         cur_item = self.tv.selection()
         if len(cur_item) == 0:
             self.tv2.delete(*self.tv2.get_children())
@@ -2154,17 +2313,6 @@ class FileManager:
 
         for item in self.tv3.get_children():
             self.tv3.delete(item)
-
-        image_mapping = {
-            '2': available_img,
-            '5': excluded_img,
-            '6': online_not_sync_img,  # fileStatus
-            '7': online_not_link_img,  # fileStatus
-            '8': online_img,
-            '9': online_sync_img,
-            '10': online_not_sync_img,  # folderStatus
-            '11': online_not_link_img  # folderStatus
-        }
 
         for child in self.tv.get_children(cur_item):
             item_data = self.tv.item(child)
@@ -2199,11 +2347,13 @@ class FileManager:
                         self.status.append(shared_img)
 
             if not set(lock_list).intersection(spoPermissions) and str(tags) != 'red':
-                if folderStatus not in ('10', '11', ''):
+                if len(spoPermissions) > 0:
                     self.status.append(locked_img)
 
             output_image = self.create_output_image()
             self.update_image_dictionary(output_image)
+            if not tags:
+                tags = 1
             self.insert_into_treeview(child, values, tags)
             self.status.clear()
 
@@ -2234,9 +2384,13 @@ class FileManager:
                     heading_text = ' Date deleted' if tags_i else ' Date modified'
                     self.tv3.heading('Date_modified', text=heading_text, anchor='w')
 
-                    self.tv2.insert("", "end", image=image_key_i, text=text_i, values=values_i, tags=tags_i)
+                    self.tv2.insert("", "end", iid=i, image=image_key_i, text=text_i, values=values_i, tags=tags_i)
 
                     fileStatus = next((item.split(' ')[1] for item in values_i if ('filestatus:' in item.lower() or 'inrecyclebin' in item.lower()) and len(item.split(' ')) > 1), '')
+                    
+                    hydrationType = next((item.split(' ')[1] for item in values_i if 'lasthydrationtype:' in item.lower() and len(item.split(' ')) > 1), '')
+
+                    lastKnownPinState = next((item.split(' ')[1] for item in values_i if 'lastknownpinstate:' in item.lower() and len(item.split(' ')) > 1), '')
 
                     spoPermissions_i = next(
                         (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in values_i if 'spopermissions: ' in item.lower()), 
@@ -2248,7 +2402,12 @@ class FileManager:
                         ''
                     )
 
-                    self.status.append(image_mapping.get(fileStatus, online_img))
+                    if lastKnownPinState in ['0', '1'] and fileStatus == '2':
+                        self.status.append(pin_state.get(lastKnownPinState, online_img))
+                    elif hydrationType.lower() == 'passive' and fileStatus == '2':
+                        self.status.append(always_available_img)
+                    else:
+                        self.status.append(image_mapping.get(fileStatus, online_img))
 
                     if sharedItem == '1' or folderShared == '1':
                         self.status.append(shared_img)
@@ -2258,12 +2417,20 @@ class FileManager:
 
                     output_image = self.create_output_image()
                     self.update_image_dictionary(output_image)
-                    self.insert_into_treeview(None, values_i, tags_i)
+                    if not tags_i:
+                        tags_i = 2
+                    self.insert_into_treeview(i, values_i, tags_i)
 
         except Exception:
             pass
 
+        if self.file:
+            cur_item = self.file
+            self.file = False
+            self.tv2.selection_set(cur_item)
+        
         self.parent.update_idletasks()
+            
 
     def create_output_image(self):
         total_width = sum(img.width for img in self.status)
@@ -2284,10 +2451,16 @@ class FileManager:
             s_image[self.sha1.hexdigest()] = image
 
     def insert_into_treeview(self, iid, values, tags):
+        if not tags:
+            print('no tag')
+        creationDate = next((item.split(' ', 1)[1] for item in values if 'diskcreationtime:' in item.lower() and len(item.split(' ', 1)) > 1), '')
+        accessDate = next((item.split(' ', 1)[1] for item in values if 'disklastaccesstime:' in item.lower() and len(item.split(' ', 1)) > 1), '')
+        
+        new_values = [creationDate, accessDate, values[0], values[1]]
         if iid:
-            self.tv3.insert("", "end", iid=iid, image=s_image[self.sha1.hexdigest()], values=values, tags=tags)
+            self.tv3.insert("", "end", iid=iid, image=s_image[self.sha1.hexdigest()], values=new_values, tags=tags)
         else:
-            self.tv3.insert("", "end", image=s_image[self.sha1.hexdigest()], values=values, tags=tags)
+            self.tv3.insert("", "end", image=s_image[self.sha1.hexdigest()], values=new_values, tags=tags)
 
     def update_theme(self):
         # Update background color and other theme-related properties
@@ -3194,7 +3367,7 @@ def json_count(item='', file_count=0, del_count=0, folder_count=0):
                 values = tv.item(i, 'values')
 
                 file_count += any('filestatus:' in item.lower() for item in values)
-                del_count += any('inRecycleBin:' in item.lower() for item in values)
+                del_count += any('inrecyclebin:' in item.lower() for item in values)
 
         file_count, del_count, folder_count = json_count(
             item=child,
@@ -3291,6 +3464,8 @@ def parent_child(d, parent_id=None, meta=False):
                 image = not_sync_directory_img
             elif c['folderStatus'] == 11:
                 image = not_link_directory_img
+            elif c['folderStatus'] == 12:
+                image = directory_unknown_img
             else:
                 image = directory_img
             parent_child(c, tv.insert(parent_id,
@@ -3682,8 +3857,8 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         name = os.path.split(filename)[1]
 
         df, rbin_df, df_scope, scopeID, localHashAlgorithm = DATParser.parse_dat(filename, account,
-                                                             gui=True, pb=pb,
-                                                             value_label=value_label)
+                                                                                 gui=True, pb=pb,
+                                                                                 value_label=value_label)
 
         if not df.empty:
             cache, rbin_df = OneDriveParser.parse_onedrive(df,
@@ -4346,6 +4521,7 @@ not_link_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/fi
 
 # small folder images
 directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/directory_closed.png'))
+directory_unknown_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/directory_unknown.png'))
 sync_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/sync_directory.png'))
 not_sync_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/not_sync_directory.png'))
 link_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/67.png'))
@@ -4359,6 +4535,7 @@ online_sync_img = Image.open(application_path + '/Images/status/online_sync.png'
 online_not_sync_img = Image.open(application_path + '/Images/status/online_not_sync.png')
 excluded_img = Image.open(application_path + '/Images/status/excluded.png')
 available_img = Image.open(application_path + '/Images/status/available.png')
+always_available_img = Image.open(application_path + '/Images/status/always_available.png')
 shared_img = Image.open(application_path + '/Images/status/shared.png')
 locked_img = Image.open(application_path + '/Images/status/locked.png')
 
@@ -4379,9 +4556,11 @@ online_big_img = Image.open(application_path + '/Images/search/online_big.png')
 online_not_sync_big_img = Image.open(application_path + '/Images/search/online_not_sync_big.png')
 online_not_link_big_img = Image.open(application_path + '/Images/search/online_not_link_big.png')
 available_big_img = Image.open(application_path + '/Images/search/available_big.png')
+always_available_big_img = Image.open(application_path + '/Images/search/always_available_big.png')
 excluded_big_img = Image.open(application_path + '/Images/search/excluded_big.png')
 shared_big_img = Image.open(application_path + '/Images/search/shared_big.png')
 locked_big_img = Image.open(application_path + '/Images/search/locked_big.png')
+unknown_img = Image.open(application_path + '/Images/search/unknown.png')
 
 
 pandastablepatch.asc_img = asc_img

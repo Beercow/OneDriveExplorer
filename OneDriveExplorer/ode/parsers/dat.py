@@ -372,8 +372,6 @@ class DATParser:
                             block = self.datstruct.DAT_FOLDER_v29_v2c(f.read(chunk))
                         else:
                             block = self.datstruct.DAT_FOLDER_v2d_v36(f.read(chunk))
-                        block._values.update([('sharedItem', '')])
-                        print(dict(block._values))
 
                     elif ff == '09':
                         data_type = 'Scope'
@@ -441,10 +439,10 @@ class DATParser:
                         csvwriter = csv.writer(temp_files, escapechar='\\')
                         if version <= '2b':
                             self.merge_dicts(block._values, self.dict_1)
-                        if version >= '2c' and version <= '34':
+                        elif version >= '2c' and version <= '34':
                             self.merge_dicts(block._values, self.dict_2)
                             block._values['sharedItem'] = [*block.bitMask][29]
-                        if version >= '35':
+                        elif version >= '35':
                             self.merge_dicts(block._values, self.dict_3)
                             block._values['sharedItem'] = [*block.bitMask][29]
                         if not self.files_header:
@@ -453,6 +451,7 @@ class DATParser:
 
                     if data_type == 'Folder':
                         csvwriter = csv.writer(temp_folders, escapechar='\\')
+                        block._values['sharedItem'] = [*block.bitMask][29]
                         if not self.folders_header:
                             csvwriter.writerow(dict(block._values))
                             self.folders_header = True
@@ -473,7 +472,7 @@ class DATParser:
 
         except Exception as e:
             # log.error(e)
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), [], 0
 
         if not gui:
             print('\n')

@@ -50,7 +50,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.09.20"
+__version__ = "2024.10.16"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()
@@ -350,7 +350,9 @@ def main():
                         print(f'\n\nParsing {key} OneDrive logs\n')
                         logs = v
                         odl = parse_odl(logs[0], key)
-                        log_output = f'{key}_logs.csv'
+                        if not args.csv:
+                            args.csv = '.'
+                        log_output = f'{args.csv}/{key}_logs.csv'
                         odl.to_csv(log_output, index=False)
 
     sys.exit()
