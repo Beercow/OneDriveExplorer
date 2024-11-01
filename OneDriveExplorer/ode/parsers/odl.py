@@ -393,6 +393,7 @@ def unobfucate_strings(data, map):
 def process_odl(filename, map):
     odl_rows = []
     basename = os.path.basename(filename)
+    profile = os.path.dirname(filename).split('\\')[-1]
 
     try:
         f = open(filename, 'rb')
@@ -443,6 +444,8 @@ def process_odl(filename, map):
         while data_block:
             description = ''
             odl = {
+                'Profile': profile,
+                'Log_Type': basename.split('-')[0],
                 'Filename': basename,
                 'File_Index': i,
                 'Timestamp': None,

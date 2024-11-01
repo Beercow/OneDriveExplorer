@@ -111,10 +111,11 @@ class OneDriveParser:
             try:
                 df, od_keys = self.parse_reg(reghive, account, df)
 
-                pb.stop()
-                pb.configure(mode='indeterminate')
-                value_label['text'] = 'Building folder list. Please wait....'
-                pb.start()
+                if gui:
+                    pb.stop()
+                    pb.configure(mode='indeterminate')
+                    value_label['text'] = 'Building folder list. Please wait....'
+                    pb.start()
 
             except Exception as e:
                 reghive = False
@@ -202,18 +203,19 @@ class OneDriveParser:
                 ascending=[False, False, False, True, False, False]).to_dict('records'):
             if row['Type'] == 'File':
                 try:
-                    if column_len == 39:
+                    if 'diskCreationTime' in row:
                         file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'lastKnownPinState','spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'diskCreationTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
-                    if column_len == 37:
+
+                    elif 'diskLastAccessTime' in row:
                         file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime','lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
 
-                    elif column_len == 36:
+                    elif 'hydrationCount' in row:
                         file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
 
-                    elif column_len == 33:
+                    elif 'HydrationTime' in row:
                         file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media')}
 
-                    elif column_len == 32:
+                    else:
                         file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
 
                 except Exception as e:
@@ -245,9 +247,14 @@ class OneDriveParser:
                     temp = {**scope, **folder}
                     final.insert(0, temp)
                 else:
-                    sub_folder = {key: row[key] for key in (
-                                  'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
-                                  'itemIndex', 'sharedItem')}
+                    if 'folderColor' in row:
+                        sub_folder = {key: row[key] for key in (
+                                      'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
+                                      'itemIndex', 'sharedItem', 'folderColor')}
+                    else:
+                        sub_folder = {key: row[key] for key in (
+                                      'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
+                                      'itemIndex', 'sharedItem')}
                     if row['resourceID'] in scopeID:
                         scopeID.remove(row['resourceID'])
                         for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):

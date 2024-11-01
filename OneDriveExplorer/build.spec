@@ -68,6 +68,7 @@ OneDriveExplorer_GUI_splash = Splash('Images\\splashv.png',
                 minify_script=True)
 
 OneDriveExplorer_GUI_a.datas += Tree('./Images', prefix='Images')
+OneDriveExplorer_GUI_a.datas += Tree('./ode/helpers/Manual', prefix='ode/helpers/Manual')
 OneDriveExplorer_GUI_a.datas += [('ode\\helpers\\schema', './ode\\helpers\\schema', 'DATA')]
 OneDriveExplorer_GUI_a.datas += [('ode\\helpers\\structures', './ode\\helpers\\structures', 'DATA')]
 

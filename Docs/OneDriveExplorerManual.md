@@ -7,8 +7,9 @@
 2022-12-07 Rev. 2 - Updated for v2022.12.08  
 2023-03-10 Rev. 3 - Updated for v2023.03.10  
 2023-05-05 Rev. 4 - Updated for v2023.05.05  
-2023-09-07 Rev. 5 - Updated for v2023.09.07
-2023-12-13 Rev. 5 - Updated for v2023.12.13
+2023-09-07 Rev. 5 - Updated for v2023.09.07  
+2023-12-13 Rev. 6 - Updated for v2023.12.13  
+2024-10-31 Rev. 7 - Updated for v2024.11.01
 
 ## OneDriveExplorer GUI Introduction
 OneDriveExplorer GUI is used to view the contents of \<UserCid>.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.
@@ -29,7 +30,7 @@ On the left-hand side of the window is the navigation pane. This pane displays t
 The file/folder pane shows the contents of the folder selected in the navigation pane along with it's OneDrive status. Once a file/folder has been loaded and a folder has been selected, a context menu is available by right clicking on the file/folder. Context menu options will be discussed later.
 
 ##### Status
-File folder statu is a s follows:  
+File folder status is a s follows:  
 ![](.\Manual\blog2.png)
 
 <span style="color:red">*Note: Not Synced and Not Linked do not exist on the endpoint. These are artifacts of syncing and linking libraries.</span>
@@ -38,7 +39,7 @@ File folder statu is a s follows:
 The Details pane shows detailed information about the folder/file selected. Information includes name, type, path, parentid, driveitemid, etag, and number of children.
 
 #### Log Entries
-The Log Entries pane shows related logs to the folder/file selected. This will only be populated if the OneDrive logs are parsed along with the \<UserCid>.dat file. This will be discussed in more detail.
+The Log Entries pane shows related logs to the folder/file selected. This will only be populated if the OneDrive logs are parsed along with the \<UserCid>.dat/SQLite file. This will be discussed in more detail.
 
 #### Status bar
 Across the bottom of the interface is a status bar as seen below.
@@ -53,7 +54,7 @@ The main menu contains options for loading \<UserCid>.dat files, preferences, th
 The next sections below will detail the submenus.
 
 #### File
-The File menu contains options for loading \<UserCid>.dat files and exporting.
+The File menu contains options for loading OneDrive settings files and exporting.
 
 ![](.\manual\file_menu.png)
 
@@ -79,7 +80,7 @@ The Options menu contains items for the look and feel and preferences of OneDriv
 
 * Font: Change the font type, style, and size. Applies to the Details, Log entries, and Log tabs.
 * Skins: Change the overall look of OneDriveExplorer.
-* Sync with Github: Download the latest ODL Cstructs
+* Sync with Github: Downloads the latest Cstructs from https://github.com/Beercow/ODEFiles
 * Preferences: Program options such as auto save, disabling the user hive dialog, and ODL settings.  
 
 The Preferences dialog allows you to change various OneDriveExplorer settings as seen below.
@@ -113,12 +114,12 @@ Loading data in OneDriveExplorer can happen in multiple ways. This includes Live
 
 #### Live system
 *Note: OneDriveExplorer must be run as an administrator of this option to be enabled.  
-Live system scans the current system looking for \<UserCid>.dat, NTUSER.dat, $Recycle.Bin, and OneDrive logs (if log parsing is enabled). Information will be parsed and loaded into OneDriveExplorer.
+Live system scans the current system looking for \<UserCid>.dat/SQLite, NTUSER.dat, $Recycle.Bin, and OneDrive logs (if log parsing is enabled). Information will be parsed and loaded into OneDriveExplorer.
 
 ![](.\manual\live.png)
 
 #### OneDrive settings
-OneDrive settings contains three options for loading \<UserCid>.dat data: Load \<UserCid>.dat, Import JSON, and Import CSV.
+OneDrive settings contains four options for loading \<UserCid>.dat/SQLite data: Load \<UserCid>.dat, Load from SQLite, Import JSON, and Import CSV.
 
 ![](.\manual\odsettings.png)
 
@@ -167,6 +168,11 @@ Import CSV allows for loading a previously saved CSV file from the command line 
 #### Projects
 Projects allow you to load one or more \<UserCid>.dat and log files; save the currently loaded \<UserCid>.dat and log files. This allows for quickly loading the same \<UserCid>.dat and log files for a particular case versus loading the files individually. Projects are saved with a *.ode_proj* extension.
 
+### Selecting columns
+Columns can be added or removed by right clicking the column header in the file/folder pane. Columns that can be selected include Date Created, Date Accessed, Date Modified, and Size. The version of ONeDrive determines if this data will be available.
+
+![](.\manual\columns.png)
+
 ### Selecting Folders/Files
 Selecting Folders/Files in OneDriveExplorer works much the same as it does in Windows Explorer. Clicking the small arrow to the left of the folder or double clicking the folder will expand that folder.
 
@@ -176,31 +182,42 @@ The top of the OneDrive Folders tab contains a simple entry box to enter text to
 ![](.\manual\find.png)
 
 ### Folders/Files context menu
-The context menu changes dynamically depending on what you right click on. Most common functions are copy Name, Path, or Details. Folder entries allow for expanding and collapsing the tree structure. Top level entries have the option to unload the entire OneDrive folder structure.
+The context menu changes dynamically depending on what you right click on. Most common functions are copy Name, Path, Details, or Log Entries. Folder entries allow for expanding and collapsing the tree structure. Top level entries have the option to unload the entire OneDrive folder structure.
 
 ![](.\manual\context.png)
 
-### Details
-When a Folder/File is selected, the Details pane is populated with various data about the selection.
+### File/Folder Details Pane
+When a Folder/File is selected, the Details pane is populated with various data about the selection. There can be up to four tabs with different information about the file/folder.
 
 ![](.\manual\details.png)
 
-* Name: Name of the Folder/File
-* Type: What type of object is it. These can include:
-  * Root Drive
-  * Root Default
-  * Root Shared
-  * Folder
-  * File
-* Path: Full path to Folder/File
-* Size: Size of file
-* Hash: Hash of file
-  * SHA1 for personal
-  * quickXor for business
-* ParentId: Specifies the identifier of the parent item
-* DriveItemId: Represents a file/folder stored in OneDrive
-* eTag: ETag for the entire item (metadata + content)
-* Children: Number of files/folders below selected item
+**<u>These include:</u>**
+* **Details**: Basic details for the file/folder
+  * Name: Name of the Folder/File
+  * Path: Full path to Folder/File
+  * Size: Size of file
+  * Hash: Hash of file
+    * SHA1
+    * quickXor
+  * parentResourceID: Specifies the identifier of the parent item
+  * resourceID: Represents a file/folder stored in OneDrive
+  * eTag: ETag for the entire item (metadata + content)  
+<br>
+* **Metadata**: Additional metadata about the file if available
+  * resourceID: Represents a file/folder stored in OneDrive
+  * fileName: Name of file
+  * spoCompositeID: A unique ID that is a composite of the following values:
+    * siteID
+    * webID
+    * listID
+  * createdBy: User that created the file
+  * modified by: Last user to modify file
+  * fileExtension: The extension of the file
+  * lastWriteCount: Number indicating order files were written to  
+<br>
+* **MetadataJSON**: Contains information related to image, audio, and video files  
+<br>
+* **filePolicies**: Contains information about the policies applied to the file in OneDrive
 
 ### OneDrive Logs
 OneDrive logs are stored as binary files with extensions .odl, .odlgz, .odlsent and .aold usually found in the following location: *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\logs\\<Personal\Business>*. When loaded, new tabs will be populated with the logs for each user next to the OneDrive Folders tab.
@@ -322,9 +339,105 @@ Depending on the options, OneDriveExplorer can produce JSON, CSV, or HTML files 
 
 A user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive. Along with the registry hive, $Recycle.Bin can be added with the `-rb` option to look for deleted files.
 
-# Creating CStructs
-
 # Version changes
+## v2024.11.01
+### Added
+#### GUI
+* Updated quick help
+* Update preference page
+* Project can only load at start
+#### GUI/cmmandline
+* Folder colors
+* Profile and Log Type added to logs
+### Fixed
+#### GUI
+* Quit window dissapear on drag
+* Fix TypeError: can only concatenate str (not "float") to str in import csv
+* Fix import csv indicator (missing building folder structure)
+#### commandline
+* not reading registry
+#### GUI/commandline
+* dtypes pulling from wrong dataframe
+## v2024.10.16
+### Added
+#### GUI
+* Sortable columns in the file manager
+* Double click in search on file to file location
+* Disable/enable log correlation
+* Select columns in file pane
+* folderStatus 12
+* availability type based on hydration data
+* availability type based on lastKnownPinState (v32)
+#### GUI/commandline
+* Folder sharedItem (dat file bitmask)
+* diskLastAccessTime (v30)
+* diskCreationTime (v32)
+### Fixed 
+#### GUI/commandline
+* Some database versions were not parsing
+## v2024.09.20
+### Added
+#### GUI/commandline
+* od_ClientFolder_Records sharedItem
+* ODL v1 logs
+### Fixed 
+#### GUI/commandline
+* recycle bin hash logic
+* Fixed logs corrolating off of parentResourceID
+* Fixed CSV import not dropping deleted from df
+## v2024.07.24
+### Fixed 
+#### GUI/commandline
+* Fixed dtypes in syncEngineDatabase.db
+* graphMetadata would cause crash in certain scenarios
+## v2024.07.19
+### Added
+#### GUI/commandline
+* hydration data updates
+* shortcutVolumID and shortcutItemIndex added
+### Fixed 
+#### GUI/commandline
+* Fixed deobfuscation of older ODL logs
+* Hash functions are properly applied
+## v2024.05.20
+### Fixed 
+#### GUI
+* fixes for lock icon
+#### GUI/commandline
+* not enough values to unpack (expected 4, got 2)
+* cannot insert level_0, already exists
+## v2024.05.17
+### Added
+#### GUI
+* add lock icon
+### Fixed 
+#### GUI/commandline
+* fixed empty hash error
+* fixed empty volumeID error
+* fixed empty values in size, sharedItem, and Media
+## v2024.03.22
+### Added
+#### GUI/commandline
+* od_GraphMetadata_Records
+* od_HydrationData
+* filter_delete_info
+* spoPermissions for scope
+* Decode vault logs
+#### GUI
+* Double click folder in middle pane
+* Breadcrumb viewer
+* Export corolated logs
+### Fixed 
+#### GUI
+* CStruct, clean up apperance
+#### GUI/commandline
+* Fix inRecycleBin 
+* Combined recycle artifacts to eliminate multiples of same file/folder
+## v2023.12.20
+### Fixed 
+#### GUI/commandline
+* Added more error checking in ODL parser 
+* spoPermissions wrong in v35 and v36 dat files
 ## v2023.12.13
 ### Added
 #### GUI/commandline

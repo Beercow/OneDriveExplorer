@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+            <html>
+                <head>                    
+                    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+                    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+                    <title>OneDriveExplorerManual.md</title>
+                    <style type="text/css">
+                    body {
+  font-family: Helvetica, arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background-color: black;
+  color: white;
+  padding: 30px;
+}
+
+body > *:first-child {
+  margin-top: 0 !important;
+}
+
+body > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+a {
+  color: #4183C4;
+}
+
+a.absent {
+  color: #cc0000;
+}
+
+a.anchor {
+  display: block;
+  padding-left: 30px;
+  margin-left: -30px;
+  cursor: pointer;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 20px 0 10px;
+  padding: 0;
+  font-weight: bold;
+  -webkit-font-smoothing: antialiased;
+  cursor: text;
+  position: relative;
+}
+
+h1:hover a.anchor, h2:hover a.anchor, h3:hover a.anchor, h4:hover a.anchor, h5:hover a.anchor, h6:hover a.anchor {
+  background: url("../../images/modules/styleguide/para.png") no-repeat 10px center;
+  text-decoration: none;
+}
+
+h1 tt, h1 code {
+  font-size: inherit;
+}
+
+h2 tt, h2 code {
+  font-size: inherit;
+}
+
+h3 tt, h3 code {
+  font-size: inherit;
+}
+
+h4 tt, h4 code {
+  font-size: inherit;
+}
+
+h5 tt, h5 code {
+  font-size: inherit;
+}
+
+h6 tt, h6 code {
+  font-size: inherit;
+}
+
+h1 {
+  font-size: 28px;
+  border-bottom: 2px solid #878787;
+  color: white;
+}
+
+h2 {
+  font-size: 24px;
+  border-bottom: 1px solid #878787;
+  color: white;
+}
+
+h3 {
+  font-size: 18px;
+}
+
+h4 {
+  font-size: 16px;
+}
+
+h5 {
+  font-size: 14px;
+}
+
+h6 {
+  color: #777777;
+  font-size: 14px;
+}
+
+p, blockquote, ul, ol, dl, table, pre {
+  margin: 15px 15px;
+}
+
+hr {
+  background: transparent url("../../images/modules/pulls/dirty-shade.png") repeat-x 0 0;
+  border: 0 none;
+  color: #878787;
+  height: 4px;
+  padding: 0;
+}
+
+body > h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+body > h1:first-child {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+body > h1:first-child + h2 {
+    margin-top: 0;
+    padding-top: 0;
+}
+body > h3:first-child, body > h4:first-child, body > h5:first-child, body > h6:first-child {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+a:first-child h1, a:first-child h2, a:first-child h3, a:first-child h4, a:first-child h5, a:first-child h6 {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+h1 p, h2 p, h3 p, h4 p, h5 p, h6 p {
+  margin-top: 0;
+}
+
+li p.first {
+  display: inline-block;
+}
+
+li.task-list-item {
+  list-style-type: none;
+}
+
+ul, ol {
+  padding-left: 30px;
+}
+
+ul :first-child, ol :first-child {
+  margin-top: 0;
+}
+
+ul :last-child, ol :last-child {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+dl {
+  padding: 0;
+}
+
+dl dt {
+  font-size: 14px;
+  font-weight: bold;
+  font-style: italic;
+  padding: 0;
+  margin: 15px 0 5px;
+}
+
+dl dt:first-child {
+  padding: 0;
+}
+
+dl dt > :first-child {
+  margin-top: 0;
+}
+
+dl dt > :last-child {
+  margin-bottom: 0;
+}
+
+dl dd {
+  margin: 0 0 15px;
+  padding: 0 15px;
+}
+
+dl dd > :first-child {
+  margin-top: 0;
+}
+
+dl dd > :last-child {
+      margin-bottom: 0;
+}
+
+blockquote {
+  border-left: 4px solid #dddddd;
+  padding: 0 15px;
+  color: #777777;
+}
+
+blockquote > :first-child {
+  margin-top: 0;
+}
+
+blockquote > :last-child {
+  margin-bottom: 15px;
+}
+
+table {
+  width:100%;
+  padding: 0;
+}
+
+table tr {
+  border-top: 1px solid #878787;
+  background-color: white;
+  color: black;
+  margin: 0;
+  padding: 0;
+}
+
+table tr:nth-child(2n) {
+  background-color: #a4a4a4;
+}
+
+table tr th {
+  font-weight: bold;
+  background-color: white;
+  border: 1px solid #878787;
+  margin: 0;
+  padding: 6px 13px;
+}
+
+table tr td {
+  border: 1px solid #878787;
+  background-color: #a4a4a4;
+  margin: 0;
+  padding: 6px 13px;
+}
+
+table tr th :first-child, table tr td :first-child {
+  margin-top: 0;
+}
+
+table tr th :last-child, table tr td :last-child {
+  margin-bottom: 0;
+}
+
+img {
+  max-width: 100%;
+}
+
+span.frame {
+  display: block;
+  overflow: hidden;
+}
+
+span.frame > span {
+  border: 1px solid #dddddd;
+  display: block;
+  float: left;
+  overflow: hidden;
+  margin: 13px 0 0;
+  padding: 7px;
+  width: auto;
+}
+
+span.frame span img {
+  display: block;
+  float: left;
+}
+
+span.frame span span {
+  clear: both;
+  color: #333333;
+  display: block;
+  padding: 5px 0 0;
+}
+
+span.align-center {
+  display: block;
+  overflow: hidden;
+  clear: both;
+}
+
+span.align-center > span {
+  display: block;
+  overflow: hidden;
+  margin: 13px auto 0;
+  text-align: center;
+}
+
+span.align-center span img {
+  margin: 0 auto;
+  text-align: center;
+}
+
+span.align-right {
+  display: block;
+  overflow: hidden;
+  clear: both;
+}
+
+span.align-right > span {
+  display: block;
+  overflow: hidden;
+  margin: 13px 0 0;
+  text-align: right;
+}
+
+span.align-right span img {
+  margin: 0;
+  text-align: right;
+}
+
+span.float-left {
+  display: block;
+  margin-right: 13px;
+  overflow: hidden;
+  float: left;
+}
+
+span.float-left span {
+  margin: 13px 0 0;
+}
+
+span.float-right {
+  display: block;
+  margin-left: 13px;
+  overflow: hidden;
+  float: right;
+}
+
+span.float-right > span {
+  display: block;
+  overflow: hidden;
+  margin: 13px auto 0;
+  text-align: right;
+}
+
+code, tt {
+  margin: 0 2px;
+  padding: 0 5px;
+  white-space: nowrap;
+  border: 1px solid #9a9a9a;
+  background-color: #a4a4a4;
+  border-radius: 3px;
+}
+
+pre code {
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  border: none;
+  background: transparent;
+}
+
+.highlight pre {
+  background-color: #a4a4a4;
+  border: 1px solid #878787;
+  font-size: 13px;
+  line-height: 19px;
+  overflow: auto;
+  padding: 6px 10px;
+  border-radius: 3px;
+}
+
+pre {
+  display: inline-block;
+  background-color: #a4a4a4;
+  border: 1px solid #878787;
+  font-size: 13px;
+  line-height: 19px;
+  overflow: auto;
+  padding: 6px 10px;
+  border-radius: 3px;
+}
+
+div {
+    display: inline;
+}
+
+.column {
+  float: left;
+  padding: 6px 20px;
+}
+
+/* Clear floats after the columns */
+.row:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+legend {
+  color:white;
+}
+
+/* Syntax Highlighting */
+
+.plainText {
+ background-color: #FFFFFF;
+ color: #000000;
+}
+.htmlServerSideScript {
+ background-color: #FFFF00;
+}
+.htmlComment {
+ color: #307F30;
+}
+.htmlTagDelimiter {
+ color: #7F7FFF;
+}
+.htmlElementName {
+ color: #CC6C4E;
+}
+.htmlAttributeName {
+ color: #FF0000;
+}
+.htmlAttributeValue {
+ color: #7F7FFF;
+}
+.htmlOperator {
+ color: #7F7FFF;
+}
+.comment {
+ color: #307F30;
+}
+.xmlDocTag {
+ color: #808080;
+}
+.xmlDocComment {
+ color: #307F30;
+}
+.string {
+ color: #CC6C4E;
+}
+.stringCSharpVerbatim {
+ color: #CC6C4E;
+}
+.keyword {
+ color: #7F7FFF;
+}
+.preprocessorKeyword {
+ color: #7F7FFF;
+}
+.htmlEntity {
+ color: #FF0000;
+}
+.xmlAttribute {
+ color: #E30000;
+}
+.xmlAttributeQuotes {
+ color: #000000;
+}
+.xmlAttributeValue {
+ color: #7F7FFF;
+}
+.xmlCDataSection {
+ color: #808080;
+}
+.xmlComment {
+ color: #307F30;
+}
+.xmlDelimiter {
+ color: #7F7FFF;
+}
+.xmlName {
+ color: #CC6C4E;
+}
+.className {
+ color: #48D1CC;
+}
+.cssSelector {
+ color: #CC6C4E;
+}
+.cssPropertyName {
+ color: #FF0000;
+}
+.cssPropertyValue {
+ color: #7F7FFF;
+}
+.sqlSystemFunction {
+ color: #FF00FF;
+}
+.powershellAttribute {
+ color: #B0E0E6;
+}
+.powershellOperator {
+ color: #808080;
+}
+.powershellType {
+ color: #008080;
+}
+.powershellVariable {
+ color: #E30000;
+}
+.type {
+ color: #008080;
+}
+.typeVariable {
+ color: #008080;
+ font-style: italic;
+}
+.namespace {
+ color: #000080;
+}
+.constructor {
+ color: #800080;
+}
+.predefined {
+ color: #000080;
+}
+.pseudoKeyword {
+ color: #000080;
+}
+.stringEscape {
+ color: #808080;
+}
+.controlKeyword {
+ color: #7F7FFF;
+}
+.number {
+}
+.operator {
+}
+.delimiter {
+}
+.markdownHeader {
+ font-weight: bold;
+}
+.markdownCode {
+ color: #008080;
+}
+.markdownListItem {
+ font-weight: bold;
+}
+.italic {
+ font-style: italic;
+}
+.bold {
+ font-weight: bold;
+}
+
+<style>
+    .dataSources {
+        width: 10%;
+        text-align: center;
+    }
+    .dataSources th {
+        background: #010001;
+        color: white;
+        word-wrap: break-word;
+        text-align: center;
+    }
+    .dataSources tr:nth-child(2) td {
+        background: #ffe9a0;
+        text-align: center;
+    }
+    .dataSources tr:nth-child(3) td {
+        background: #85be1e;
+    }
+    .dataSources tr:nth-child(4) td {
+        background: #eaf5d3;
+    }
+    .dataSources tr:nth-child(5) td {
+        background: #db701a;
+    }
+    .dataSources tr:nth-child(6) td {
+        background: #fde5d3;
+    }
+</style>
+                    </style>
+                </head>
+                <body style="">
+                <h1 id="0">OneDriveExplorer</h1>
+<p id="2"><img src="./Images/ode.png" alt="" /></p>
+<p id="4"><strong>Revision history</strong><br />
+2022-11-08 Rev. 1 - Initial Release<br />
+2022-12-07 Rev. 2 - Updated for v2022.12.08<br />
+2023-03-10 Rev. 3 - Updated for v2023.03.10<br />
+2023-05-05 Rev. 4 - Updated for v2023.05.05<br />
+2023-09-07 Rev. 5 - Updated for v2023.09.07<br />
+2023-12-13 Rev. 6 - Updated for v2023.12.13<br />
+2024-10-31 Rev. 7 - Updated for v2024.11.01</p>
+<h2 id="13">OneDriveExplorer GUI Introduction</h2>
+<p id="14">OneDriveExplorer GUI is used to view the contents of &lt;UserCid&gt;.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.</p>
+<h2 id="15">Getting Started</h2>
+<p id="16">After starting OneDriveExplorer, the main interface is displayed.</p>
+<p id="18"><img src="./Images/startup.png" alt="" /></p>
+<p id="20">Settings for themes, fonts, logs, output to csv, json, html are saved and reloaded between program executions. You can reset these options by deleting the ode.settings file.</p>
+<h3 id="22">Interface sections</h3>
+<p id="23">There are five sections to the main interface.</p>
+<h4 id="25">Navigation Pane</h4>
+<p id="26">On the left-hand side of the window is the navigation pane. This pane displays the &lt;UserCid&gt;.dat and SQLite files that have been loaded and the folder structure of OneDrive. Once a &lt;UserCid&gt;.dat and/or SQLite file has been loaded and a folder has been selected, a context menu is available by right clicking on the folder. Context menu options will be discussed later.</p>
+<h4 id="28">File/Folder Pane</h4>
+<p id="29">The file/folder pane shows the contents of the folder selected in the navigation pane along with it's OneDrive status. Once a file/folder has been loaded and a folder has been selected, a context menu is available by right clicking on the file/folder. Context menu options will be discussed later.</p>
+<h5 id="31">Status</h5>
+<p id="32">File folder statu is a s follows:<br />
+<img src="./Images/blog2.png" alt="" /></p>
+<p id="35"><span style="color:red">*Note: Not Synced and Not Linked do not exist on the endpoint. These are artifacts of syncing and linking libraries.</span></p>
+<h4 id="37">Details</h4>
+<p id="38">The Details pane shows detailed information about the folder/file selected. Information includes name, type, path, parentid, driveitemid, etag, and number of children.</p>
+<h4 id="40">Log Entries</h4>
+<p id="41">The Log Entries pane shows related logs to the folder/file selected. This will only be populated if the OneDrive logs are parsed along with the &lt;UserCid&gt;.dat/SQLite file. This will be discussed in more detail.</p>
+<h4 id="43">Status bar</h4>
+<p id="44">Across the bottom of the interface is a status bar as seen below.</p>
+<p id="46"><img src="./Images/status.png" alt="" /></p>
+<p id="48">The status bar contains a progress bar for the current running job and the total number of messages available on the Message form.<br />
+Double clicking on the Total messages counter will show the Messages form. I there are any errors in the Messages form, the background will be yellow. If there are any errors, the background will be red. When the Messages form is viewed, the background will change back to the default color.</p>
+<h3 id="51">Main Menu</h3>
+<p id="52">The main menu contains options for loading &lt;UserCid&gt;.dat files, preferences, themes, etc. Many of the menu items have shortcut keys. Pressing the keys shown by a menu item will activate the menu item.<br />
+The next sections below will detail the submenus.</p>
+<h4 id="55">File</h4>
+<p id="56">The File menu contains options for loading OneDrive settings files and exporting.</p>
+<p id="58"><img src="./Images/file_menu.png" alt="" /></p>
+<ul id="60">
+<li id="60">Live system: Preforms a scan of the live system and loads any OneDrive information found. *Must be run as Administrator.</li>
+<li id="61">OneDrive settings: Allows for loading/unloading OneDrive settings files. OneDrive settings will be discussed below.</li>
+<li id="62">OneDrive logs: Allows for loading/unloading OneDrive ODL logs.</li>
+<li id="63">Project: Allows for loading/saving of projects. Projects will be discussed below.</li>
+<li id="64">Export 'OneDrive Folders': Exports what is shown in the OneDrive Folders tab.<br />
+As an example, if the OneDrive Folders tab looks like this:</li>
+</ul>
+<p id="67"><img src="./Images/onedrive_folders.png" alt="" /></p>
+<p id="69">Exporting to PDF would generate a PDF file that contains the following:</p>
+<p id="71"><img src="./Images/onedrive_folders2.png" alt="" /></p>
+<p id="73">This can be useful for adding to reports or other documentation.</p>
+<h4 id="75">Options</h4>
+<p id="76">The Options menu contains items for the look and feel and preferences of OneDriveExplorer.</p>
+<p id="78"><img src="./Images/options_menu.png" alt="" /></p>
+<ul id="80">
+<li id="80">Font: Change the font type, style, and size. Applies to the Details, Log entries, and Log tabs.</li>
+<li id="81">Skins: Change the overall look of OneDriveExplorer.</li>
+<li id="82">Sync with Github: Downloads the latest Cstructs from <a href="https://github.com/Beercow/ODEFiles">https://github.com/Beercow/ODEFiles</a></li>
+<li id="83">Preferences: Program options such as auto save, disabling the user hive dialog, and ODL settings.</li>
+</ul>
+<p id="85">The Preferences dialog allows you to change various OneDriveExplorer settings as seen below.</p>
+<p id="87"><img src="./Images/preferences.png" alt="" /></p>
+<h4 id="89">View</h4>
+<p id="90">The View menu contains two options: Messages and CStructs.</p>
+<p id="92"><img src="./Images/view.png" alt="" /></p>
+<h5 id="94">Messages</h5>
+<p id="95">Messages toggles the visibility of the Messages window. The messages window displays status messages on the parsing process. The total number of messages is also shown on the main window's bottom status bar to the far right. Double clicking the message count will also show the Messages window.</p>
+<p id="97"><img src="./Images/messages.png" alt="" /></p>
+<p id="99">As mentioned above, the background of the messages count will be yellow if a warning message exists and red if an error message exists. The background will return to default when the Messages window is shown.<br />
+The Messages window contains two options. One for clearing the messages and the other to export the messages. Exporting the messages can be useful for troubleshooting the application.</p>
+<p id="102"><img src="./Images/messages_number.png" alt="" /></p>
+<h5 id="104">CStructs</h5>
+<p id="105">The CStructs option displays a list of available cstructs for a given code file. Details include author, functions, and description. CStructs will be discussed in more detail in a dedicated section of this manual.</p>
+<h4 id="107">Help</h4>
+<p id="108">The help menu contains two options: Quick help and About.</p>
+<h2 id="110">Using OneDriveExplorer</h2>
+<h3 id="111">Loading data</h3>
+<p id="112">Loading data in OneDriveExplorer can happen in multiple ways. This includes Live system, &lt;UserCid&gt;.dat files, ODL logs, output from command line runs, projects, etc. The following sections will walk through loading data in OneDriveExplorer.</p>
+<h4 id="114">Live system</h4>
+<p id="115">*Note: OneDriveExplorer must be run as an administrator of this option to be enabled.<br />
+Live system scans the current system looking for &lt;UserCid&gt;.dat/SQLite, NTUSER.dat, $Recycle.Bin, and OneDrive logs (if log parsing is enabled). Information will be parsed and loaded into OneDriveExplorer.</p>
+<p id="118"><img src="./Images/live.png" alt="" /></p>
+<h4 id="120">OneDrive settings</h4>
+<p id="121">OneDrive settings contains four options for loading &lt;UserCid&gt;.dat/SQLite data: Load &lt;UserCid&gt;.dat, Load from SQLite, Import JSON, and Import CSV.</p>
+<p id="123"><img src="./Images/odsettings.png" alt="" /></p>
+<h5 id="125">Load &lt;UserCid&gt;.dat</h5>
+<p id="126">Use this option to load a &lt;UserCid&gt;.dat file. Default location is <em>%USERPROFILE%\%AppData%\Local\Microsoft\OneDrive\settings\&lt;Personal\Business&gt;</em>. Once a file is selected, OneDriveExplorer will prompt to load a User Hive and the $Recycle.Bin folder.</p>
+<p id="128"><img src="./Images/userhive.png" alt="" /></p>
+<p id="130"><img src="./Images/recbin.png" alt="" /></p>
+<p id="132">You can bypass these dialogs in one of two ways:</p>
+<ul id="133">
+<li id="133">Holding down SHIFT when loading &lt;UserCid&gt;.dat</li>
+<li id="134">In the Preferences dialog</li>
+</ul>
+<p id="136"><img src="./Images/preferences1.png" alt="" /></p>
+<h5 id="138">Load from SQLite</h5>
+<p id="139">Use this option to load OneDrive SQLite databases. Default location is <em>%USERPROFILE%\%AppData%\Local\Microsoft\OneDrive\settings</em>. Once a folder is selected, OneDriveExplorer will prompt to load a User Hive.</p>
+<p id="141"><img src="./Images/userhive.png" alt="" /></p>
+<p id="143">You can bypass this dialog in one of two ways:</p>
+<ul id="144">
+<li id="144">Holding down SHIFT when loading &lt;UserCid&gt;.dat</li>
+<li id="145">In the Preferences dialog</li>
+</ul>
+<p id="147"><img src="./Images/preferences1.png" alt="" /></p>
+<h5 id="149">Import JSON</h5>
+<p id="150">Import JSON allows for loading a previously saved JSON file from the command line or GUI application.</p>
+<h5 id="152">Import CSV</h5>
+<p id="153">Import CSV allows for loading a previously saved CSV file from the command line or GUI application.</p>
+<h4 id="155">OneDrive logs</h4>
+<p id="156">*Note: This option is only available if enabled in the Preferences dialog.<br />
+OneDrive logs contains two options for loading ODL data: Load ODL logs and Import csv. OneDrive logs will be discussed later.</p>
+<p id="159"><img src="./Images/odlogs.png" alt="" /></p>
+<h5 id="161">Load ODL logs</h5>
+<p id="162">Use this option to load OneDrive log files. The default location is <em>%USERPROFILE%\%AppData%\Local\Microsoft\OneDrive\logs\&lt;Personal\Business&gt;</em>. If the <em>ObfuscationStringMap.txt</em> or <em>general.keystor</em> file is found, it will be used to automatically deobfuscate the logs.</p>
+<h5 id="164">Import CSV</h5>
+<p id="165">Import CSV allows for loading a previously saved CSV file from the command line or GUI application.</p>
+<h4 id="167">Projects</h4>
+<p id="168">Projects allow you to load one or more &lt;UserCid&gt;.dat and log files; save the currently loaded &lt;UserCid&gt;.dat and log files. This allows for quickly loading the same &lt;UserCid&gt;.dat and log files for a particular case versus loading the files individually. Projects are saved with a <em>.ode_proj</em> extension.</p>
+<h3 id="170">Selecting columns</h3>
+<p id="171">Columns can be added or removed by right clicking the column header in the file/folder pane. Columns that can be selected include Date Created, Date Accessed, Date Modified, and Size. The version of ONeDrive determines if this data will be available.</p>
+<p id="173"><img src="./Images/columns.png" alt="" /></p>
+<h3 id="175">Selecting Folders/Files</h3>
+<p id="176">Selecting Folders/Files in OneDriveExplorer works much the same as it does in Windows Explorer. Clicking the small arrow to the left of the folder or double clicking the folder will expand that folder.</p>
+<h3 id="178">Finding Folders/Files</h3>
+<p id="179">The top of the OneDrive Folders tab contains a simple entry box to enter text to find. If the text is found, the Folders/Files will be populated in the middle pane.</p>
+<p id="181"><img src="./Images/find.png" alt="" /></p>
+<h3 id="183">Folders/Files context menu</h3>
+<p id="184">The context menu changes dynamically depending on what you right click on. Most common functions are copy Name, Path, Details, or Log Entries. Folder entries allow for expanding and collapsing the tree structure. Top level entries have the option to unload the entire OneDrive folder structure.</p>
+<p id="186"><img src="./Images/context.png" alt="" /></p>
+<h3 id="188">File/Folder Details Pane</h3>
+<p id="189">When a Folder/File is selected, the Details pane is populated with various data about the selection. There can be up to four tabs with different information about the file/folder.</p>
+<p id="191"><img src="./Images/details.png" alt="" /></p>
+<p id="193"><strong><u>These include:</u></strong></p>
+<ul id="194">
+<li id="194"><strong>Details</strong>: Basic details for the file/folder
+<ul id="195">
+<li id="195">Name: Name of the Folder/File</li>
+<li id="196">Path: Full path to Folder/File</li>
+<li id="197">Size: Size of file</li>
+<li id="198">Hash: Hash of file
+<ul id="199">
+<li id="199">SHA1</li>
+<li id="200">quickXor</li>
+</ul>
+</li>
+<li id="201">parentResourceID: Specifies the identifier of the parent item</li>
+<li id="202">resourceID: Represents a file/folder stored in OneDrive</li>
+<li id="203">eTag: ETag for the entire item (metadata + content)<br />
+<br></li>
+</ul>
+</li>
+<li id="205"><strong>Metadata</strong>: Additional metadata about the file if available
+<ul id="206">
+<li id="206">resourceID: Represents a file/folder stored in OneDrive</li>
+<li id="207">fileName: Name of file</li>
+<li id="208">spoCompositeID: A unique ID that is a composite of the following values:
+<ul id="209">
+<li id="209">siteID</li>
+<li id="210">webID</li>
+<li id="211">listID</li>
+</ul>
+</li>
+<li id="212">createdBy: User that created the file</li>
+<li id="213">modified by: Last user to modify file</li>
+<li id="214">fileExtension: The extension of the file</li>
+<li id="215">lastWriteCount: Number indicating order files were written to<br />
+<br></li>
+</ul>
+</li>
+<li id="217"><strong>MetadataJSON</strong>: Contains information related to image, audio, and video files<br />
+<br></li>
+<li id="219"><strong>filePolicies</strong>: Contains information about the policies applied to the file in OneDrive</li>
+</ul>
+<h3 id="221">OneDrive Logs</h3>
+<p id="222">OneDrive logs are stored as binary files with extensions .odl, .odlgz, .odlsent and .aold usually found in the following location: <em>%USERPROFILE%\%AppData%\Local\Microsoft\OneDrive\logs\&lt;Personal\Business&gt;</em>. When loaded, new tabs will be populated with the logs for each user next to the OneDrive Folders tab.</p>
+<p id="224"><img src="./Images/logs.png" alt="" /></p>
+<p id="226">Selecting one of these tabs will bring up the logs for that user. From the log tab, you can sort columns and pop out individual cells.<br />
+From the OneDrive Folders tab, selecting a file/folder will populate the Log Entries tab with some, not all, of the logs associated with the file/folder. This can be useful to see what activities have taken place on the file/folder.</p>
+<p id="229"><img src="./Images/logs2.png" alt="" /></p>
+<h3 id="231">CStructs</h3>
+<p id="232">cstruct files provide a means to better parse ODL entries. The parameters of ODL entries consist of structured binary data and are parsed with a regex looking for ascii characters. cstruct files give us a means to define the structured data and extract it accordingly.</p>
+<p id="234">CStructs live under the main OneDriveExplorer directory in a subdirectory called 'cstructs'. If you would like to load cstruct files from a different directory, use the --cstructs switch when starting OneDriveExplorer</p>
+<blockquote id="236">
+<p id="236">OneDriveExplorer.exe --cstructs &lt;folder_path&gt;</p>
+</blockquote>
+<p id="238">When OneDriveExplorer is started, it looks for all files matching that pattern in the cstructs folder. It then verifies that each file found is a valid cstruct file. IF it is, the cstruct is made available to OneDriveExplorer.</p>
+<p id="240">To view all available cstructs, use the View | CStructs menu option. When this is selected the following dialog is displayed:</p>
+<p id="242"><img src="./Images/cstructs.png" alt="" /></p>
+<p id="244">To get additional details about the cstruct, click the Add'l Info button. The following dialog will be displayed:</p>
+<p id="246"><img src="./Images/add_info.png" alt="" /></p>
+<h1 id="248">OneDriveExplorer</h1>
+<h2 id="249">OneDriveExplorer Introduction</h2>
+<p id="250">OneDriveExplorer is a tool used to parse &lt;UserCid&gt;.dat files and reconstruct the folder structure of OneDrive. &lt;UserCid&gt;.dat files are commonly found at %USERPROFILE%\%AppData%\Local\Microsoft\OneDrive\settings\&lt;Personal\Business&gt;</p>
+<h2 id="252">Getting started</h2>
+<p id="254">Running OneDriveExplorer.exe without any arguments displays a list of command line options:</p>
+<pre><code id="256">usage: OneDriveExplorer.exe [-h] [-f FILE] [-s SQL] [-d DIR] [-l [LOGS]] [-r REGHIVE] [-rb RECYCLE_BIN] [--csv CSV]
+                            [--csvf CSVF] [--html HTML] [--json JSON] [--pretty] [--clist] [--cstructs CSTRUCTS]
+                            [--sync] [--debug] [--guids]
+
+options:
+  -h, --help            show this help message and exit
+  -f FILE, --file FILE  &lt;UserCid&gt;.dat file to be parsed
+  -s SQL, --sql SQL     OneDrive folder containing SQLite databases
+  -d DIR, --dir DIR     Directory to recursively process, looking for &lt;UserCid&gt;.dat, NTUSER hive, $Recycle.Bin, and
+                        ODL logs. This mode is primarily used with KAPE.
+  -l [LOGS], --logs [LOGS]
+                        Directory to recursively process for ODL logs.
+  -r REGHIVE, --REG_HIVE REGHIVE
+                        If a registry hive is provided then the mount points of the SyncEngines will be resolved.
+  -rb RECYCLE_BIN, --RECYCLE_BIN RECYCLE_BIN
+                        $Recycle.Bin
+  --csv CSV             Directory to save CSV formatted results to. Be sure to include the full path in double quotes.
+  --csvf CSVF           File name to save CSV formatted results to. When present, overrides default name.
+  --html HTML           Directory to save html formatted results to. Be sure to include the full path in double
+                        quotes.
+  --json JSON           Directory to save json representation to. Use --pretty for a more human readable layout.
+  --pretty              When exporting to json, use a more human readable layout. Default is FALSE
+  --clist               List available cstructs. Defaults to 'cstructs' folder where program was executed. Use
+                        --cstructs for different cstruct folder.
+  --cstructs CSTRUCTS   The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was
+                        executed.
+  --sync                If true, OneDriveExplorer will download the latest Cstrucs from
+                        https://github.com/Beercow/ODEFiles prior to running. Default is FALSE
+  --debug               Show debug information during processing.
+  --guids               OneDriveExplorer will generate 10 GUIDs and exit. Useful when creating new Cstructs. Default
+                        is FALSE  
+</code></pre>
+<p id="290">There are several groups of command line options for OneDriveExplorer.</p>
+<h3 id="292">Source</h3>
+<ul id="294">
+<li id="294"><p id="294"><strong>-f</strong>: Full path, including &lt;UserCid&gt;.dat, of &lt;UserCid&gt;.dat file to be parse</p>
+</li>
+<li id="296"><p id="296"><strong>-s</strong>: Directory containing OneDrive SQLite databases</p>
+</li>
+<li id="298"><p id="298"><strong>-d</strong>: Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and ODL logs. This mode is primarily used with KAPE.</p>
+</li>
+<li id="300"><p id="300"><strong>-r</strong>: This switch will instruct OneDriveExplorer to use the registry hive supplied to resolve OneDrive mount points.</p>
+</li>
+<li id="302"><p id="302"><strong>-rb</strong>: This switch will instruct OneDriveExplorer to use the $Recycle.Bin supplied to look for deleted files. This switch can only be used when a registry hive is supplied.</p>
+</li>
+<li id="304"><p id="304"><strong>-l</strong>: Directory to recursively process for ODL logs.</p>
+</li>
+</ul>
+<h3 id="306">Output</h3>
+<ul id="308">
+<li id="308"><p id="308"><strong>--csv</strong>: Directory to save CSV formatted results to. Be sure to include the full path in double quotes.</p>
+</li>
+<li id="310"><p id="310"><strong>--csvf</strong>: File name to save CSV formatted results to. When present, overrides default name</p>
+</li>
+<li id="312"><p id="312"><strong>--html</strong>: Directory to save html formatted results to. Be sure to include the full path in double quotes.</p>
+</li>
+<li id="314"><p id="314"><strong>--json</strong>: Directory to save json representation to. Use --pretty for a more human readable layout.</p>
+</li>
+<li id="316"><p id="316"><strong>--pretty</strong>: When exporting to json, use a more human readable layout. Default is FALSE</p>
+</li>
+</ul>
+<h3 id="318">Other</h3>
+<ul id="320">
+<li id="320"><p id="320"><strong>--clist</strong>: List available cstructs. Also used to check for errors in cstruct files.</p>
+</li>
+<li id="322"><p id="322"><strong>--cstructs</strong>: The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was executed.</p>
+</li>
+<li id="324"><p id="324"><strong>--sync</strong>: Downloads the latest Cstructs from <a href="https://github.com/Beercow/ODEFiles">https://github.com/Beercow/ODEFiles</a></p>
+</li>
+<li id="326"><p id="326"><strong>--debug</strong>: Show debug information during processing.</p>
+</li>
+<li id="328"><p id="328"><strong>--guids</strong>: Generates 10 random GUIDs for use with cstruct files.</p>
+</li>
+</ul>
+<h3 id="330">Usage</h3>
+<p id="331">To use OneDriveExplorer, simply provide the <code>.\&lt;UserCid&gt;.dat</code> file to the <code>-f</code> argument</p>
+<div id="333" class="lang-bash editor-colors"><div class="text"><pre>
+OneDriveExplorer.py -f business1\d1a7c039-6175-4ddb-bcdb-a8de45cf1678.dat
+</pre></div>
+</div>
+<p id="337">Depending on the options, OneDriveExplorer can produce JSON, CSV, or HTML files of the parsed data. The <code>--pretty</code> option can be used to output the JSON into a more human readable layout.</p>
+<p id="339">A user registry hive can be supplied with the <code>-r</code> argument. This will resolve some of the mount points associated with OneDrive. Along with the registry hive, $Recycle.Bin can be added with the <code>-rb</code> option to look for deleted files.</p>
+<h1 id="341">Version changes</h1>
+<h2 id="342">v2024.11.01</h2>
+<h3 id="343">Added</h3>
+<h4 id="344">GUI</h4>
+<ul id="345">
+<li id="345">Updated quick help</li>
+<li id="346">Update preference page</li>
+<li id="347">Project can only load at start</li>
+</ul>
+<h4 id="348">GUI/cmmandline</h4>
+<ul id="349">
+<li id="349">Folder colors</li>
+<li id="350">Profile and Log Type added to logs</li>
+</ul>
+<h3 id="351">Fixed</h3>
+<h4 id="352">GUI</h4>
+<ul id="353">
+<li id="353">Quit window dissapear on drag</li>
+<li id="354">Fix TypeError: can only concatenate str (not &quot;float&quot;) to str in import csv</li>
+<li id="355">Fix import csv indicator (missing building folder structure)</li>
+</ul>
+<h4 id="356">commandline</h4>
+<ul id="357">
+<li id="357">not reading registry</li>
+</ul>
+<h4 id="358">GUI/commandline</h4>
+<ul id="359">
+<li id="359">dtypes pulling from wrong dataframe</li>
+</ul>
+<h2 id="360">v2024.10.16</h2>
+<h3 id="361">Added</h3>
+<h4 id="362">GUI</h4>
+<ul id="363">
+<li id="363">Sortable columns in the file manager</li>
+<li id="364">Double click in search on file to file location</li>
+<li id="365">Disable/enable log correlation</li>
+<li id="366">Select columns in file pane</li>
+<li id="367">folderStatus 12</li>
+<li id="368">availability type based on hydration data</li>
+<li id="369">availability type based on lastKnownPinState (v32)</li>
+</ul>
+<h4 id="370">GUI/commandline</h4>
+<ul id="371">
+<li id="371">Folder sharedItem (dat file bitmask)</li>
+<li id="372">diskLastAccessTime (v30)</li>
+<li id="373">diskCreationTime (v32)</li>
+</ul>
+<h3 id="374">Fixed</h3>
+<h4 id="375">GUI/commandline</h4>
+<ul id="376">
+<li id="376">Some database versions were not parsing</li>
+</ul>
+<h2 id="377">v2024.09.20</h2>
+<h3 id="378">Added</h3>
+<h4 id="379">GUI/commandline</h4>
+<ul id="380">
+<li id="380">od_ClientFolder_Records sharedItem</li>
+<li id="381">ODL v1 logs</li>
+</ul>
+<h3 id="382">Fixed</h3>
+<h4 id="383">GUI/commandline</h4>
+<ul id="384">
+<li id="384">recycle bin hash logic</li>
+<li id="385">Fixed logs corrolating off of parentResourceID</li>
+<li id="386">Fixed CSV import not dropping deleted from df</li>
+</ul>
+<h2 id="387">v2024.07.24</h2>
+<h3 id="388">Fixed</h3>
+<h4 id="389">GUI/commandline</h4>
+<ul id="390">
+<li id="390">Fixed dtypes in syncEngineDatabase.db</li>
+<li id="391">graphMetadata would cause crash in certain scenarios</li>
+</ul>
+<h2 id="392">v2024.07.19</h2>
+<h3 id="393">Added</h3>
+<h4 id="394">GUI/commandline</h4>
+<ul id="395">
+<li id="395">hydration data updates</li>
+<li id="396">shortcutVolumID and shortcutItemIndex added</li>
+</ul>
+<h3 id="397">Fixed</h3>
+<h4 id="398">GUI/commandline</h4>
+<ul id="399">
+<li id="399">Fixed deobfuscation of older ODL logs</li>
+<li id="400">Hash functions are properly applied</li>
+</ul>
+<h2 id="401">v2024.05.20</h2>
+<h3 id="402">Fixed</h3>
+<h4 id="403">GUI</h4>
+<ul id="404">
+<li id="404">fixes for lock icon</li>
+</ul>
+<h4 id="405">GUI/commandline</h4>
+<ul id="406">
+<li id="406">not enough values to unpack (expected 4, got 2)</li>
+<li id="407">cannot insert level_0, already exists</li>
+</ul>
+<h2 id="408">v2024.05.17</h2>
+<h3 id="409">Added</h3>
+<h4 id="410">GUI</h4>
+<ul id="411">
+<li id="411">add lock icon</li>
+</ul>
+<h3 id="412">Fixed</h3>
+<h4 id="413">GUI/commandline</h4>
+<ul id="414">
+<li id="414">fixed empty hash error</li>
+<li id="415">fixed empty volumeID error</li>
+<li id="416">fixed empty values in size, sharedItem, and Media</li>
+</ul>
+<h2 id="417">v2024.03.22</h2>
+<h3 id="418">Added</h3>
+<h4 id="419">GUI/commandline</h4>
+<ul id="420">
+<li id="420">od_GraphMetadata_Records</li>
+<li id="421">od_HydrationData</li>
+<li id="422">filter_delete_info</li>
+<li id="423">spoPermissions for scope</li>
+<li id="424">Decode vault logs</li>
+</ul>
+<h4 id="425">GUI</h4>
+<ul id="426">
+<li id="426">Double click folder in middle pane</li>
+<li id="427">Breadcrumb viewer</li>
+<li id="428">Export corolated logs</li>
+</ul>
+<h3 id="429">Fixed</h3>
+<h4 id="430">GUI</h4>
+<ul id="431">
+<li id="431">CStruct, clean up apperance</li>
+</ul>
+<h4 id="432">GUI/commandline</h4>
+<ul id="433">
+<li id="433">Fix inRecycleBin</li>
+<li id="434">Combined recycle artifacts to eliminate multiples of same file/folder</li>
+</ul>
+<h2 id="435">v2023.12.20</h2>
+<h3 id="436">Fixed</h3>
+<h4 id="437">GUI/commandline</h4>
+<ul id="438">
+<li id="438">Added more error checking in ODL parser</li>
+<li id="439">spoPermissions wrong in v35 and v36 dat files</li>
+</ul>
+<h2 id="440">v2023.12.13</h2>
+<h3 id="441">Added</h3>
+<h4 id="442">GUI/commandline</h4>
+<ul id="443">
+<li id="443">Media data</li>
+<li id="444">spoPermissions</li>
+</ul>
+<h3 id="445">Fixed</h3>
+<h4 id="446">GUI</h4>
+<ul id="447">
+<li id="447">Increased sash size</li>
+<li id="448">File/Folder status</li>
+</ul>
+<h4 id="449">GUI/commandline</h4>
+<ul id="450">
+<li id="450">Proper nesting of files/folders</li>
+<li id="451">json format</li>
+<li id="452">Code cleanup</li>
+</ul>
+<h2 id="453">v2023.09.22</h2>
+<h3 id="454">Fixed</h3>
+<h4 id="455">GUI/commandline</h4>
+<ul id="456">
+<li id="456">updated odl parser for version 3</li>
+</ul>
+<h2 id="457">v2023.09.07</h2>
+<h3 id="458">Added</h3>
+<h4 id="459">GUI/commandline</h4>
+<ul id="460">
+<li id="460">New dat file parser</li>
+<li id="461">File/Folder status</li>
+</ul>
+<h4 id="462">GUI</h4>
+<ul id="463">
+<li id="463">Updates to interface</li>
+</ul>
+<h3 id="464">Fixed</h3>
+<h4 id="465">GUI</h4>
+<ul id="466">
+<li id="466">File count 0 on json import</li>
+<li id="467">NTUSER.DAT search performance</li>
+<li id="468">Double parsing dat file in live</li>
+<li id="469">Space missing from eTag in Details</li>
+<li id="470">Infinate loop when searching for logs in certain</li>
+<li id="471">Search box and details higlighting not taking</li>
+<li id="472">SQLite issues with live path variable messed up</li>
+<li id="473">Live Sysem does not need to be on the same drive as profiles</li>
+</ul>
+<h4 id="474">GUI/commandline</h4>
+<ul id="475">
+<li id="475">Error handling for unknown dat version</li>
+<li id="476">cstruct warning clarified</li>
+<li id="477">Inconsistent size format with recbin</li>
+<li id="478">Convert SQLite timestamp to iso8601 format</li>
+</ul>
+<h2 id="479">v2023.07.05</h2>
+<h3 id="480">Fixed</h3>
+<h4 id="481">GUI</h4>
+<ul id="482">
+<li id="482">Help dialog</li>
+</ul>
+<h4 id="483">GUI/commandline</h4>
+<ul id="484">
+<li id="484">SQL is now read-only (fixes errors and is more forensically sound)</li>
+<li id="485">Code cleanup</li>
+</ul>
+<h2 id="486">v2023.05.05</h2>
+<h3 id="487">Added</h3>
+<h4 id="488">commandline/GUI</h4>
+<ul id="489">
+<li id="489">Added parsing of new OneDrive SQLite databases</li>
+</ul>
+<h2 id="490">v2023.03.10</h2>
+<h3 id="491">Fixed</h3>
+<h4 id="492">GUI</h4>
+<ul id="493">
+<li id="493">Clear button visuals</li>
+<li id="494">Updated Copyright in About pane</li>
+</ul>
+<h3 id="495">Added</h3>
+<h4 id="496">GUI</h4>
+<ul id="497">
+<li id="497">Sync with Github</li>
+</ul>
+<h4 id="498">commandline</h4>
+<ul id="499">
+<li id="499">--clist option to list ODL cstructs and check for errors</li>
+<li id="500">--guids option  to generate GUIDs for Cstructs</li>
+<li id="501">--sync command to sync cstructs</li>
+</ul>
+<h2 id="502">v2023.03.06</h2>
+<h3 id="503">Added</h3>
+<h4 id="504">GUI</h4>
+<ul id="505">
+<li id="505">Clear button in search box</li>
+</ul>
+<h4 id="506">commandline/GUI</h4>
+<ul id="507">
+<li id="507">Progress bar for deleted items</li>
+</ul>
+<h3 id="508">Fixed</h3>
+<h4 id="509">GUI</h4>
+<ul id="510">
+<li id="510">Remove search term when disabled</li>
+<li id="511">Clear search when adding OneDrive settings data</li>
+</ul>
+<h2 id="512">v2022.12.09</h2>
+<h3 id="513">Fixed</h3>
+<h4 id="514">commandline</h4>
+<ul id="515">
+<li id="515">Fixed error when using -l with -f</li>
+<li id="516">ODL saves to --csv path (default is .)</li>
+</ul>
+<h4 id="517">GUI</h4>
+<ul id="518">
+<li id="518">ODL saves to Auto Save Path</li>
+</ul>
+<h2 id="519">v2022.12.08</h2>
+<h3 id="520">Added</h3>
+<h4 id="521">commandline/GUI</h4>
+<ul id="522">
+<li id="522">Account for all business accounts (can be up to 9 total)</li>
+<li id="523">Add switch to change cstruct directory</li>
+<li id="524">Validate cstruct files</li>
+</ul>
+<h4 id="525">GUI</h4>
+<ul id="526">
+<li id="526">Added tooltips</li>
+<li id="527">Import ODL from csv</li>
+<li id="528">Validates ode.settings file (no need to delete on new update)</li>
+</ul>
+<h3 id="529">Fixed</h3>
+<h4 id="530">commandline</h4>
+<ul id="531">
+<li id="531">Fixed json error</li>
+</ul>
+<h4 id="532">GUI</h4>
+<ul id="533">
+<li id="533">Fixed json import error</li>
+<li id="534">Error handling for importing bad csv's</li>
+</ul>
+<h2 id="535">v2022.11.08</h2>
+<h3 id="536">Added</h3>
+<h4 id="537">commandline/GUI</h4>
+<ul id="538">
+<li id="538">Support unobfuscation with <code>general.keystore</code> file</li>
+</ul>
+<h2 id="539">v2022.11.04</h2>
+<h3 id="540">Added</h3>
+<h4 id="541">commandline/GUI</h4>
+<ul id="542">
+<li id="542">Use ObfuscationStringMap.txt if present</li>
+<li id="543">ODL maps</li>
+</ul>
+<h4 id="544">GUI</h4>
+<ul id="545">
+<li id="545">Indicator for saving log files</li>
+<li id="546">Cell pop out</li>
+<li id="547">Log entries pane</li>
+<li id="548">Export treeview to png, pdf</li>
+</ul>
+<h3 id="549">Fixed</h3>
+<h4 id="550">commandline/GUI</h4>
+<ul id="551">
+<li id="551">Find all deleted files for business</li>
+</ul>
+<h4 id="552">GUI</h4>
+<ul id="553">
+<li id="553">Fixed freezing in message window</li>
+<li id="554">Better column sizing</li>
+</ul>
+<h2 id="555">v2022.06.17</h2>
+<h3 id="556">Added</h3>
+<h4 id="557">commandline/GUI</h4>
+<ul id="558">
+<li id="558">Find deleted files</li>
+<li id="559">SHA1 of deleted file for OneDrive personal</li>
+<li id="560">quickxorhash of deleted file for OneDrive business</li>
+<li id="561">ODL logs (experimental)</li>
+</ul>
+<h4 id="562">GUI</h4>
+<ul id="563">
+<li id="563">Highlight on right click in treeview</li>
+<li id="564">Removed empty values from Details pane</li>
+<li id="565">Parse live system</li>
+<li id="566">File/Folder count columns</li>
+<li id="567">Projects</li>
+</ul>
+<h3 id="568">Fixed</h3>
+<h4 id="569">GUI</h4>
+<ul id="570">
+<li id="570">Minimum width on slider left/right</li>
+<li id="571">Bug fixes</li>
+</ul>
+<h2 id="572">v2022.05.18</h2>
+<h3 id="573">Fixed</h3>
+<ul id="574">
+<li id="574">Update to OneDrive broke parsing</li>
+</ul>
+<h2 id="575">v2022.04.06</h2>
+<h3 id="576">Added</h3>
+<h4 id="577">commandline/GUI</h4>
+<ul id="578">
+<li id="578">New parsing method</li>
+<li id="579">Unicode support for names</li>
+<li id="580">quicXorHash/SHA1 of file</li>
+</ul>
+<h3 id="581">Fixed</h3>
+<h4 id="582">GUI</h4>
+<ul id="583">
+<li id="583">Search not working properly if file is removed</li>
+<li id="584">Unable to save a csv or html</li>
+</ul>
+<h2 id="585">v2022.03.11-r1</h2>
+<h3 id="586">Added</h3>
+<h4 id="587">commandline</h4>
+<ul id="588">
+<li id="588">-d option for using with KAPE</li>
+</ul>
+<h2 id="589">v2022.03.11</h2>
+<h3 id="590">Added</h3>
+<h4 id="591">commandline/GUI</h4>
+<ul id="592">
+<li id="592">Added path in JSON</li>
+</ul>
+<h4 id="593">GUI</h4>
+<ul id="594">
+<li id="594">Unload all folders changed to Unload all files</li>
+<li id="595">Enabled Details pane to allow for copy/paste of information</li>
+<li id="596">Path in Details pane</li>
+<li id="597">Disable collapse folders when there are no folders to collapse</li>
+<li id="598">Files/Folders alphabetical order</li>
+<li id="599">Indication if search term is not found</li>
+<li id="600">Progress bar on exe splash screen</li>
+<li id="601">file/folder count when parsing JSON</li>
+<li id="602">Copy Menu
+<ul id="603">
+<li id="603">Copy Name</li>
+<li id="604">Copy Path</li>
+<li id="605">Copy Details</li>
+</ul>
+</li>
+</ul>
+<h3 id="606">Fixed</h3>
+<ul id="607">
+<li id="607">Changed buffer to prevent names from getting cut off</li>
+<li id="608">Fixed paths to be Windows paths \ vs /</li>
+</ul>
+<h2 id="609">v2022.03.04</h2>
+<h3 id="610">Added</h3>
+<h4 id="611">commandline</h4>
+<ul id="612">
+<li id="612">--debug argument</li>
+</ul>
+<h4 id="613">GUI</h4>
+<ul id="614">
+<li id="614">Debug messages</li>
+</ul>
+<h3 id="615">Fixed</h3>
+<ul id="616">
+<li id="616">Freezing on Import JSON/CSV</li>
+<li id="617">Menus and Find were not disabled during Load JSON</li>
+<li id="618">Handle error if Name is not found</li>
+</ul>
+<h2 id="619">v2022.03.02</h2>
+<h3 id="620">Added</h3>
+<h4 id="621">commandline/GUI</h4>
+<ul id="622">
+<li id="622">Registry hive option</li>
+<li id="623">File size information</li>
+</ul>
+<h4 id="624">GUI</h4>
+<ul id="625">
+<li id="625">Disable hive dialog in Preferences</li>
+</ul>
+<h3 id="626">Fixed</h3>
+<ul id="627">
+<li id="627">Error in file/folder count that could cause the GUI to freeze</li>
+<li id="628">Disabled Find unless something is loaded</li>
+<li id="629">--pretty changed to check box in Preferences</li>
+<li id="630">Set minimum size on GUI</li>
+</ul>
+<h2 id="631">v2022.02.23</h2>
+<h3 id="632">Added</h3>
+<h4 id="633">commandline/GUI</h4>
+<ul id="634">
+<li id="634">Shared folders added to JSON</li>
+</ul>
+<h4 id="635">GUI</h4>
+<ul id="636">
+<li id="636">Options menu
+<ul id="637">
+<li id="637">Save to JSON</li>
+<li id="638">Save to CSV</li>
+<li id="639">Save to HTML</li>
+<li id="640">Save to path</li>
+</ul>
+</li>
+<li id="641">Splash screen to executable</li>
+<li id="642">More icons</li>
+</ul>
+<h2 id="643">v2022.02.18</h2>
+<h3 id="644">Added</h3>
+<h4 id="645">commandline</h4>
+<ul id="646">
+<li id="646">Export to csv</li>
+<li id="647">Export to html</li>
+</ul>
+<h4 id="648">GUI</h4>
+<ul id="649">
+<li id="649">Import csv</li>
+<li id="650">Horizontal scrollbar on treeview</li>
+<li id="651">icons</li>
+<li id="652">Requires Pillow</li>
+</ul>
+<h3 id="653">Fixed</h3>
+<ul id="654">
+<li id="654">Bug where one folder and its contents would get dropped</li>
+<li id="655">File/folder count</li>
+</ul>
+<h2 id="656">v2022.02.16</h2>
+<h3 id="657">Added</h3>
+<ul id="658">
+<li id="658">Requires pandas</li>
+</ul>
+<h3 id="659">Fixed</h3>
+<ul id="660">
+<li id="660">Folder_UUID is now ParentId</li>
+<li id="661">Object_UUID is now DriveItemId</li>
+<li id="662">Names not resolving properly</li>
+<li id="663">Huge performance increase to parser</li>
+</ul>
+<h2 id="664">v2022.02.11</h2>
+<h3 id="665">Added</h3>
+<h4 id="666">GUI</h4>
+<ul id="667">
+<li id="667">Autosaves parsed data to JSON</li>
+<li id="668">Load multiple dat/json</li>
+<li id="669">Added load JSON</li>
+<li id="670">Unload of individual or all files</li>
+<li id="671">Better ordering of folder structure</li>
+<li id="672">Right click menu
+<ul id="673">
+<li id="673">Remove folder</li>
+<li id="674">Copy</li>
+<li id="675">Expand folder</li>
+<li id="676">Collapse folder</li>
+</ul>
+</li>
+</ul>
+<h4 id="677">cmdline/GUI</h4>
+<ul id="678">
+<li id="678">Top level object, Type changed to Root, Name changed to name of parsed file</li>
+<li id="679">Default JSON file name changed from OneDrive.json to &lt;filename&gt;_OneDrive.json</li>
+</ul>
+<h3 id="680">Fixed</h3>
+<ul id="681">
+<li id="681">Minor code cleanup</li>
+</ul>
+<h2 id="682">v2022.02.09</h2>
+<h3 id="683">Added</h3>
+<ul id="684">
+<li id="684">Added search to the GUI</li>
+</ul>
+<h3 id="685">Fixed</h3>
+<ul id="686">
+<li id="686">Can load new file in GUI without closing</li>
+<li id="687">Improved personal file parsing</li>
+<li id="688">Handle exception if object name cannot be found</li>
+</ul>
+<h2 id="689">v2022.02.08</h2>
+<h3 id="690">Added</h3>
+<ul id="691">
+<li id="691">Added support for OneDrive Personal dat files</li>
+</ul>
+<h3 id="692">Fixed</h3>
+<ul id="693">
+<li id="693">Missing files/folders</li>
+</ul>
+<h2 id="694">v2022.02.03</h2>
+<h3 id="695">Initial Release</h3>
+
+                </body>
+            </html>
+            

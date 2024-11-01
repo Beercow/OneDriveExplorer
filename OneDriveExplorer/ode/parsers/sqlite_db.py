@@ -153,10 +153,13 @@ class SQLiteParser:
                 df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
                 df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
 
-                df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
+                if 23 < schema_version <= 32:
+                    df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex, folderColor, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
+                else:
+                    df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
                 df_folders.insert(0, 'Type', 'Folder')
                 df_folders.rename(columns={"folderName": "Name"}, inplace=True)
-                df_folders = change_dtype(df_folders, df_name='df_folders')
+                df_folders = change_dtype(df_folders, df_name='df_folders', schema_version=schema_version)
                 df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
 
                 df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)

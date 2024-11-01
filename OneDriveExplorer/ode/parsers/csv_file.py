@@ -52,17 +52,18 @@ def parse_csv(filename):
               'localHashDigest': 'object',
               'lastChange': 'object',
               'size': 'object',
-              'Name': 'object',
+              'Name': 'str',
               'fileStatus': 'Int64',
               'spoPermissions': 'object',
               'sharedItem': 'Int64',
               'Media': 'object',
               'parentScopeID': 'object',
               'folderStatus': 'Int64',
-              'Path': 'object',
+              'Path': 'str',
               'shortcutVolumeID': 'Int64',
               'shortcutItemIndex': 'Int64',
-              'hydrationCount': 'Int64'
+              'hydrationCount': 'Int64',
+              'folderColor': 'Int64'
               }
 
     try:
@@ -116,6 +117,8 @@ def parse_csv(filename):
                 df_GraphMetadata_Records.fileExtension.fillna('', inplace=True)
 
         df.drop(columns=columns_to_drop_2, inplace=True)
+        df['Path'] = df['Path'].astype(str).fillna('')
+        df['Name'] = df['Name'].astype(str).fillna('')
         df.localHashDigest.fillna('', inplace=True)
         if 'notificationTime' in df:
             df.HydrationTime.fillna('', inplace=True)
