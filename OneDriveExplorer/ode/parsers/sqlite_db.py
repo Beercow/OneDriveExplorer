@@ -28,7 +28,6 @@ import json
 import sqlite3
 from dissect import cstruct
 import pandas as pd
-import numpy as np
 from ode.utils import permissions, change_dtype
 
 
@@ -153,7 +152,7 @@ class SQLiteParser:
                 df_files['spoPermissions'] = df_files['spoPermissions'].apply(lambda x: permissions(x))
                 df_files['lastChange'] = pd.to_datetime(df_files['lastChange'], unit='s').astype(str)
 
-                if 23 < schema_version <= 32:
+                if 23 < schema_version:
                     df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex, folderColor, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
                 else:
                     df_folders = pd.read_sql_query("SELECT parentScopeID, parentResourceID, resourceID, eTag, folderName, folderStatus, spoPermissions, volumeID, itemIndex, sharedItem FROM od_ClientFolder_Records", SyncEngineDatabase)
@@ -164,11 +163,11 @@ class SQLiteParser:
 
                 df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
                 df = df.where(pd.notnull(df), None)
-                
+
                 if df.empty:
                     self.log.warning(f'{sql_dir}\SyncEngineDatabase.db is empty.')
 
-                if schema_version >=10:
+                if schema_version >= 10:
                     df_GraphMetadata_Records = pd.read_sql_query("SELECT fileName, od_GraphMetadata_Records.* FROM od_GraphMetadata_Records INNER JOIN od_ClientFile_Records ON od_ClientFile_Records.resourceID = od_GraphMetadata_Records.resourceID", SyncEngineDatabase)
                     df_GraphMetadata_Records = change_dtype(df_GraphMetadata_Records, df_name='df_GraphMetadata_Records', schema_version=schema_version)
                     if not df_GraphMetadata_Records.empty:

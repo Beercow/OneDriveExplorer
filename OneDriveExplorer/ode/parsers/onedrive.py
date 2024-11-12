@@ -90,9 +90,9 @@ class OneDriveParser:
 
     # Generate scopeID list instead of passing
     def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, localHashAlgorithm=False, gui=False, pb=False, value_label=False):
-        
+
         allowed_keys = ['scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex']
-        
+
         df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
         df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
 
@@ -190,13 +190,10 @@ class OneDriveParser:
 
         cache = {}
         final = []
-        dcache = {}
         is_del = []
 
         if not df_GraphMetadata_Records.empty:
             df_GraphMetadata_Records.set_index('resourceID', inplace=True)
-
-        column_len = len(df.columns)
 
         for row in df.sort_values(
             by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
@@ -302,7 +299,7 @@ class OneDriveParser:
         df_GraphMetadata_Records.reset_index(inplace=True)
         try:
             df_GraphMetadata_Records.drop('index', axis=1, inplace=True)
-        except:
+        except Exception:
             pass
 
         return cache, rbin_df

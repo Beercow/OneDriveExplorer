@@ -44,7 +44,7 @@ def load_images(zip_name):
             filenames = archive.namelist()
             filtered_list = [item for item in filenames if item.startswith('Images/')]
             sorted_list = sorted(filtered_list)
-            
+
             for img in sorted_list:
                 with archive.open(img) as data:
                     digest = str(img).split('_')[1].split('.png')[0]
@@ -52,7 +52,7 @@ def load_images(zip_name):
                     s_image[digest] = image
 
             return s_image
-    
+
     except Exception as e:
         log.error(f'Error loading images from {zip_name.split("/")[-1]}. {e}')
 
@@ -179,7 +179,7 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
                 with open(tmp_file, 'rb') as image_file:
                     archive.writestr(f'Images/{index}_{k}.png', image_file.read())
                 os.remove(tmp_file)
-            
+
             for i in d:
                 filename = f"{tv.item(i)['text'].split('.')[0][1:]}_OneDrive.csv"
 

@@ -220,7 +220,7 @@ def change_dtype(df, df_name=None, schema_version=0):
         dtype_fill_map['df_scope']['fill_values']['webURL'] = ''
         dtype_fill_map['df_scope']['dtype_changes']['remotePath'] = 'str'
         dtype_fill_map['df_scope']['fill_values']['remotePath'] = ''
-    
+
     if df_name == 'df_GraphMetadata_Records' and schema_version > 13:
         dtype_fill_map['df_GraphMetadata_Records']['dtype_changes']['filePolicies'] = 'str'
         dtype_fill_map['df_GraphMetadata_Records']['fill_values']['filePolicies'] = ''
@@ -228,7 +228,7 @@ def change_dtype(df, df_name=None, schema_version=0):
         dtype_fill_map['df_GraphMetadata_Records']['fill_values']['fileExtension'] = ''
         dtype_fill_map['df_GraphMetadata_Records']['dtype_changes']['lastWriteCount'] = 'Int64'
         dtype_fill_map['df_GraphMetadata_Records']['fill_values']['lastWriteCount'] = 0
-    
+
     # Apply changes if df_name is recognized
     if df_name in dtype_fill_map:
         df.fillna(dtype_fill_map[df_name]['fill_values'], inplace=True)

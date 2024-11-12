@@ -31,6 +31,7 @@ import logging
 import uuid
 import pandas as pd
 import warnings
+import threading
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
 from ode.renderers.html import print_html
@@ -50,12 +51,16 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.11.01"
+__version__ = "2024.11.12"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()
 OneDriveParser = onedrive_parser.OneDriveParser()
 SQLiteParser = sqlite_parser.SQLiteParser()
+result = None
+parsing_complete = threading.Event()
+onedrive_complete = threading.Event()
+output_complete = threading.Event()
 
 
 def spinning_cursor():
@@ -75,9 +80,35 @@ def guid():
             break
 
 
+def parse_sql_thread(sqlFolder):
+    global result
+    result = SQLiteParser.parse_sql(sqlFolder)
+    parsing_complete.set()  # Signal that parsing is complete
+
+
+def parse_onedrive_thread(df, df_scope, df_GraphMetadata_Records, scopeID, file,  rbin_df, account, reghive, RECYCLE_BIN, localHashAlgorithm):
+    global result
+    result = None
+    result = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, file, rbin_df, account, reghive, RECYCLE_BIN, localHashAlgorithm)
+    onedrive_complete.set()  # Signal that parsing is complete
+
+
 def main():
     df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID',
                                                      'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount'])
+
+    def output_thread():
+        delay = time.time()
+
+        threading.Thread(target=output,
+                         daemon=True).start()
+
+        while not output_complete.is_set():
+            if (time.time() - delay) > 0.1:
+                sys.stdout.write(f'Saving OneDrive data. Please wait.... {next(spinner)}\r')
+                sys.stdout.flush()
+                delay = time.time()
+            time.sleep(0.2)
 
     def output():
         if args.csv:
@@ -90,6 +121,8 @@ def main():
             if not args.json:
                 args.json = '.'
             print_json(cache, name, args.pretty, args.json)
+
+        output_complete.set()  # Signal that parsing is complete
 
         try:
             file_count = df.Type.value_counts()['File']
@@ -149,6 +182,8 @@ def main():
 
     args = parser.parse_args()
 
+    spinner = spinning_cursor()
+
     if args.sync:
         update_from_repo(args.gui)
         sys.exit()
@@ -205,16 +240,44 @@ def main():
             name = f'{sql_find[0][0]}_{sql_find[0][1]}'
         except Exception:
             name = 'SQLite_DB'
-        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, localHashAlgorithm = SQLiteParser.parse_sql(args.sql)
+
+        threading.Thread(target=parse_sql_thread,
+                         args=(args.sql,),
+                         daemon=True).start()
+
+        delay = time.time()
+        while not parsing_complete.is_set():
+            if (time.time() - delay) > 0.1:
+                sys.stdout.write(f'Parsing SQLite. Please wait.... {next(spinner)}\r')
+                sys.stdout.flush()
+                delay = time.time()
+            time.sleep(0.2)
+
+        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, localHashAlgorithm = result
 
         if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, args.sql, rbin_df, account, args.reghive, args.RECYCLE_BIN, localHashAlgorithm)
+            threading.Thread(target=parse_onedrive_thread,
+                             args=(df, df_scope, df_GraphMetadata_Records,
+                                   scopeID, args.sql, rbin_df, account,
+                                   args.reghive, args.RECYCLE_BIN,
+                                   localHashAlgorithm,),
+                             daemon=True).start()
+
+            delay = time.time()
+            while not onedrive_complete.is_set():
+                if (time.time() - delay) > 0.1:
+                    sys.stdout.write(f'Building folder list. Please wait.... {next(spinner)}\r')
+                    sys.stdout.flush()
+                    delay = time.time()
+                time.sleep(0.2)
+
+            cache, rbin_df = result
 
         if df.empty:
             print(f'Unable to parse {name} sqlite database.')
             logging.warning(f'Unable to parse {name} sqlite database.')
         else:
-            output()
+            output_thread()
 
         rootDir = args.logs
         if rootDir is None:
@@ -241,7 +304,7 @@ def main():
             print(f'Unable to parse {filename}.')
             logging.warning(f'Unable to parse {filename}.')
         else:
-            output()
+            output_thread()
         rootDir = args.logs
         if rootDir is None:
             sys.exit()
@@ -261,7 +324,7 @@ def main():
         sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>Personal|Business[0-9])$')
         log_dir = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\logs$')
         rootDir = args.dir
-        spinner = spinning_cursor()
+        # spinner = spinning_cursor()
         delay = time.time()
         for path, subdirs, files in os.walk(rootDir):
             if (time.time() - delay) > 0.1:
@@ -323,7 +386,7 @@ def main():
                             print(f'Unable to parse {filename}.')
                             logging.warning(f'Unable to parse {filename}.')
                         else:
-                            output()
+                            output_thread()
 
                 if k == 'sql':
                     print(f'\n\nParsing {key} OneDrive\n')
@@ -339,7 +402,7 @@ def main():
                             print(f'Unable to parse {name} sqlite database.')
                             logging.warning(f'Unable to parse {name} sqlite database.')
                         else:
-                            output()
+                            output_thread()
 
         if args.logs:
             load_cparser(args.cstructs)

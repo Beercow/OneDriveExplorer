@@ -52,13 +52,14 @@ ascii_chars_re = re.compile(f'[{printable_chars_for_re}]' + '{4,}')
 cparser = ''
 
 # UnObfuscation code
-dkey_list = []
+dkey_list = {}
+key_type = ''
 utf_type = 'utf16'
 
 headers = '''
 
 typedef struct _Odl_header{
-    char    signature[8];  // EBFGONED
+    uint64    signature;  // 0x44454e4f47464245 EBFGONED
     uint32    odl_version;
 } Odl_header;
 
@@ -79,7 +80,9 @@ typedef struct _Odl_header_V2_3{
 } Odl_header_V2_3;
 
 typedef struct _Data_block_V2{
-    uint64     signature;  // CCDDEEFF00000000
+    uint32     signature;  // CCDDEEFF
+    uint16    context_data_len;
+    uint16    unknown_flag;
     uint64     timestamp;
     uint32     unk1;
     uint32     unk2;
@@ -92,12 +95,15 @@ typedef struct _Data_block_V2{
 } Data_block_V2;
 
 typedef struct _Data_block_V3{
-    uint64    signature;  // CCDDEEFF00000000
+    uint32    signature;  // CCDDEEFF
+    uint16    context_data_len;
+    uint16    unknown_flag;
     uint64    timestamp;
     uint32    unk1;
     uint32    unk2;
     uint32    data_len;
     uint32    unk3;
+    char      context_data[context_data_len];
     // followed by Data
 } Data_block_V3;
 
@@ -249,24 +255,27 @@ def decrypt(cipher_text):
     if len(cipher_text) % 16 != 0:
         return ''  # invalid b64 or it was not encrypted!
 
-    for key in dkey_list:
-        try:
-            cipher = AES.new(key, AES.MODE_CBC, iv=b'\0'*16)
-            raw = cipher.decrypt(cipher_text)
-        except ValueError as ex:
-            # log.error(f'Exception while decrypting data {str(ex)}')
-            return ''
-        try:
-            plain_text = unpad(raw, 16)
-        except Exception as ex:  # possible fix to change key
-            # print("Error in unpad!", str(ex), raw)
-            continue
-        try:
-            plain_text = plain_text.decode(utf_type)
-        except ValueError as ex:
-            # print(f"Error decoding {utf_type}", str(ex))
-            return ''
-        return plain_text
+    for key, values in dkey_list.items():
+        global key_type
+        key_type = key
+        for value in values:
+            try:
+                cipher = AES.new(value, AES.MODE_CBC, iv=b'\0'*16)
+                raw = cipher.decrypt(cipher_text)
+            except ValueError as ex:
+                # log.error(f'Exception while decrypting data {str(ex)}')
+                return ''
+            try:
+                plain_text = unpad(raw, 16)
+            except Exception as ex:  # possible fix to change value
+                # print("Error in unpad!", str(ex), raw)
+                continue
+            try:
+                plain_text = plain_text.decode(utf_type)
+            except ValueError as ex:
+                # print(f"Error decoding {utf_type}", str(ex))
+                return ''
+            return plain_text
 
 
 def read_keystore(keystore_path):
@@ -280,8 +289,8 @@ def read_keystore(keystore_path):
             version = j[0]['Version']
             utf_type = 'utf32' if dkey.endswith('\\u0000\\u0000') else 'utf16'
             log.info(f"Recovered Unobfuscation key from {f.name}, key:{dkey}, version:{version}, utf_type:{utf_type}")
-            if base64.b64decode(dkey) not in dkey_list:
-                dkey_list.append(base64.b64decode(dkey))
+            if not any(base64.b64decode(dkey) in values for values in dkey_list.values()):
+                dkey_list.setdefault(os.path.basename(f.name).split('.')[0], []).append(base64.b64decode(dkey))
             if version != 1:
                 log.warning(f'WARNING: Key version {version} is unsupported. This may not work. Contact the author if you see this to add support for this version.')
         except ValueError as ex:
@@ -375,6 +384,31 @@ def extract_strings(data, map):
     return extracted
 
 
+def extract_context_data(data):
+    hex_str = data.hex()
+    index = 0
+    extracted_text = ''
+
+    length_hex = hex_str[2:6]
+    length_hex = length_hex[2:4] + length_hex[0:2]
+    length = int(length_hex, 16)
+    index += 6
+
+    extracted_text += f"{bytes.fromhex(hex_str[index:index + length * 2]).decode('utf-8', errors='ignore')}"
+    index += length * 2
+
+    while index < len(hex_str):
+        segment_length_hex = hex_str[index:index + 2]
+        segment_length = int(segment_length_hex, 16)
+        index += 4
+
+        text_segment = bytes.fromhex(hex_str[index:index + segment_length * 2]).decode('utf-8', errors='ignore')
+        extracted_text += f' {text_segment}'
+        index += segment_length * 2
+
+    return extracted_text
+
+
 def unobfucate_strings(data, map):
     params = []
     exclude = ['_len', 'unk']
@@ -391,6 +425,7 @@ def unobfucate_strings(data, map):
 
 
 def process_odl(filename, map):
+    global key_type
     odl_rows = []
     basename = os.path.basename(filename)
     profile = os.path.dirname(filename).split('\\')[-1]
@@ -412,7 +447,8 @@ def process_odl(filename, map):
         except Exception:
             log.warning(f'Unable to parse {basename}. Not a valid log file.')
             return pd.DataFrame()
-        if header.signature == b'EBFGONED':  # Odl header
+
+        if header.signature == 0x44454e4f47464245:  # Odl header EBFGONED
             pass
         else:
             log.error(f'{basename} wrong header! Did not find EBFGONED')
@@ -431,13 +467,14 @@ def process_odl(filename, map):
             f.close()
             f = io.BytesIO(file_data)
             signature = f.read(8)
-        if signature != b'\xCC\xDD\xEE\xFF\0\0\0\0':  # CDEF header
+        if signature[0:4] != b'\xCC\xDD\xEE\xFF':  # CDEF header
             log.error(f'{basename} wrong header! Did not find 0xCCDDEEFF')
             return pd.DataFrame()
         else:
+            context_data_len = int.from_bytes(signature[4:6], byteorder='little')
             f.seek(-8, 1)
             if header.odl_version == 3:
-                db_size = 32
+                db_size = 32 + context_data_len
             else:
                 db_size = 56
             data_block = f.read(db_size)  # odl complete header is 56 bytes
@@ -445,6 +482,7 @@ def process_odl(filename, map):
             description = ''
             odl = {
                 'Profile': profile,
+                'Key_Type': key_type,
                 'Log_Type': basename.split('-')[0],
                 'Filename': basename,
                 'File_Index': i,
@@ -454,6 +492,7 @@ def process_odl(filename, map):
                 'Code_File': '',
                 'Flags': '',
                 'Function': '',
+                'Context_Data': '',
                 'Description': '',
                 'Params': '',
                 'Param1': '',
@@ -470,25 +509,33 @@ def process_odl(filename, map):
                 'Param12': '',
                 'Param13': ''
             }
+
             if header.odl_version in [1, 2]:
                 data_block = cparser.Data_block_V2(data_block)
             elif header.odl_version == 3:
                 data_block = cparser.Data_block_V3(data_block)
             else:
                 log.error(f'Unknown odl_version = {header.odl_version}')
+
             if data_block.signature != 0xffeeddcc:
                 log.warning(f'Unable to parse {basename} completely. Did not find 0xCCDDEEFF')
                 return pd.DataFrame.from_records(odl_rows)
+
             timestamp = ReadUnixMsTime(data_block.timestamp)
             odl['Timestamp'] = timestamp
+
             try:
                 if header.odl_version == 3:
-                    data = cparser.Data_v3(f.read(data_block.data_len))
-                    params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 36)
+                    if data_block.context_data_len > 0:
+                        data = cparser.Data_v2(f.read(data_block.data_len - data_block.context_data_len))
+                        params_len = (data_block.data_len - data_block.context_data_len - data.code_file_name_len - data.code_function_name_len - 12)
+                    else:
+                        data = cparser.Data_v3(f.read(data_block.data_len))
+                        params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 36)
                 else:
                     data = cparser.Data_v2(f.read(data_block.data_len))
                     params_len = (data_block.data_len - data.code_file_name_len - data.code_function_name_len - 12)
-                f.seek(- params_len, io.SEEK_CUR)
+                f.seek(- params_len, 1)
             except Exception as e:
                 log.warning(f'Unable to parse {basename} completely. {type(e).__name__}')
                 return pd.DataFrame.from_records(odl_rows)
@@ -519,7 +566,9 @@ def process_odl(filename, map):
                                 odl['Param13'] = params[12]
                             except Exception:
                                 pass
+
                             params = ', '.join(params)
+
                         description = ''.join([v for (k, v) in cparser.consts.items() if k == f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}_des"])
                     except EOFError:
                         log.warning(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
@@ -530,14 +579,27 @@ def process_odl(filename, map):
 
             else:
                 params = ''
+
+            odl['Key_Type'] = key_type
             odl['Code_File'] = data.code_file_name.decode('utf8')
             odl['Flags'] = data.flags
             odl['Function'] = data.code_function_name.decode('utf8')
+            odl['Context_Data'] = extract_context_data(data_block.context_data) if data_block.context_data else ''
             odl['Description'] = description
             odl['Params'] = params
             odl_rows.append(odl)
+
+            key_type = ''
             i += 1
-            data_block = f.read(db_size)
+            eof = f.read(8)[4:6]
+
+            if eof == b'':
+                break
+
+            context_data_len = int.from_bytes(eof, byteorder='little')
+            f.seek(-8, 1)
+            data_block = f.read(db_size + context_data_len)
+
     return pd.DataFrame.from_records(odl_rows)
 
 

@@ -103,7 +103,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.10.16"
+__version__ = "2024.11.12"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -333,7 +333,7 @@ class Preferences:
         self.auto_html.grid(row=2, column=0, columnspan=2, padx=5, sticky="w")
         self.reghive.grid(row=0, column=2, padx=5)
         self.en_odl.grid(row=0, column=0, padx=5, sticky="w")
-        self.en_cor.grid(row=1, column=0, padx=(15,5), sticky="w")
+        self.en_cor.grid(row=1, column=0, padx=(15, 5), sticky="w")
         self.auto_odl.grid(row=2, column=0, padx=5, sticky="w")
 
     def create_path_entry(self):
@@ -608,7 +608,7 @@ class Messages:
         self.inner_frame = ttk.Frame(self.frame, relief='groove', padding=5)
         self.create_widgets()
         self.restore_tree_messages()
-        
+
         self.sync_windows()
 
         self.root.bind('<Configure>', self.sync_windows)
@@ -1124,14 +1124,14 @@ class Help:
 
         self.frame = ttk.Frame(self.win, relief='flat')
         self.create_text_widget()
-        
+
         self.frame.grid(row=0, column=0)
-        
+
         self.sync_windows()
 
         self.root.bind('<Configure>', self.sync_windows)
         self.win.bind('<Configure>', self.sync_windows)
-        
+
     def configure_window(self):
         hwnd = get_parent(self.win.winfo_id())
         old_style = get_window_long(hwnd, GWL_STYLE)
@@ -1149,28 +1149,28 @@ class Help:
             "Live System\nRun OneDriveExplorer as an administrator to activate.",
             "For full details, see the included manual."
         ]
-        
+
         # Calculate the height needed based on line count
         num_lines = sum(text.count("\n") + 1 for text in help_text)
-        
+
         # Calculate the width based on the longest line
         max_line_length = max(len(subline) for line in help_text for subline in line.splitlines())
-        
+
         self.text_widget = tk.Text(self.frame, wrap="word", background=self.bgf, foreground=self.fgf, width=max_line_length, height=num_lines, relief='flat', state="normal")
         self.text_widget.bindtags((str(self.text_widget), str(self.root), "all"))
         self.text_widget.insert("1.0", "\n".join(help_text))
-        
+
         # Add a tag to the word "manual"
         self.text_widget.tag_add("manual_tag", "14.35", "14.41")  # Assuming "manual" is at line 14, char 35-41
         self.text_widget.tag_config("manual_tag", foreground='#0563C1', underline=True)
-        
+
         bold_font = tkFont.Font(self.text_widget, self.text_widget.cget("font"))
         bold_font.configure(weight="bold")
         self.text_widget.tag_add("bold_tag", "1.0", "1.17")
         self.text_widget.tag_add("bold_tag", "7.0", "7.12")
         self.text_widget.tag_add("bold_tag", "12.0", "12.11")
         self.text_widget.tag_config("bold_tag", font=bold_font)
-        
+
         # Bind double-click event to the "manual_tag"
         self.text_widget.tag_bind("manual_tag", "<Double-1>", self.open_manual)
         # Bind mouse enter and leave events to change cursor
@@ -1205,7 +1205,7 @@ class About:
         self.create_window()
         self.configure_window()
         self.create_widgets()
-        
+
         self.sync_windows()
 
         self.root.bind('<Configure>', self.sync_windows)
@@ -1446,7 +1446,7 @@ class Result:
             (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
             ''
         )
-        
+
         # Might need to look into this.
         #if num == '7' and len(values_list) > 12:
         if num == '7' and len(values_list) > 13:
@@ -1469,7 +1469,7 @@ class Result:
             )
 
         if sharedItem == '1':
-                self.status.append(shared_big_img)
+            self.status.append(shared_big_img)
 
         if not set(self.lock_list).intersection(spoPermissions):
             if len(spoPermissions) > 0:
@@ -1484,14 +1484,14 @@ class Result:
                 ''
             )
             sharedItem = next(
-                (item.split(' ')[1] for item in self.args[0] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1), 
+                (item.split(' ')[1] for item in self.args[0] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1),
                 ''
             )
 
             hydrationType = next((item.split(' ')[1] for item in self.args[0] if 'lasthydrationtype:' in item.lower() and len(item.split(' ')) > 1), '')
-            
+
             lastKnownPinState = next((item.split(' ')[1] for item in self.args[0] if 'lastknownpinstate:' in item.lower() and len(item.split(' ')) > 1), '')
-            
+
             for num in ['2', '5', '6', '7', '8']:
                 if any(('filestatus:' in item.lower() or 'inrecyclebin:' in item.lower()) and num in item for item in self.args[0]):
                     if lastKnownPinState in ['0', '1'] and num == '2':
@@ -1529,7 +1529,7 @@ class Result:
             '15': f_15_big_img
         }
         return folder_color[num]
-    
+
     def get_type_image(self, num):
         type_dict = {
             '6': not_sync_big_img,  # files
@@ -1848,7 +1848,7 @@ class FileManager:
         self.stop = threading.Event()
         self.status = []
         self.file = False
-        
+
         # Boolean variables for checkbuttons
         self.dateCreated = tk.BooleanVar(value=menu_data['Date_created'])
         self.dateAccessed = tk.BooleanVar(value=menu_data['Date_accessed'])
@@ -1918,15 +1918,15 @@ class FileManager:
             visableColumns.append("Date_modified")
         if self.size.get():
             visableColumns.append("Size")
-        
+
         menu_data['Date_created'] = self.dateCreated.get()
         menu_data['Date_accessed'] = self.dateAccessed.get()
         menu_data['Date_modified'] = self.dateModified.get()
         menu_data['Size'] = self.size.get()
-        
+
         with open("ode.settings", "w") as jsonfile:
             json.dump(menu_data, jsonfile)
-        
+
         self.tv3["displaycolumns"] = visableColumns
 
     def on_click(self, event):
@@ -1965,10 +1965,10 @@ class FileManager:
             data = [(tree1.item(item, 'text'), item) for item in tree1.get_children('')]
         else:
             data = [(tree1.set(item, col), item) for item in tree1.get_children('')]
-            
+
         # Get the tags for each item
         data_with_tags = [(self.tv3.item(item, 'tags')[0], row, item) for row, item in data]
-        
+
         # Sort first by tag and then by the selected column
         if col == 'Size':
             sorted_data = sorted(data_with_tags, key=lambda x: (int(x[0]), self.extract_number(x[1])), reverse=descending)
@@ -1984,13 +1984,13 @@ class FileManager:
         try:
             tree1.heading(col, command=lambda: self.sort_treeviews_mixed(tree1, tree2, col, not descending))
             tree2.heading(col, command=lambda: self.sort_treeviews_mixed(tree1, tree2, col, not descending))
-        except:
+        except Exception:
             pass
 
     def extract_number(self, s):
         match = re.search(r'\d+', s.replace(',', ''))
         return int(match.group()) if match else 0
-    
+
     def handle_click(self, event):
         if self.tv2.identify_region(event.x, event.y) == "separator":
             return "break"
@@ -2104,7 +2104,7 @@ class FileManager:
                 in_recycle_bin = any('inrecyclebin' in value.lower() for value in values)
                 # Determine the timestamp based on the conditions
                 timestamp = "notificationTime: " if in_recycle_bin and values[1] == '' else ("DeleteTimeStamp: " if in_recycle_bin else "lastChange: ")
-                
+
                 if 'Date modified' in str(values[0]):
                     values[0] = str(values[0])[17:].split("\n")[0]
                 values[0] = f'{timestamp}{values[0]}'
@@ -2119,7 +2119,6 @@ class FileManager:
         try:
             for line in values:
                 if line == '' or 'folderColor:' in line:
-                #if line == '':
                     continue
                 details.insert(tk.END, f'{line}\n', tags)
         except IndexError:
@@ -2129,10 +2128,10 @@ class FileManager:
         if len(values) > 4:
             details_frame.delete_tab(2)
             details_frame.delete_tab(1)
-            
+
             # Check if 'fileStatus' or 'inRecycleBin' is in any value
             condition_met = any('fileStatus' in value or 'inRecycleBin' in value for value in values)
-            
+
             if condition_met and not df_GraphMetadata_Records.empty:
                 line_number = 4
                 start_index = f"{line_number}.0"
@@ -2143,7 +2142,6 @@ class FileManager:
                 if not df_result.empty:
                     tab2 = details_frame.add_tab('Metadata')
                     self.meta_frame = details_frame.add_frame(tab2)
-                    #self.meta_frame.configure(bg=bgf, padx=10, pady=10)
                     self.get_resourceID(df_GraphMetadata_Records)
 
     def get_resourceID(self, df):
@@ -2174,7 +2172,6 @@ class FileManager:
 
         tab3 = details_frame.add_tab('MetadataJSON')
         self.json_frame = details_frame.add_frame(tab3)
-        #self.json_frame.configure(bg=bgf, padx=10, pady=10)
         row_num = 0
 
         for k, v in value.items():
@@ -2204,7 +2201,6 @@ class FileManager:
 
         tab4 = details_frame.add_tab('filePolicies')
         policy_frame = details_frame.add_frame(tab4)
-        #policy_frame.configure(bg=bgf, padx=10, pady=10)
 
         row_num = 0
 
@@ -2399,7 +2395,7 @@ class FileManager:
             self.tv2.insert("", "end", iid=child, image=image_key, text=text, values=values, tags=tags)
 
             folderStatus = next((item.split(' ')[1] for item in values if 'folderstatus:' in item.lower() and len(item.split(' ')) > 1), '')
-            
+
             spoPermissions = next(
                     (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in values if 'spoPermissions: ' in item),
                     ''
@@ -2419,7 +2415,7 @@ class FileManager:
                     )
 
             if sharedItemF == '1':
-                        self.status.append(shared_img)
+                self.status.append(shared_img)
 
             if not set(lock_list).intersection(spoPermissions) and str(tags) != 'red':
                 if len(spoPermissions) > 0:
@@ -2450,7 +2446,7 @@ class FileManager:
                     if values_i[0] == '':
                         # Find the item containing 'notificationtime:' and perform the operations
                         notification_time_item = next((value for value in values_i if 'notificationtime:' in value.lower()), '')
-                        
+
                         values_i[0] = notification_time_item[18:]
                         index = values_i.index(notification_time_item)
                         values_i[index] = 'DeleteTimeStamp: '
@@ -2463,7 +2459,7 @@ class FileManager:
                     self.tv2.insert("", "end", iid=i, image=image_key_i, text=text_i, values=values_i, tags=tags_i)
 
                     fileStatus = next((item.split(' ')[1] for item in values_i if ('filestatus:' in item.lower() or 'inrecyclebin' in item.lower()) and len(item.split(' ')) > 1), '')
-                    
+
                     hydrationType = next((item.split(' ')[1] for item in values_i if 'lasthydrationtype:' in item.lower() and len(item.split(' ')) > 1), '')
 
                     lastKnownPinState = next((item.split(' ')[1] for item in values_i if 'lastknownpinstate:' in item.lower() and len(item.split(' ')) > 1), '')
@@ -2505,7 +2501,7 @@ class FileManager:
             cur_item = self.file
             self.file = False
             self.tv2.selection_set(cur_item)
-        
+
         self.parent.update_idletasks()
 
     def insert_into_treeview(self, iid, image_sha1, values, tags):
@@ -2513,7 +2509,7 @@ class FileManager:
             print('no tag')
         creationDate = next((item.split(' ', 1)[1] for item in values if 'diskcreationtime:' in item.lower() and len(item.split(' ', 1)) > 1), '')
         accessDate = next((item.split(' ', 1)[1] for item in values if 'disklastaccesstime:' in item.lower() and len(item.split(' ', 1)) > 1), '')
-        
+
         new_values = [creationDate, accessDate, values[0], values[1]]
         if iid:
             self.tv3.insert("", "end", iid=iid, image=s_image[image_sha1], values=new_values, tags=tags)
@@ -3030,7 +3026,7 @@ class DetailsFrame(ttk.Frame):
         self.frames.append(frame)
         self.text_boxes.append(text_box)
         return frame
-    
+
     def update_textbox_theme(self, bg):
         # Update stored theme settings
         self.current_bg = bg
@@ -3039,6 +3035,7 @@ class DetailsFrame(ttk.Frame):
         for text_box in self.text_boxes:
             text_box.configure(background=bg)
 
+
 class CreateImage():
     def __init__(self, status, type=False, small=False):
         self.status = status
@@ -3046,7 +3043,7 @@ class CreateImage():
         self.small = small
         self.output_image = None
         self.sha1 = hashlib.sha1()
-        
+
         self.create_output_image()
         self.sha1_digest = self.update_image_dictionary()
 
@@ -3054,12 +3051,14 @@ class CreateImage():
         # Calculate total width for the output image
         if self.type:
             total_width = 84
+        elif self.small:
+            total_width = 16
         else:
             total_width = sum(img.width for img in self.status) + (33 if self.type else 0)
-    
+
         # Determine the height for the output image (32 or 16)
         output_height = 32 if self.type else 16
-    
+
         # Create a new RGBA image with the appropriate size
         self.output_image = Image.new("RGBA", (total_width, output_height), (0, 0, 0, 0))
         # If 'type' exists, paste it at the beginning
@@ -3082,12 +3081,11 @@ class CreateImage():
         self.output_image.save(fp, 'png')
         fp.seek(0)
         self.sha1.update(fp.read())
-        #image = ImageTk.PhotoImage(Image.open(fp))
         digest = self.sha1.hexdigest()
         if digest not in s_image:
             image = ImageTk.PhotoImage(Image.open(fp))
             s_image[digest] = image
-        
+
         return digest
 
 
@@ -3330,7 +3328,7 @@ def pane_config():
         pass
     try:
         file_manager.update_theme()
-    except:
+    except Exception:
         pass
     ttk.Style().theme_use()
 
@@ -3430,7 +3428,7 @@ def search_result():
 
 def clear_search():
     global s_image
-#    s_image.clear()
+
     position = None
     threading.Thread(target=clear_tvr,
                      daemon=True).start()
@@ -3624,12 +3622,6 @@ def parent_child(d, parent_id=None, meta=False):
 
     if 'Scope' in d:
         for c in d['Scope']:
-            image = link_directory_img
-            if c['shortcutItemIndex'] > 0:
-                image = vault_closed_img
-            if c['siteID'] == '' and '+' in c['scopeID']:
-                image = sync_directory_img
-
             x = ('', '')
             y = [f'{k}: {v}' if v is not None else f'{k}: ' for k, v in c.items() if 'Links' not in k]
 
@@ -3637,8 +3629,33 @@ def parent_child(d, parent_id=None, meta=False):
                 w = [f'{k}: {v}' for k, v in b.items() if 'Files' not in k and 'Folders' not in k]
                 z = x + tuple(w) + tuple(y)
 
+                if c['shortcutItemIndex'] > 0:
+                    image = vault_closed_img
+                else:
+                    if 'folderColor' in b and b['folderColor'] in range(1, 16):
+                        folder_type.append(folder_color.get(b['folderColor']))
+                    else:
+                        folder_type.append(dir_img)
+
+                    if c['siteID'] == '' and '+' in c['scopeID']:
+                        if b['folderStatus'] == 9:
+                            folder_type.append(sync_img)
+                        elif b['folderStatus'] == 10:
+                            folder_type.append(not_sync_img)
+                        elif b['folderStatus'] == 11:
+                            folder_type.append(not_link_img)
+                        elif b['folderStatus'] == 12:
+                            folder_type.append(unknown_img)
+                    else:
+                        folder_type.append(link_img)
+
+                    image_creator = CreateImage(folder_type, False, True)
+                    image_sha1 = image_creator.sha1_digest
+                    image = s_image[image_sha1]
+
                 if ('Folders' in b or 'Files' in b) and str(image) == str(vault_closed_img):
                     image = vault_open_img
+
                 parent_child(b, tv.insert(parent_id,
                                           0,
                                           image=image,
@@ -3886,6 +3903,7 @@ def odl(folder_name, csv=False):
     if csv:
         key = folder_name.name.split('/')[-1].split('_')[0]
         header_list = ['Profile',
+                       'Key_Type',
                        'Log_Type',
                        'Filename',
                        'File_Index',
@@ -3895,6 +3913,7 @@ def odl(folder_name, csv=False):
                        'Code_File',
                        'Flags',
                        'Function',
+                       'Context_Data',
                        'Description',
                        'Params',
                        'Param1',
@@ -4507,6 +4526,7 @@ def widgets_disable():
     details_frame.delete_tab(1)
     tv.grid_forget()
 
+
 def widgets_normal():
     tabs = tb.tabs()
     for i, item in enumerate(tabs):
@@ -4524,14 +4544,16 @@ def widgets_normal():
         btn.configure(state="normal")
     tv.grid(row=1, column=0, sticky="nsew")
 
+
 def get_total_column_width():
     total_width = file_manager.tv3.column("#0", width=None)
     total_width += file_manager.tv2.column("#0", width=None)
     for col in file_manager.tv3["columns"]:
-        if menu_data[str(col)] == True:
+        if menu_data[str(col)]:
             total_width += file_manager.tv3.column(col, width=None)  # Get the current width of each column
 
     return total_width
+
 
 # Function to limit sash movement
 def restrict_sash(*args):
@@ -4544,11 +4566,13 @@ def restrict_sash(*args):
             pwh.sash_place(2, max_sash, 1)  # Restrict sash to column width
         pwh.after(1, restrict_sash)
 
+
 # Function to start checking when the drag begins
 def start_drag(event):
     global dragging_sash
     dragging_sash = True
     restrict_sash()
+
 
 # Function to stop checking when the drag ends
 def stop_drag(event):
@@ -4714,6 +4738,7 @@ not_link_file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/fi
 dir_img = Image.open(application_path + '/Images/folders/directory.png')
 directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/directory_closed.png'))
 link_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/67.png'))
+sync_directory_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/folders/sync_directory.png'))
 
 # small folder images color
 f_1_img = Image.open(application_path + '/Images/colors/1.png')
