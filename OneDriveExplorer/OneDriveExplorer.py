@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2024
 #
 # This file is part of OneDriveExplorer
 #
@@ -51,7 +51,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.11.12"
+__version__ = "2024.11.20"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()

@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2024
 #
 # This file is part of OneDriveExplorer
 #
@@ -29,6 +29,7 @@ import colorsys
 import re
 import base64
 import json
+import psutil
 import ctypes
 import webbrowser
 import argparse
@@ -103,7 +104,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.11.12"
+__version__ = "2024.11.20"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -123,6 +124,7 @@ file_items = defaultdict(list)
 dfs_to_concat = []
 folder_type = []
 dragging_sash = False
+sync_message = None
 df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID',
                                                  'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount'])
 
@@ -232,23 +234,32 @@ class QuitDialog:
         self.win.bind('<Configure>', self.sync_windows)
 
     def btn1(self):
+        parent = psutil.Process(os.getpid())
+        for child in parent.children(recursive=True):
+            child.kill()
+        self.win.destroy()
         sys.exit()
 
     def btn2(self):
         self.root.unbind("<Configure>")
+        if sync_message:
+            sync_message.bind_events()
         self.win.destroy()
 
     def __callback(self):
         return
 
     def sync_windows(self, event=None):
-        x = self.root.winfo_x()
-        qw = self.win.winfo_width()
-        y = self.root.winfo_y()
-        qh = self.win.winfo_height()
-        w = self.root.winfo_width()
-        h = self.root.winfo_height()
-        self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
+        try:
+            x = self.root.winfo_x()
+            qw = self.win.winfo_width()
+            y = self.root.winfo_y()
+            qh = self.win.winfo_height()
+            w = self.root.winfo_width()
+            h = self.root.winfo_height()
+            self.win.geometry("+%d+%d" % (x + w/2 - qw/2, y + h/2 - qh/2))
+        except Exception:
+            pass
 
 
 class Preferences:
@@ -437,7 +448,7 @@ class hive:
         self.sql = sql
         self.win = tk.Toplevel(self.root)
         self.win.wm_transient(self.root)
-        self.win.title("Load User Hive")
+        self.win.title("Load User Hive - NTUSER.DAT")
         self.win.iconbitmap(application_path + '/Images/titles/question.ico')
         self.win.grab_set()
         self.win.focus_force()
@@ -456,9 +467,9 @@ class hive:
         self.inner_frame.grid(row=0, column=0, padx=5, pady=5)
         self.button_frame.grid(row=2, column=0, columnspan=3)
 
-        self.label_i = ttk.Label(self.inner_frame, image=question_img)
+        self.label_i = ttk.Label(self.inner_frame, image=reg_img)
         self.label = ttk.Label(self.inner_frame,
-                               text="User's registry hive allows the mount points of the SyncEngines to be resolved.\n\nDo you want to provide a registry hive?\n")
+                               text="User's registry hive (NTUSER.DAT) allows the mount points of the SyncEngines to be resolved.\n\nDo you want to provide a registry hive?\n")
 
         self.label_l = ttk.Label(self.inner_frame, text="Note:")
 
@@ -475,7 +486,7 @@ class hive:
                              takefocus=False,
                              command=self.close_hive)
 
-        self.label_i.grid(row=0, column=0, rowspan=2, sticky='n')
+        self.label_i.grid(row=0, column=0, rowspan=2, padx=(0, 5), sticky='n')
         self.label.grid(row=0, column=1, columnspan=2, pady=(5, 0), sticky='w')
         self.label_l.grid(row=1, column=1, sticky='nw')
         self.label_r.grid(row=1, column=2, padx=5, sticky='w')
@@ -496,8 +507,8 @@ class hive:
     def get_hive(self):
         global reghive
         reghive = filedialog.askopenfilename(initialdir="/",
-                                             title="Open",
-                                             filetypes=(("Load user hive",
+                                             title="Open User Registry Hive",
+                                             filetypes=(("NTUSER.DAT",
                                                          "*.dat"),))
         if reghive:
             self.win.destroy()
@@ -1320,13 +1331,24 @@ class SyncMessage:
     def bind_events(self):
         self.root.bind('<Configure>', self.sync_windows)
         self.win.bind('<Configure>', self.sync_windows)
+        self.root.bind("<Map>", self.bring_window_back)
+
+    def bring_window_back(self, e):
+        self.win.attributes('-topmost', 1)
+        self.win.attributes('-topmost', 0)
 
     def sync_windows(self, event=None):
+        on_top = self.root.tk.eval('wm stackorder '+str(self.win)+' isabove '+str(self.root))
+        if on_top == '0':
+            self.bring_window_back(event)
+
         if 'thread_load' in str(threading.enumerate()) and len(threading.enumerate()) <= 4:
             self.root.unbind("<Configure>")
+            self.root.unbind("<Map>")
             self.win.destroy()
         if len(threading.enumerate()) <= 3:
             self.root.unbind("<Configure>")
+            self.root.unbind("<Map>")
             self.win.destroy()
         try:
             x = self.root.winfo_x()
@@ -1341,6 +1363,7 @@ class SyncMessage:
 
     def close_sync(self):
         self.root.unbind("<Configure>")
+        self.root.unbind("<Map>")
         self.win.destroy()
 
     def __callback(self):
@@ -1596,7 +1619,7 @@ class PopupManager:
                 popup.add_command(label="Remove OneDrive Folder",
                                   image=self.rof_img,
                                   compound='left',
-                                  command=lambda: [self.thread_del_folder(curItem), SyncMessage(root)])
+                                  command=lambda: self.thread_del_folder(curItem))
                 popup.add_separator()
 
             if image[0] != str(del_img):
@@ -1689,8 +1712,10 @@ class PopupManager:
         self.root.clipboard_append(name_item.split("Name: ")[1])
 
     def thread_del_folder(self, iid):
+        global sync_message
         message.unbind('<Double-Button-1>', bind_id)
         value_label['text'] = ''
+        sync_message = SyncMessage(root)
         t1 = threading.Thread(target=self.del_folder, args=(iid,), daemon=True)
         t1.start()
         root.after(200, check_if_ready, t1, "df")
@@ -3373,6 +3398,7 @@ def fixed_map(option):
 
 
 def search(item=''):
+    root.update()
     query = search_entry.get()
     if len(query) == 0:
         return
@@ -3447,6 +3473,7 @@ def clear_search():
 
 
 def delete_item_and_descendants(tree, item=''):
+    root.update()
     children = tree.get_children(item)
     for child in children:
         if child in file_items:
@@ -3748,17 +3775,20 @@ def live_system(menu):
                     pb.stop()
                     odl = parse_odl(logs[0], key, pb, value_label, gui=True)
                     tb = ttk.Frame()
-                    pt = pandastablepatch.MyTable(tb,
-                                                  dataframe=odl,
-                                                  maxcellwidth=900,
-                                                  showtoolbar=False,
-                                                  showstatusbar=False,
-                                                  enable_menus=True,
-                                                  editable=False)
-                    tv_frame.add(tb, text=f'{key} Logs  ')
-                    pt.adjustColumnWidths()
-                    pt.show()
-                    user_logs.setdefault(f'{key}_logs.csv', pt)
+
+                    if not odl.empty:
+                        pt = pandastablepatch.MyTable(tb,
+                                                      dataframe=odl,
+                                                      maxcellwidth=900,
+                                                      showtoolbar=False,
+                                                      showstatusbar=False,
+                                                      enable_menus=True,
+                                                      editable=False)
+                        tv_frame.add(tb, text=f'{key} Logs  ')
+                        pt.adjustColumnWidths()
+                        pt.show()
+                        user_logs.setdefault(f'{key}_logs.csv', pt)
+
                     if menu_data['odl_save'] is True:
                         value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
                         pb.configure(mode='indeterminate')
@@ -3798,7 +3828,7 @@ def open_dat(menu):
     global reghive
     global recbin
     filename = filedialog.askopenfilename(initialdir="/",
-                                          title="Open",
+                                          title="Open <UserCid>.dat",
                                           filetypes=(("OneDrive dat file",
                                                       "*.dat *.dat.previous"),
                                                      ))
@@ -3896,7 +3926,7 @@ def odl(folder_name, csv=False):
     breadcrumb.disable_crumbs()
     file_manager.tv2.delete(*file_manager.tv2.get_children())
     file_manager.tv3.delete(*file_manager.tv3.get_children())
-    key_find = re.compile(r'Users/(?P<user>.*)?/AppData')
+    key_find = re.compile(r'Users/(?P<user>[^/]+)/AppData')
     pb.stop()
     start = time.time()
 
@@ -3944,7 +3974,7 @@ def odl(folder_name, csv=False):
         if len(key) == 0:
             key = 'ODL'
         else:
-            key = key[0]
+            key = key[-1]
         odl = parse_odl(folder_name, key, pb, value_label, gui=True)
 
     tb = ttk.Frame()
@@ -4473,6 +4503,7 @@ def sync():
 
 def check_if_ready(thread, t_string):
     global cstruct_df
+    global sync_message
     if thread.is_alive():
         # not ready yet, run the check again soon
         root.after(200, check_if_ready, thread, t_string)
@@ -4483,6 +4514,7 @@ def check_if_ready(thread, t_string):
         if t_string == "s":
             cstruct_df = load_cparser(args.cstructs)
         if t_string == "tca" or t_string == "df":
+            sync_message = None
             widgets_normal()
         if t_string == "lp":
             root.event_generate("<Configure>")
@@ -4499,7 +4531,9 @@ def thread_search():
 
 
 def thread_clear_all():
+    global sync_message
     message.unbind('<Double-Button-1>', bind_id)
+    sync_message = SyncMessage(root)
     t1 = threading.Thread(target=clear_all, daemon=True)
     t1.start()
     root.after(200, check_if_ready, t1, "tca")
@@ -4723,7 +4757,7 @@ info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info.pn
 error_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error.png'))  # ExportResult
 asc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_asc.png'))  # pandastable
 desc_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/table_sort_desc.png'))  # pandastable
-question_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/question.png'))  # hive
+reg_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/registry.png'))  # hive
 trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/trashcan.png'))  # recbin
 ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/ode.png'))  # about
 meta_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/tools.png'))  # about
@@ -5052,7 +5086,7 @@ odsmenu.add_command(label="Import JSON", image=json_img,
 odsmenu.add_command(label="Import CSV", image=csv_img, compound='left',
                     command=lambda: import_csv(odsmenu))
 odsmenu.add_command(label="Unload all files", image=uaf_img, compound='left',
-                    command=lambda: [thread_clear_all(), SyncMessage(root)], accelerator="Alt+0")
+                    command=lambda: thread_clear_all(), accelerator="Alt+0")
 odsmenu.entryconfig("Unload all files", state='disable')
 
 odlmenu.add_command(label="Load ODL logs", image=folderop_img, compound='left',
@@ -5070,7 +5104,7 @@ projmenu.add_command(label="Save", image=save_img, compound='left',
 projmenu.add_command(label="SaveAs", image=saveas_img, compound='left',
                      command=lambda: saveAs_proj())
 projmenu.add_command(label="Unload", image=ual_img, compound='left',
-                     command=lambda: [thread_clear_all(), del_logs(), SyncMessage(root)])
+                     command=lambda: [thread_clear_all(), del_logs()])
 projmenu.entryconfig("Save", state='disable')
 root.unbind('<Alt-s>')
 projmenu.entryconfig("SaveAs", state='disable')

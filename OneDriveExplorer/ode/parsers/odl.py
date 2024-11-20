@@ -584,7 +584,10 @@ def process_odl(filename, map):
             odl['Code_File'] = data.code_file_name.decode('utf8')
             odl['Flags'] = data.flags
             odl['Function'] = data.code_function_name.decode('utf8')
-            odl['Context_Data'] = extract_context_data(data_block.context_data) if data_block.context_data else ''
+            if hasattr(data_block, 'context_data') and data_block.context_data:
+                odl['Context_Data'] = extract_context_data(data_block.context_data)
+            #cstruct.dumpstruct(data_block)
+            #odl['Context_Data'] = extract_context_data(data_block.context_data) if data_block.context_data else ''
             odl['Description'] = description
             odl['Params'] = params
             odl_rows.append(odl)
@@ -629,6 +632,10 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
 
     total = len(filenames)
     count = 0
+
+    if total == 0:
+        return df
+
     if gui:
         pb.configure(mode='determinate')
     for filename in filenames:
