@@ -39,7 +39,7 @@ if getattr(sys, 'frozen', False):
 else:
     application_path = f'{os.path.dirname(os.path.abspath(__file__))}/..'
 
-spec = spec_from_loader("schema", SourceFileLoader("schema", "D:/Projects/OneDriveExplorer/OneDriveExplorer/ode/helpers/schema"))
+spec = spec_from_loader("schema", SourceFileLoader("schema", f"{application_path}/ode/helpers/schema"))
 schema = module_from_spec(spec)
 spec.loader.exec_module(schema)
 
