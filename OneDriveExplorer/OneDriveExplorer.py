@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2024
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -32,14 +32,12 @@ import uuid
 import pandas as pd
 import warnings
 import threading
-from ode.renderers.json import print_json
-from ode.renderers.csv_file import print_csv
-from ode.renderers.html import print_html
 import ode.parsers.dat as dat_parser
 import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
 import ode.parsers.sqlite_db as sqlite_parser
 from ode.utils import update_from_repo
+import ode.parsers.manager as manager
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -51,7 +49,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.11.20"
+__version__ = "2025.02.14"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()
@@ -80,69 +78,21 @@ def guid():
             break
 
 
-def parse_sql_thread(sqlFolder):
+def parse_sql_thread(sqlFolder, Parser):
     global result
-    result = SQLiteParser.parse_sql(sqlFolder)
+    result = None
+    result = Parser.start_parsing()
     parsing_complete.set()  # Signal that parsing is complete
 
 
-def parse_onedrive_thread(df, df_scope, df_GraphMetadata_Records, scopeID, file,  rbin_df, account, reghive, RECYCLE_BIN, localHashAlgorithm):
-    global result
-    result = None
-    result = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, file, rbin_df, account, reghive, RECYCLE_BIN, localHashAlgorithm)
-    onedrive_complete.set()  # Signal that parsing is complete
-
-
 def main():
-    df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID',
-                                                     'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount'])
 
-    def output_thread():
-        delay = time.time()
-
-        threading.Thread(target=output,
-                         daemon=True).start()
-
-        while not output_complete.is_set():
-            if (time.time() - delay) > 0.1:
-                sys.stdout.write(f'Saving OneDrive data. Please wait.... {next(spinner)}\r')
-                sys.stdout.flush()
-                delay = time.time()
-            time.sleep(0.2)
-
-    def output():
-        if args.csv:
-            print_csv(df, rbin_df, df_GraphMetadata_Records, name, args.csv, args.csvf)
-
-        if args.html:
-            print_html(df, rbin_df, name, args.html)
-
-        if ((args.csv or args.html) and args.json) or (not args.csv and not args.html):
-            if not args.json:
-                args.json = '.'
-            print_json(cache, name, args.pretty, args.json)
-
-        output_complete.set()  # Signal that parsing is complete
-
-        try:
-            file_count = df.Type.value_counts()['File']
-        except KeyError:
-            logging.warning("KeyError: 'File'")
-            file_count = 0
-
-        try:
-            del_count = len(rbin_df)
-        except (KeyError, AttributeError):
-            logging.warning("KeyError: 'File - deleted'")
-            del_count = 0
-
-        try:
-            folder_count = df.Type.value_counts()['Folder']
-        except KeyError:
-            logging.warning("KeyError: 'Folder'")
-            folder_count = 0
-
-        print(f'\n\n{file_count} files(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds\n')
+    def has_settings(data):
+        if isinstance(data, dict):
+            if 'settings' in data:
+                return True
+            return any(has_settings(v) for v in data.values())
+        return False
 
     banner = r'''
      _____                ___                           ___                 _
@@ -156,7 +106,6 @@ def main():
     '''.format(__version__)
 
     print(f'\033[1;37m{banner}\033[1;0m')
-    start = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--file", help="<UserCid>.dat file to be parsed")
     parser.add_argument("-s", "--sql", help="OneDrive folder containing SQLite databases")
@@ -164,11 +113,11 @@ def main():
     parser.add_argument("-l", "--logs", help="Directory to recursively process for ODL logs.", nargs='?', const=True)
     parser.add_argument("-r", "--REG_HIVE", dest="reghive", help="If a registry hive is provided then the mount points of the SyncEngines will be resolved.")
     parser.add_argument("-rb", "--RECYCLE_BIN", help="$Recycle.Bin")
-    parser.add_argument("--csv", help="Directory to save CSV formatted results to. Be sure to include the full path in double quotes.")
-    parser.add_argument("--csvf", help="File name to save CSV formatted results to. When present, overrides default name.")
-    parser.add_argument("--html", help="Directory to save html formatted results to. Be sure to include the full path in double quotes.")
-    parser.add_argument("--json", help="Directory to save json representation to. Use --pretty for a more human readable layout.")
+    parser.add_argument("--csv", action='store_true', help="Save CSV formatted results.")
+    parser.add_argument("--html", action='store_true', help="Save html formatted results.")
+    parser.add_argument("--json", action='store_true', help="Save json formatted results. Use --pretty for a more human readable layout.")
     parser.add_argument("--pretty", help="When exporting to json, use a more human readable layout. Default is FALSE", action='store_true')
+    parser.add_argument("--output-dir", help="Directory to save results to. Be sure to include the full path in double quotes.", default=".")
     parser.add_argument("--clist", help="List available cstructs. Defaults to 'cstructs' folder where program was executed. Use --cstructs for different cstruct folder.", action='store_true')
     parser.add_argument("--cstructs", help="The path where ODL cstructs are located. Defaults to 'cstructs' folder where program was executed.")
     parser.add_argument("--sync", help="If true, OneDriveExplorer will download the latest Cstrucs from https://github.com/Beercow/ODEFiles prior to running. Default is FALSE", action='store_true')
@@ -181,7 +130,6 @@ def main():
         parser.exit()
 
     args = parser.parse_args()
-
     spinner = spinning_cursor()
 
     if args.sync:
@@ -196,9 +144,9 @@ def main():
         load_cparser(args.cstructs, args.clist)
         sys.exit()
 
-    if not args.file and not args.dir and not args.sql:
+    if not any([args.file, args.dir, args.sql, args.logs]):
         parser.print_help()
-        print('\nEither -f or -d is required. Exiting')
+        print('\nEither -f, -d, -s or -l is required. Exiting')
         parser.exit()
 
     if args.RECYCLE_BIN and not args.reghive:
@@ -209,40 +157,69 @@ def main():
     if not args.debug:
         logging.getLogger().setLevel(logging.CRITICAL)
 
-    if args.json:
-        if not os.path.exists(args.json):
+    if args.output_dir:
+        if not os.path.exists(args.output_dir):
             try:
-                os.makedirs(args.json)
+                os.makedirs(args.output_dir)
             except OSError:
-                print('Error: Remove trailing \ from directory.\nExample: --json "c:\\temp" ')
+                print('Error: Remove trailing \ from directory.\nExample: --output-dir "c:\\temp" ')
                 sys.exit()
 
-    if args.csv:
-        if not os.path.exists(args.csv):
-            try:
-                os.makedirs(args.csv)
-            except OSError:
-                print('Error: Remove trailing \ from directory.\nExample: --csv "c:\\temp" ')
-                sys.exit()
+    if args.dir:
+        logging.info(f'Searching for OneDrive data in {args.dir}')
+        profile = {}
+        users_folder = f'{args.dir}\\Users\\'
+        rec_folder = f'{args.dir}\\$Recycle.Bin\\'
+        user_names = [folder for folder in os.listdir(users_folder) if os.path.isdir(os.path.join(users_folder, folder))]
+        settings_dir = re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$')
+        listsync_settings_dir = re.compile(r'\\ListSync\\(?P<account>Business[0-9])\\settings$')
+        logs_dir = re.compile(r'\\(?P<logs>logs)$')
 
-    if args.html:
-        if not os.path.exists(args.html):
-            try:
-                os.makedirs(args.html)
-            except OSError:
-                print('Error: Remove trailing \ from directory.\nExample: --html "c:\\temp" ')
-                sys.exit()
+        if os.path.exists(rec_folder):
+            args.RECYCLE_BIN = rec_folder
+
+        delay = time.time()
+        for user in user_names:
+            profile.setdefault(user, {})
+            od_profile = os.path.join(users_folder, user, "AppData\\Local\\Microsoft\\OneDrive")
+
+            for path, subdirs, files in os.walk(od_profile):
+                settings_find = re.findall(settings_dir, path)
+                listsync_find = re.findall(listsync_settings_dir, path)
+                logs_find = re.findall(logs_dir, path)
+
+                if (time.time() - delay) > 0.1:
+                    sys.stdout.write(f'Searching for OneDrive data {next(spinner)}\r')
+                    sys.stdout.flush()
+                    delay = time.time()
+
+                if settings_find:
+                    profile[user].setdefault(settings_find[0], {})
+                    profile[user][settings_find[0]].setdefault('settings', '')
+                    profile[user][settings_find[0]]['settings'] = path
+
+                if listsync_find:
+                    profile[user].setdefault(listsync_find[0], {})
+                    profile[user][listsync_find[0]].setdefault('listsync', '')
+                    profile[user][listsync_find[0]]['listsync'] = path
+
+                if logs_find:
+                    profile[user].setdefault(logs_find[0], [])
+                    profile[user][logs_find[0]].append(path)
+
+        for key, value in profile.items():
+            if has_settings(value):
+                args.reghive = f'{users_folder}{key}\\NTUSER.DAT'
+            else:
+                args.reghive = None
+
+            Parser = manager.ParsingManager(args, value, key)
+            Parser.start_parsing()
 
     if args.sql:
-        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
-        sql_find = re.findall(sql_dir, args.sql)
-        try:
-            name = f'{sql_find[0][0]}_{sql_find[0][1]}'
-        except Exception:
-            name = 'SQLite_DB'
-
+        Parser = manager.ParsingManager(args)
         threading.Thread(target=parse_sql_thread,
-                         args=(args.sql,),
+                         args=(args.sql, Parser,),
                          daemon=True).start()
 
         delay = time.time()
@@ -253,170 +230,24 @@ def main():
                 delay = time.time()
             time.sleep(0.2)
 
-        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, localHashAlgorithm = result
-
-        if not df.empty:
-            threading.Thread(target=parse_onedrive_thread,
-                             args=(df, df_scope, df_GraphMetadata_Records,
-                                   scopeID, args.sql, rbin_df, account,
-                                   args.reghive, args.RECYCLE_BIN,
-                                   localHashAlgorithm,),
-                             daemon=True).start()
-
-            delay = time.time()
-            while not onedrive_complete.is_set():
-                if (time.time() - delay) > 0.1:
-                    sys.stdout.write(f'Building folder list. Please wait.... {next(spinner)}\r')
-                    sys.stdout.flush()
-                    delay = time.time()
-                time.sleep(0.2)
-
-            cache, rbin_df = result
-
-        if df.empty:
-            print(f'Unable to parse {name} sqlite database.')
-            logging.warning(f'Unable to parse {name} sqlite database.')
-        else:
-            output_thread()
-
-        rootDir = args.logs
-        if rootDir is None:
-            sys.exit()
-        if rootDir is not True:
-            load_cparser(args.cstructs)
-            odl = parse_odl(rootDir)
-            if not args.csv:
-                args.csv = '.'
-            log_output = f'{args.csv}/ODL_logs.csv'
-            odl.to_csv(log_output, index=False)
-
     if args.file:
-        account = os.path.dirname(args.file.replace('/', '\\')).rsplit('\\', 1)[-1]
-        name = os.path.split(args.file)[1]
+        Parser = manager.ParsingManager(args)
+        Parser.start_parsing()
 
-        df, rbin_df, df_scope, scopeID, localHashAlgorithm = DATParser.parse_dat(args.file, account)
-
-        if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, args.file,  rbin_df, account, args.reghive, args.RECYCLE_BIN, localHashAlgorithm)
-
-        if df.empty:
-            filename = args.file.replace('/', '\\')
-            print(f'Unable to parse {filename}.')
-            logging.warning(f'Unable to parse {filename}.')
-        else:
-            output_thread()
-        rootDir = args.logs
-        if rootDir is None:
-            sys.exit()
-        if rootDir is not True:
-            load_cparser(args.cstructs)
-            odl = parse_odl(rootDir)
-            if not args.csv:
-                args.csv = '.'
-            log_output = f'{args.csv}/ODL_logs.csv'
+    if args.logs:
+        load_cparser(args.cstructs)
+        if args.logs is not True:
+            key_find = re.compile(r'Users/(?P<user>[^/]+)/AppData')
+            pname = args.logs.replace('/', '\\').split(os.sep)[-2]
+            key = re.findall(key_find, args.logs)
+            if len(key) == 0:
+                key = 'ODL'
+            else:
+                key = key[-1]
+            odl = parse_odl(args.logs, pname)
+            print()
+            log_output = f'{args.output_dir}/{pname}_logs.csv'
             odl.to_csv(log_output, index=False)
-
-    if args.dir:
-        logging.info(f'Searching for OneDrive data in {args.dir}')
-        d = {}
-        hive = re.compile(r'\\Users\\(?P<user>.*)?')
-        dat = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\settings')
-        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>Personal|Business[0-9])$')
-        log_dir = re.compile(r'\\Users\\(?P<user>.*)?\\AppData\\Local\\Microsoft\\OneDrive\\logs$')
-        rootDir = args.dir
-        # spinner = spinning_cursor()
-        delay = time.time()
-        for path, subdirs, files in os.walk(rootDir):
-            if (time.time() - delay) > 0.1:
-                sys.stdout.write(f'Searching for OneDrive data {next(spinner)}\r')
-                sys.stdout.flush()
-                delay = time.time()
-            hive_find = re.findall(hive, path)
-            dat_find = re.findall(dat, path)
-            log_find = re.findall(log_dir, path)
-            sql_find = re.findall(sql_dir, path)
-            if path.endswith('$Recycle.Bin'):
-                args.RECYCLE_BIN = path
-
-            if hive_find:
-                for name in files:
-                    if name == 'NTUSER.DAT':
-                        logging.info(f'Found {name} for {hive_find[0]}')
-                        d.setdefault(hive_find[0], {})
-                        d[hive_find[0]].setdefault('hive', os.path.join(path, name))
-                        args.reghive = os.path.join(path, name)
-
-            if dat_find:
-                for name in files:
-                    if '.dat' in name:
-                        logging.info(f'Found {name} for {dat_find[0]}')
-                        d.setdefault(dat_find[0], {})
-                        d[dat_find[0]].setdefault('files', []).append(os.path.join(path, name))
-
-            if log_find:
-                d.setdefault(log_find[0], {})
-                d[log_find[0]].setdefault('logs', []).append(path)
-
-            if sql_find:
-                d.setdefault(sql_find[0][0], {})
-                d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
-
-        for key, value in d.items():
-            filenames = []
-            for k, v in value.items():
-                if k == 'hive':
-                    args.reghive = v
-                if k == 'files':
-                    filenames = v
-
-                if len(filenames) != 0:
-                    logging.info(f'Parsing OneDrive data for {key}')
-                    print(f'\n\nParsing {key} OneDrive\n')
-                    for filename in filenames:
-                        account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
-                        name = os.path.split(filename)[1]
-
-                        df, rbin_df, df_scope, scopeID, localHashAlgorithm = DATParser.parse_dat(filename, account)
-
-                        if not df.empty:
-                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, filename,  rbin_df, account, args.reghive, args.RECYCLE_BIN, localHashAlgorithm)
-
-                        if df.empty:
-                            filename = filename.replace('/', '\\')
-                            print(f'Unable to parse {filename}.')
-                            logging.warning(f'Unable to parse {filename}.')
-                        else:
-                            output_thread()
-
-                if k == 'sql':
-                    print(f'\n\nParsing {key} OneDrive\n')
-                    for account, sql_dir in v.items():
-                        name = f'{key}_{account}'
-
-                        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, localHashAlgorithm = SQLiteParser.parse_sql(sql_dir)
-
-                        if not df.empty:
-                            cache, rbin_df = OneDriveParser.parse_onedrive(df, df_scope, df_GraphMetadata_Records, scopeID, sql_dir, rbin_df, account, args.reghive, args.RECYCLE_BIN, localHashAlgorithm)
-
-                        if df.empty:
-                            print(f'Unable to parse {name} sqlite database.')
-                            logging.warning(f'Unable to parse {name} sqlite database.')
-                        else:
-                            output_thread()
-
-        if args.logs:
-            load_cparser(args.cstructs)
-            for key, value in d.items():
-                for k, v in value.items():
-                    if k == 'logs':
-                        logging.info(f'Parsing OneDrive logs for {key}')
-                        print(f'\n\nParsing {key} OneDrive logs\n')
-                        logs = v
-                        odl = parse_odl(logs[0], key)
-                        if not args.csv:
-                            args.csv = '.'
-                        log_output = f'{args.csv}/{key}_logs.csv'
-                        odl.to_csv(log_output, index=False)
 
     sys.exit()
 

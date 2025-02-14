@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #

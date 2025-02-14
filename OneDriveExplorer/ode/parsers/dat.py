@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -31,10 +31,24 @@ import binascii
 import urllib.parse
 from dissect import cstruct
 import pandas as pd
-import numpy as np
 from ode.utils import progress, progress_gui, permissions, change_dtype
 
 log = logging.getLogger(__name__)
+
+
+class ParseResult:
+    def __init__(self, df, rbin_df, df_scope, graphMetadata, scopeID, account, localHashAlgorithm):
+        self.df = df
+        self.rbin_df = rbin_df
+        self.df_scope = df_scope
+        self.graphMetadata = graphMetadata
+        self.scopeID = scopeID
+        self.account = account
+        self.localHashAlgorithm = localHashAlgorithm
+
+    def __repr__(self):
+        """Custom string representation for debugging."""
+        return f"ParseResult(df={len(self.df)} rows, rbin_df={len(self.rbin_df)} rows, scopeID={len(self.scopeID)})"
 
 
 class DATParser:
@@ -43,7 +57,13 @@ class DATParser:
         self.log = logging.getLogger(__name__)
         self.datstruct = cstruct.cstruct()
         self.DAT_DEF = f'{self.application_path}/ode/helpers/structures'
+        self.df = pd.DataFrame()
+        self.df_scope = pd.DataFrame()
+        self.scopeID = []
+        self.account = None
         self.localHashAlgorithm = 0
+        self.rbin_df = pd.DataFrame()
+        self.graphMetadata = pd.DataFrame(columns=['resourceID', 'Metadata'])
         self.datstruct.loadfile(self.DAT_DEF)
         self.dict_1 = {'lastChange': 0,
                        'sharedItem': 0,
@@ -126,6 +146,7 @@ class DATParser:
 
     def parse_dat(self, usercid, account='Business', gui=False, pb=False, value_label=False):
         usercid = (usercid).replace('/', '\\')
+        self.account = usercid.split(os.sep)[-2]
         self.scope_header = False
         self.files_header = False
         self.folders_header = False
@@ -472,24 +493,26 @@ class DATParser:
 
         except Exception as e:
             # log.error(e)
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), [], 0
+            return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
+                               self.graphMetadata, [], self.account,
+                               self.localHashAlgorithm)
 
         if not gui:
-            print('\n')
+            print()
 
         temp_scope.seek(0)
         temp_files.seek(0)
         temp_folders.seek(0)
 
-        df_scope = pd.read_csv(temp_scope)
+        self.df_scope = pd.read_csv(temp_scope)
         temp_scope.close()
-        df_scope.insert(0, 'Type', 'Scope')
-        df_scope.insert(5, 'tenantID', '')
-        df_scope.insert(6, 'webURL', '')
-        df_scope.insert(7, 'remotePath', '')
-        df_scope = change_dtype(df_scope, df_name='df_scope')
-        df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: permissions(x))
-        scopeID = df_scope['scopeID'].tolist()
+        self.df_scope.insert(0, 'Type', 'Scope')
+        self.df_scope.insert(5, 'tenantID', '')
+        self.df_scope.insert(6, 'webURL', '')
+        self.df_scope.insert(7, 'remotePath', '')
+        self.df_scope = change_dtype(self.df_scope, df_name='df_scope')
+        self.df_scope['spoPermissions'] = self.df_scope['spoPermissions'].apply(lambda x: permissions(x))
+        self.scopeID = self.df_scope['scopeID'].tolist()
 
         df_files = pd.read_csv(temp_files, usecols=['parentResourceID', 'resourceID', 'eTag', 'fileName', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'mediaDateTaken', 'mediaWidth', 'mediaHeight', 'mediaDuration'])
         temp_files.close()
@@ -522,7 +545,9 @@ class DATParser:
         df_folders = change_dtype(df_folders, df_name='df_folders')
         df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
 
-        df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
-        df = df.where(pd.notnull(df), None)
+        self.df = pd.concat([self.df_scope, df_files, df_folders], ignore_index=True, axis=0)
+        self.df = self.df.where(pd.notnull(self.df), None)
 
-        return df, pd.DataFrame(), df_scope, scopeID, self.localHashAlgorithm
+        return ParseResult(self.df, self.rbin_df, self.df_scope,
+                           self.graphMetadata, self.scopeID, self.account,
+                           self.localHashAlgorithm)

@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -89,12 +89,15 @@ class OneDriveParser:
         return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
     # Generate scopeID list instead of passing
-    def parse_onedrive(self, df, df_scope, df_GraphMetadata_Records, scopeID, file_path, rbin_df, account=False, reghive=False, recbin=False, localHashAlgorithm=False, gui=False, pb=False, value_label=False):
+    def parse_onedrive(self, od_settings, file_path, reghive=False, recbin=False, offline_db=False, gui=False, pb=False, value_label=False):
 
         allowed_keys = ['scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex']
 
-        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
-        df_scope['shortcutVolumeID'] = df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+        try:
+            od_settings.df_scope['shortcutVolumeID'] = od_settings.df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+            od_settings.df_scope['shortcutVolumeID'] = od_settings.df_scope['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+        except Exception:
+            pass
 
         if os.path.isdir(file_path):
             directory = file_path
@@ -109,7 +112,7 @@ class OneDriveParser:
 
         if reghive:
             try:
-                df, od_keys = self.parse_reg(reghive, account, df)
+                od_settings.df, od_keys = self.parse_reg(reghive, od_settings.account, od_settings.df)
 
                 if gui:
                     pb.stop()
@@ -123,121 +126,104 @@ class OneDriveParser:
                 pass
 
         try:
-            df['MountPoint'] = df['MountPoint'].where(pd.notna(df['MountPoint']), '')
+            od_settings.df['MountPoint'] = od_settings.df['MountPoint'].where(pd.notna(od_settings.df['MountPoint']), '')
         except KeyError:
-            df['MountPoint'] = ''
+            od_settings.df['MountPoint'] = ''
 
         id_name_dict = {
-            resource_id if resource_id is not None else df.at[index, 'scopeID']:
-                df.at[index, 'MountPoint'] if name is None else name if name is not None else ''
-            for resource_id, name, index in zip(df['resourceID'], df['Name'], df.index)
+            resource_id if resource_id is not None else od_settings.df.at[index, 'scopeID']:
+                od_settings.df.at[index, 'MountPoint'] if name is None else name if name is not None else ''
+            for resource_id, name, index in zip(od_settings.df['resourceID'], od_settings.df['Name'], od_settings.df.index)
         }
 
-        parent_dict = {resource_id if resource_id is not None else df.at[index, 'scopeID']: '' if parent_id is None else parent_id
-                       for resource_id, parent_id, index in zip(df['resourceID'], df['parentResourceID'], df.index)}
+        parent_dict = {resource_id if resource_id is not None else od_settings.df.at[index, 'scopeID']: '' if parent_id is None else parent_id
+                       for resource_id, parent_id, index in zip(od_settings.df['resourceID'], od_settings.df['parentResourceID'], od_settings.df.index)}
 
-        if 'Path' in df.columns:
-            df['Level'] = df['Path'].str.split('\\\\').str.len()
-            convert = {'fileStatus': 'Int64',
-                       'volumeID': 'Int64',
-                       'sharedItem': 'Int64',
-                       'folderStatus': 'Int64',
-                       'shortcutVolumeID': 'Int64',
-                       'shortcutItemIndex': 'Int64'
-                       }
+        if 'Path' in od_settings.df.columns:
+            od_settings.df['Level'] = od_settings.df['Path'].str.split('\\\\').str.len()
 
         else:
-            df['Path'] = df.resourceID.apply(lambda x: self.find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
-            df['Level'] = df['Path'].str.len()
-            df['Path'] = df['Path'].str.join('\\')
-            convert = {'fileStatus': 'Int64',
-                       'volumeID': 'Int64',
-                       'itemIndex': 'Int64',
-                       'sharedItem': 'Int64',
-                       'folderStatus': 'Int64',
-                       'shortcutVolumeID': 'Int64',
-                       'shortcutItemIndex': 'Int64'
-                       }
+            od_settings.df['Path'] = od_settings.df.resourceID.apply(lambda x: self.find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
+            od_settings.df['Level'] = od_settings.df['Path'].str.len()
+            od_settings.df['Path'] = od_settings.df['Path'].str.join('\\')
 
-        parent_resource_dict = df[(df['resourceID'].notnull()) & (df['Type'] == 'Folder')].set_index('resourceID').apply(lambda x: x['Path'] + '\\' + x['Name'], axis=1).to_dict()
+        parent_resource_dict = od_settings.df[(od_settings.df['resourceID'].notnull()) & (od_settings.df['Type'] == 'Folder')].set_index('resourceID').apply(lambda x: x['Path'] + '\\' + x['Name'], axis=1).to_dict()
 
-        for index, row in rbin_df.iterrows():
+        for index, row in od_settings.rbin_df.iterrows():
             parent_resource_id = row['parentResourceId']
             if parent_resource_id in parent_resource_dict:
-                rbin_df.at[index, 'Path'] = parent_resource_dict[parent_resource_id]
+                od_settings.rbin_df.at[index, 'Path'] = parent_resource_dict[parent_resource_id]
 
         if reghive and recbin:
-            rbin = find_deleted.find_deleted(recbin, od_keys, localHashAlgorithm, rbin_df, gui=gui, pb=pb, value_label=value_label)
+            rbin = find_deleted.find_deleted(recbin, od_keys, od_settings.localHashAlgorithm, od_settings.rbin_df, gui=gui, pb=pb, value_label=value_label)
             lrbin_df = pd.DataFrame.from_records(rbin)
-            rbin_df = pd.concat([rbin_df, lrbin_df], ignore_index=True, axis=0)
+            od_settings.rbin_df = pd.concat([od_settings.rbin_df, lrbin_df], ignore_index=True, axis=0)
 
-        df['FileSort'] = ''
-        df['FolderSort'] = ''
+        od_settings.df['FileSort'] = ''
+        od_settings.df['FolderSort'] = ''
 
-        df.loc[df.Type == 'File', ['FileSort']] = df['Name'].str.lower()
-        df.loc[df.Type == 'Folder', ['FolderSort']] = df['Name'].str.lower()
+        od_settings.df.loc[od_settings.df.Type == 'File', ['FileSort']] = od_settings.df['Name'].str.lower()
+        od_settings.df.loc[od_settings.df.Type == 'Folder', ['FolderSort']] = od_settings.df['Name'].str.lower()
 
-        df = df.astype(convert)
-        df['volumeID'].fillna(0, inplace=True)
-        df['itemIndex'].fillna(0, inplace=True)
-        df['shortcutVolumeID'].fillna(0, inplace=True)
-        df['shortcutItemIndex'].fillna(0, inplace=True)
+        od_settings.df['volumeID'].fillna(0, inplace=True)
+        od_settings.df['itemIndex'].fillna(0, inplace=True)
+        od_settings.df['shortcutVolumeID'].fillna(0, inplace=True)
+        od_settings.df['shortcutItemIndex'].fillna(0, inplace=True)
 
-        df['volumeID'] = df['volumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
-        df['volumeID'] = df['volumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
-        df['shortcutVolumeID'] = df['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
-        df['shortcutVolumeID'] = df['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+        try:
+            od_settings.df['volumeID'] = od_settings.df['volumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+            od_settings.df['volumeID'] = od_settings.df['volumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+            od_settings.df['shortcutVolumeID'] = od_settings.df['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
+            od_settings.df['shortcutVolumeID'] = od_settings.df['shortcutVolumeID'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*x.upper()) if x else '')
+        except Exception:
+            pass
 
         cache = {}
         final = []
         is_del = []
 
-        if not df_GraphMetadata_Records.empty:
-            df_GraphMetadata_Records.set_index('resourceID', inplace=True)
+        if 'Metadata' in od_settings.df.columns:
+            df = od_settings.df
+        else:
+            for df in [od_settings.df, offline_db, od_settings.graphMetadata]:
+                df['resourceID_base'] = df['resourceID'].str.split('+').str[0]
+            df = pd.merge(od_settings.df, offline_db.drop(columns=['resourceID']), on='resourceID_base', how='outer').merge(od_settings.graphMetadata.drop(columns=['resourceID']), on='resourceID_base', how='outer')
+            df.drop(columns=['resourceID_base'], inplace=True)
+        df[['Metadata', 'ListSync']] = df[['Metadata', 'ListSync']].fillna('')
 
         for row in df.sort_values(
             by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                 ascending=[False, False, False, True, False, False]).to_dict('records'):
+
             if row['Type'] == 'File':
                 try:
                     if 'diskCreationTime' in row:
-                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'lastKnownPinState','spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'diskCreationTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'lastKnownPinState','spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'diskCreationTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
 
                     elif 'diskLastAccessTime' in row:
-                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime','lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
 
                     elif 'hydrationCount' in row:
-                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
 
                     elif 'HydrationTime' in row:
-                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
 
                     else:
-                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media')}
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
 
                 except Exception as e:
                     if gui:
                         log.error(f'Unable to read dataframe. Something went wrong. {e}')
                     else:
                         print(f'Unable to read dataframe. Something went wrong. {e}')
-                    return {}, rbin_df
-
-                file.setdefault('Metadata', '')
-
-                try:
-                    metadata = df_GraphMetadata_Records.loc[row['resourceID']].to_dict()
-
-                except Exception:
-                    metadata = None
-
-                if metadata:
-                    file['Metadata'] = metadata
+                    return {}, df, od_settings.rbin_df
 
                 folder = cache.setdefault(row['parentResourceID'], {})
                 folder.setdefault('Files', []).append(file)
             else:
                 if 'Scope' in row['Type']:
-                    if row['scopeID'] not in scopeID:
+                    if row['scopeID'] not in od_settings.scopeID:
                         continue
                     scope = {key: row[key] for key in row if key in allowed_keys}
                     folder = cache.get(row['scopeID'], {})
@@ -247,14 +233,14 @@ class OneDriveParser:
                     if 'folderColor' in row:
                         sub_folder = {key: row[key] for key in (
                                       'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
-                                      'itemIndex', 'sharedItem', 'folderColor')}
+                                      'itemIndex', 'sharedItem', 'folderColor', 'ListSync')}
                     else:
                         sub_folder = {key: row[key] for key in (
                                       'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
-                                      'itemIndex', 'sharedItem')}
-                    if row['resourceID'] in scopeID:
-                        scopeID.remove(row['resourceID'])
-                        for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):
+                                      'itemIndex', 'sharedItem', 'ListSync')}
+                    if row['resourceID'] in od_settings.scopeID:
+                        od_settings.scopeID.remove(row['resourceID'])
+                        for s in od_settings.df_scope.loc[od_settings.df_scope['scopeID'] == row['resourceID']].to_dict('records'):
                             scope = {key: s[key] for key in s if key in allowed_keys}
                             scope['MountPoint'] = row['MountPoint']
                             scope['spoPermissions'] = s['spoPermissions']
@@ -271,8 +257,8 @@ class OneDriveParser:
                         folder_merge = cache.setdefault(row['parentResourceID'], {})
                         folder_merge.setdefault('Folders', []).append(temp)
 
-        if not rbin_df.empty:
-            for row in rbin_df.to_dict('records'):
+        if not od_settings.rbin_df.empty:
+            for row in od_settings.rbin_df.to_dict('records'):
                 file = {key: row[key] for key in ('parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'size', 'hash', 'deletingProcess')}
 
                 # Nesting of deleted items
@@ -296,10 +282,4 @@ class OneDriveParser:
 
         cache['Data'] = final
 
-        df_GraphMetadata_Records.reset_index(inplace=True)
-        try:
-            df_GraphMetadata_Records.drop('index', axis=1, inplace=True)
-        except Exception:
-            pass
-
-        return cache, rbin_df
+        return cache, df, od_settings.rbin_df

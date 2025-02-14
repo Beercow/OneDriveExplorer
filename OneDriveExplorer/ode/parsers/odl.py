@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -586,8 +586,6 @@ def process_odl(filename, map):
             odl['Function'] = data.code_function_name.decode('utf8')
             if hasattr(data_block, 'context_data') and data_block.context_data:
                 odl['Context_Data'] = extract_context_data(data_block.context_data)
-            #cstruct.dumpstruct(data_block)
-            #odl['Context_Data'] = extract_context_data(data_block.context_data) if data_block.context_data else ''
             odl['Description'] = description
             odl['Params'] = params
             odl_rows.append(odl)
@@ -603,6 +601,7 @@ def process_odl(filename, map):
             f.seek(-8, 1)
             data_block = f.read(db_size + context_data_len)
 
+    f.close()
     return pd.DataFrame.from_records(odl_rows)
 
 

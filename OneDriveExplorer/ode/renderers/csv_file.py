@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -29,22 +29,11 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def print_csv(df, rbin_df, df_GraphMetadata_Records, name, csv_path, csv_name=False):
+def print_csv(df, rbin_df, name, csv_path, csv_name=False):
     log.info('Started writing CSV file')
 
     if not os.path.exists(csv_path):
         os.makedirs(csv_path)
-
-    convert = {'fileStatus': 'Int64',
-               'volumeID': 'Int64',
-               'itemIndex': 'Int64',
-               'sharedItem': 'Int64',
-               'folderStatus': 'Int64',
-               'localHashAlgorithm': 'Int64',
-               'libraryType': 'Int64'
-               }
-
-    df = df.astype(convert)
 
     df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                         ascending=[False, False, False, True, False, False])
@@ -53,8 +42,6 @@ def print_csv(df, rbin_df, df_GraphMetadata_Records, name, csv_path, csv_name=Fa
 
     if not rbin_df.empty:
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
-
-    merged_df = pd.merge(df, df_GraphMetadata_Records, on='resourceID', how='left', suffixes=('_df1', '_GraphMetadata_Records'))
 
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
 
@@ -66,4 +53,4 @@ def print_csv(df, rbin_df, df_GraphMetadata_Records, name, csv_path, csv_name=Fa
     if file_extension == 'previous' and not csv_name:
         csv_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv"
 
-    merged_df.to_csv(csv_path + '/' + csv_file, index=False)
+    df.to_csv(csv_path + '/' + csv_file, index=False, encoding='utf-8')

@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2024
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -62,6 +62,7 @@ from ode.renderers.project import load_project
 from ode.renderers.project import load_images
 import ode.parsers.dat as dat_parser
 from ode.parsers.csv_file import parse_csv
+import ode.parsers.offline as SQLiteTableExporter
 import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
 import ode.parsers.sqlite_db as sqlite_parser
@@ -104,7 +105,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2024.11.20"
+__version__ = "2025.02.14"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -125,8 +126,6 @@ dfs_to_concat = []
 folder_type = []
 dragging_sash = False
 sync_message = None
-df_GraphMetadata_Records = pd.DataFrame(columns=['fileName', 'resourceID', 'graphMetadataJSON', 'spoCompositeID',
-                                                 'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount'])
 
 if getattr(sys, 'frozen', False):
     # If the application is run as a bundle, the PyInstaller bootloader
@@ -1423,7 +1422,7 @@ class Result:
             self.type.append(hdd_big_img)
             self.folder = False
 
-        elif image_key in [str(od_folder_img), str(tenant_sync_img)]:
+        elif image_key in [str(od_folder_img), str(od_p_folder_img), str(tenant_sync_img)]:
             spoPermissions = next(
                 (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
                 ''
@@ -1432,7 +1431,10 @@ class Result:
             if '+' in self.args[0][2]:
                 self.type.append(building_big_img)
             else:
-                self.type.append(cloud_big_img)
+                if image_key == str(od_p_folder_img):
+                    self.type.append(cloud_p_big_img)
+                else:
+                    self.type.append(cloud_big_img)
             if not set(self.lock_list).intersection(spoPermissions) and '!' not in self.args[0][2]:
                 self.status.append(locked_big_img)
             scope_item = next((value for value in self.args[0] if 'scopeid:' in value.lower()), None)
@@ -1471,7 +1473,6 @@ class Result:
         )
 
         # Might need to look into this.
-        #if num == '7' and len(values_list) > 12:
         if num == '7' and len(values_list) > 13:
             shortcut_item = next((item for item in self.args[0] if 'shortcutitemindex:' in item.lower()), None)
             if shortcut_item and int(shortcut_item.split(' ')[1]) > 0:
@@ -2141,55 +2142,57 @@ class FileManager:
             tags = ''
         details.config(state='normal')
         details.delete('1.0', tk.END)
+        for tab_index in reversed(range(1, details_frame.tab_count())):
+            details_frame.delete_tab(tab_index)
         try:
             for line in values:
-                if line == '' or 'folderColor:' in line:
+                if line == '' or line.startswith(('Metadata:', 'ListSync:', 'folderColor:')):
+                    if line.startswith('Metadata:'):
+                        _, value = line.split(": ", 1)
+                        if not value:
+                            continue
+                        meta_result = ast.literal_eval(value)
+                        tab2 = details_frame.add_tab('Metadata')
+                        self.meta_frame = details_frame.add_frame(tab2)
+                        self.get_resourceID(meta_result)
+                        continue
+                    if line.startswith('ListSync:'):
+                        _, value = line.split(": ", 1)
+                        if not value:
+                            continue
+                        offline_result = ast.literal_eval(value)
+                        self.get_resourceID(offline_result)
+                        continue
                     continue
                 details.insert(tk.END, f'{line}\n', tags)
         except IndexError:
             pass
 
         details.config(state='disable')
-        if len(values) > 4:
-            details_frame.delete_tab(2)
-            details_frame.delete_tab(1)
 
-            # Check if 'fileStatus' or 'inRecycleBin' is in any value
-            condition_met = any('fileStatus' in value or 'inRecycleBin' in value for value in values)
-
-            if condition_met and not df_GraphMetadata_Records.empty:
-                line_number = 4
-                start_index = f"{line_number}.0"
-                end_index = f"{line_number + 1}.0"
-                pattern = r'resourceID: |resourceId: '
-                line_value = re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
-                df_result = df_GraphMetadata_Records[df_GraphMetadata_Records['resourceID'] == line_value]
-                if not df_result.empty:
-                    tab2 = details_frame.add_tab('Metadata')
-                    self.meta_frame = details_frame.add_frame(tab2)
-                    self.get_resourceID(df_GraphMetadata_Records)
-
-    def get_resourceID(self, df):
+    def get_resourceID(self, df_result):
         self.header_labels = []
         self.key_labels = []
         self.value_labels = []
-        line_number = 4
-        start_index = f"{line_number}.0"
-        end_index = f"{line_number + 1}.0"
-        pattern = r'resourceID: |resourceId: '
-        line_value = re.split(pattern, details.get(start_index, end_index))[1].replace('\n', '')
-        df_result = df[df['resourceID'] == line_value]
         row_num = 0
-        for item in df_result.to_dict(orient='records'):
-            for key, value in item.items():
-                if key == 'graphMetadataJSON':
-                    self.get_graphMetadataJSON(value)
-                    continue
-                if key == 'filePolicies':
-                    self.get_filePolicies(value)
-                    continue
+        for key, value in df_result.items():
+            if key == 'graphMetadataJSON':
+                self.get_graphMetadataJSON(value)
+                continue
+            if key == 'filePolicies':
+                self.get_filePolicies(value)
+                continue
+            if key == 'MediaServiceMetadata':
+                self.get_ocr(value)
+                continue
+            if key == 'SharedWithDetails':
+                self.get_shared_with(value)
+                continue
+            try:
                 self.add_label_to_frame(self.meta_frame, key, value, row_num)
                 row_num += 1
+            except Exception:
+                pass
 
     def get_graphMetadataJSON(self, value):
         if not value:
@@ -2237,6 +2240,54 @@ class FileManager:
             row_num += 1
 
         return policy_frame
+
+    def get_ocr(self, value):
+        if not value:
+            return
+        tab5 = details_frame.add_tab('OCR_Data')
+        self.ocr_frame = details_frame.add_textbox(tab5)
+        self.ocr_frame.insert(tk.END, f'{value}')
+        self.ocr_frame.configure(font=default_font, background=bgf, foreground=fgf, relief='flat', undo=False, spacing3=3, width=50, padx=10, pady=10, state='disable')
+
+        return self.ocr_frame
+
+    def get_shared_with(self, value):
+        if not value:
+            return
+        formatted_data = [
+            (k.split("|")[-1], self.convert_timestamp(v["DateTime"]), v["LoginName"])
+            for k, v in value.items()
+        ]
+
+        tab6 = details_frame.add_tab('SharedWith')
+
+        self.tree = details_frame.add_treeview(tab6, columns=("Shared with", "Date", "Shared by"))
+        self.tree.heading("Shared with", text="Shared with")
+        self.tree.heading("Date", text="Date")
+        self.tree.heading("Shared by", text="Shared by")
+
+        for row in formatted_data:
+            self.tree.insert("", tk.END, values=row)
+
+        self.autosize_and_expand(self.tree)
+
+        return self.tree
+
+    # Function to convert SharePoint timestamp to readable format
+    def convert_timestamp(self, sp_timestamp):
+        timestamp = int(sp_timestamp.strip("/Date()")) // 1000  # Convert to seconds
+        return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+
+    def autosize_and_expand(self, tree):
+        for col in tree["columns"]:
+            tree.column(col, width=tkFont.Font().measure(col), stretch=True)
+
+            max_width = 100  # Minimum width
+            for item in tree.get_children():
+                text = tree.item(item, "values")[tree["columns"].index(col)]
+                max_width = max(max_width, tkFont.Font().measure(text) + 10)
+
+            tree.column(col, width=max_width, minwidth=max_width)
 
     def add_list_to_frame(self, parent_frame, label_text, items, row_num):
         header_label = LabelSeparator(parent_frame, text=label_text, width=15)
@@ -3013,29 +3064,71 @@ class DetailsFrame(ttk.Frame):
         self.grid_columnconfigure(0, weight=1)
         self.text_boxes = []  # Keep track of text boxes for updating
         self.frames = []
-        self.current_bg = bgf
+        self.treeviews = []  # Track treeviews for potential updates
+        self.current_bg = style.lookup('Treeview', 'background')  # Default background color
+
+    def tab_count(self):
+        """Returns the number of tabs in the notebook."""
+        return len(self.notebook.tabs())
 
     def add_tab(self, tab_name):
+        """Adds a new tab and returns its frame."""
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text=tab_name)
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
         return frame
 
     def delete_tab(self, index):
+        """Deletes a tab by index if valid."""
         if 0 <= index < self.notebook.index("end"):
             self.notebook.forget(index)
 
     def add_textbox(self, tab):
+        """Adds a text box with a scrollbar to a tab."""
         text_box = tk.Text(tab)
         text_box_scroll = ttk.Scrollbar(tab, orient="vertical", command=text_box.yview)
         text_box.configure(yscrollcommand=text_box_scroll.set)
         text_box.tag_configure('red', foreground="red")
         text_box.grid(row=0, column=0, sticky="nsew")
-        text_box_scroll.grid(row=0, column=1, sticky='nsew')
+        text_box_scroll.grid(row=0, column=1, sticky='ns')
         tab.grid_rowconfigure(0, weight=1)
         tab.grid_columnconfigure(0, weight=1)
+        self.text_boxes.append(text_box)
         return text_box
 
+    def add_treeview(self, tab, columns=("Column1", "Column2")):
+        """Adds a ttk.Treeview with a scrollbar to a tab."""
+        frame = ttk.Frame(tab)
+        frame.grid(row=0, column=0, sticky="nsew")
+        tab.grid_rowconfigure(0, weight=1)
+        tab.grid_columnconfigure(0, weight=1)
+
+        tree = ttk.Treeview(frame, columns=columns, show="headings")
+
+        vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+
+        hsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        tree.configure(xscrollcommand=hsb.set)
+
+        # Configure columns
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=100, anchor="center")
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        self.treeviews.append(tree)
+        return tree
+
     def add_frame(self, tab):
+        """Adds a frame inside a text box on a tab."""
         text_box = tk.Text(tab)
         text_box_scroll = ttk.Scrollbar(tab, orient="vertical", command=text_box.yview)
         text_box.configure(yscrollcommand=text_box_scroll.set)
@@ -3043,7 +3136,7 @@ class DetailsFrame(ttk.Frame):
         frame.configure(bg=self.current_bg, padx=10, pady=10)
         text_box.window_create("1.0", window=frame)
         text_box.grid(row=0, column=0, sticky="nsew")
-        text_box_scroll.grid(row=0, column=1, sticky='nsew')
+        text_box_scroll.grid(row=0, column=1, sticky='ns')
         tab.grid_rowconfigure(0, weight=1)
         tab.grid_columnconfigure(0, weight=1)
         text_box.configure(background=self.current_bg, relief='flat',
@@ -3052,13 +3145,13 @@ class DetailsFrame(ttk.Frame):
         self.text_boxes.append(text_box)
         return frame
 
-    def update_textbox_theme(self, bg):
-        # Update stored theme settings
+    def update_textbox_theme(self, bg, fg):
+        """Updates the background color of all stored text boxes and frames."""
         self.current_bg = bg
         for frame in self.frames:
             frame.configure(background=bg)
         for text_box in self.text_boxes:
-            text_box.configure(background=bg)
+            text_box.configure(background=bg, foreground=fg)
 
 
 class CreateImage():
@@ -3343,7 +3436,7 @@ def pane_config():
     pwv.config(background=bg, sashwidth=6)
     pwh.config(background=bgf, sashwidth=6)
     details.config(background=bgf, foreground=fgf)
-    details_frame.update_textbox_theme(bgf)
+    details_frame.update_textbox_theme(bgf, fgf)
     style.configure('Result.Treeview', rowheight=40)
     tv_pane_frame.configure(background=bgf)
     breadcrumb.update_theme()
@@ -3468,8 +3561,8 @@ def clear_search():
     details.config(state='normal')
     details.delete('1.0', tk.END)
     details.config(state='disable')
-    details_frame.delete_tab(2)
-    details_frame.delete_tab(1)
+    for tab_index in reversed(range(1, details_frame.tab_count())):
+        details_frame.delete_tab(tab_index)
 
 
 def delete_item_and_descendants(tree, item=''):
@@ -3502,8 +3595,8 @@ def clear_all():
     search_entry.configure(state="disabled")
     search_entry.configure(cursor='arrow')
     btn.configure(state="disabled")
-    details_frame.delete_tab(2)
-    details_frame.delete_tab(1)
+    for tab_index in reversed(range(1, details_frame.tab_count())):
+        details_frame.delete_tab(tab_index)
     delete_item_and_descendants(tv)
     tv.delete(*tv.get_children())
     tv.grid(row=1, column=0, sticky="nsew")
@@ -3546,7 +3639,7 @@ def json_count(item='', file_count=0, del_count=0, folder_count=0):
     return file_count, del_count, folder_count
 
 
-def parent_child(d, parent_id=None, meta=False):
+def parent_child(d, parent_id=None, account=False):
     global dfs_to_concat
     if parent_id is None:
         # This line is only for the first call of the function
@@ -3588,23 +3681,22 @@ def parent_child(d, parent_id=None, meta=False):
                 if '+' in c['scopeID']:
                     image = tenant_sync_img
                 else:
-                    image = od_folder_img
+                    if account == 'Personal':
+                        image = od_p_folder_img
+                    else:
+                        image = od_folder_img
                 text = f" {c['MountPoint']}" if c['MountPoint'] != '' else f" {c['scopeID']}"
                 parent_child(c, tv.insert(parent_id,
                                           "end",
                                           image=image,
                                           text=text,
-                                          values=(z)), meta)
+                                          values=(z)), account)
 
     if 'Files' in d:
         for c in d['Files']:
             x = (c['lastChange'], c['size'])
-            y = [f'{k}: {v}' for k, v in c.items() if 'lastChange' not in k and 'size' not in k and 'Metadata' not in k]
+            y = [f'{k}: {v}' for k, v in c.items() if 'lastChange' not in k and 'size' not in k]
             z = x + tuple(y)
-
-            if meta:
-                dfs_to_concat.extend([{**v, 'resourceID': c['resourceID']} for k, v in c.items() if isinstance(v, dict) and 'Metadata' in k])
-
             if c['fileStatus'] == 6:
                 image = not_sync_file_img
             elif c['fileStatus'] == 7:
@@ -3645,7 +3737,7 @@ def parent_child(d, parent_id=None, meta=False):
                                       0,
                                       image=s_image[image_sha1],
                                       text=f" {c['Name']}",
-                                      values=(z)), meta)
+                                      values=(z)), account)
 
     if 'Scope' in d:
         for c in d['Scope']:
@@ -3687,7 +3779,7 @@ def parent_child(d, parent_id=None, meta=False):
                                           0,
                                           image=image,
                                           text=f" {b['Name']}",
-                                          values=(z)), meta)
+                                          values=(z)), account)
 
 
 def live_system(menu):
@@ -3705,97 +3797,52 @@ def live_system(menu):
     value_label['text'] = "Searching for OneDrive. Please wait..."
     pb.start()
 
-    d = {}
+    profile = {}
     users_folder = os.path.expandvars("%SystemDrive%\\Users\\")
     rec_folder = os.path.expandvars("%SystemDrive%\\$Recycle.Bin\\")
-    user_folders = [folder for folder in os.listdir(users_folder) if os.path.isdir(os.path.join(users_folder, folder))]
-
-    settings_folders = []
-    logs_folders = []
-
-    sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>Personal|Business[0-9])$')
+    user_names = [folder for folder in os.listdir(users_folder) if os.path.isdir(os.path.join(users_folder, folder))]
+    settings_dir = re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$')
+    listsync_settings_dir = re.compile(r'\\ListSync\\(?P<account>Business[0-9])\\settings$')
+    logs_dir = re.compile(r'\\(?P<logs>logs)$')
 
     if os.path.exists(rec_folder):
         recbin = rec_folder
 
-    for user in user_folders:
-        settings_path = os.path.join(users_folder, user, "AppData\\Local\\Microsoft\\OneDrive\\settings")
-        logs_path = os.path.join(users_folder, user, "AppData\\Local\\Microsoft\\OneDrive\\logs")
-        if os.path.exists(settings_path):
-            for path, subdirs, files in os.walk(settings_path):
-                sql_find = re.findall(sql_dir, path)
-                if sql_find:
-                    d.setdefault(sql_find[0][0], {})
-                    d[sql_find[0][0]].setdefault('sql', {})[f'{sql_find[0][1]}'] = path
-                for name in files:
-                    if '.dat' in name:
-                        d.setdefault(user, {})
-                        d[user].setdefault('files', []).append(os.path.join(path, name))
-            settings_folders.append(settings_path)
-        if os.path.exists(logs_path):
-            d.setdefault(user, {})
-            d[user].setdefault('logs', []).append(logs_path)
-            logs_folders.append(logs_path)
+    for user in user_names:
+        profile.setdefault(user, {})
+        od_profile = os.path.join(users_folder, user, "AppData\\Local\\Microsoft\\OneDrive")
 
-    for key, value in d.items():
-        filenames = []
-        value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
-        pb.configure(mode='indeterminate')
-        pb.start()
-        reghive = live_hive(key, os.path.splitdrive(os.path.join(users_folder, key))[1].replace('\\', '/'))
-        for k, v in value.items():
-            if k == 'files':
-                filenames = v
+        for path, subdirs, files in os.walk(od_profile):
+            settings_find = re.findall(settings_dir, path)
+            listsync_find = re.findall(listsync_settings_dir, path)
+            logs_find = re.findall(logs_dir, path)
 
-                if len(filenames) != 0:
-                    logging.info(f'Parsing OneDrive dat for {key}')
-                    menubar.entryconfig("File", state="disabled")
-                    menubar.entryconfig("Options", state="disabled")
-                    menubar.entryconfig("View", state="disabled")
-                    menubar.entryconfig("Help", state="disabled")
-                    search_entry.configure(state="disabled")
-                    search_entry.configure(cursor='arrow')
-                    btn.configure(state="disabled")
+            if settings_find:
+                profile[user].setdefault(settings_find[0], {})
+                profile[user][settings_find[0]].setdefault('settings', '')
+                profile[user][settings_find[0]]['settings'] = path
 
-                    for filename in filenames:
-                        x = menu.entrycget(0, "label")
-                        start_parsing(x, filename, reghive, recbin, True)
+            if listsync_find:
+                profile[user].setdefault(listsync_find[0], {})
+                profile[user][listsync_find[0]].setdefault('listsync', '')
+                profile[user][listsync_find[0]]['listsync'] = path
 
-            if k == 'sql':
-                logging.info(f'Parsing OneDrive SQLite for {key}')
-                for account, sql_dir in v.items():
-                    x = 'Load from SQLite'
-                    start_parsing(x, sql_dir, reghive, recbin, True)
+            if logs_find:
+                profile[user].setdefault(logs_find[0], [])
+                profile[user][logs_find[0]].append(path)
 
-    if menu_data['odl'] is True:
-        for key, value in d.items():
-            for k, v in value.items():
-                if k == 'logs':
-                    logs = v
-                    pb.stop()
-                    odl = parse_odl(logs[0], key, pb, value_label, gui=True)
-                    tb = ttk.Frame()
+    for key, value in profile.items():
+        if has_settings(value):
+            value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
+            pb.configure(mode='indeterminate')
+            pb.start()
+            reghive = live_hive(key, os.path.splitdrive(os.path.join(users_folder, key))[1].replace('\\', '/'))
 
-                    if not odl.empty:
-                        pt = pandastablepatch.MyTable(tb,
-                                                      dataframe=odl,
-                                                      maxcellwidth=900,
-                                                      showtoolbar=False,
-                                                      showstatusbar=False,
-                                                      enable_menus=True,
-                                                      editable=False)
-                        tv_frame.add(tb, text=f'{key} Logs  ')
-                        pt.adjustColumnWidths()
-                        pt.show()
-                        user_logs.setdefault(f'{key}_logs.csv', pt)
+        else:
+            reghive = ''
 
-                    if menu_data['odl_save'] is True:
-                        value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
-                        pb.configure(mode='indeterminate')
-                        pb.start()
-                        log_output = f'{menu_data["path"]}/{key}_logs.csv'
-                        odl.to_csv(log_output, index=False)
-                        pb.stop()
+        x = 'Profile'
+        start_parsing(x, f'{users_folder}{key}\\AppData\\Local\\Microsoft\\OneDrive', reghive, recbin, True, value, key)
 
     reghive = ''
     recbin = ''
@@ -3824,6 +3871,14 @@ def live_system(menu):
         projmenu.entryconfig("SaveAs", state='normal')
 
 
+def has_settings(data):
+    if isinstance(data, dict):
+        if 'settings' in data:
+            return True
+        return any(has_settings(v) for v in data.values())
+    return False
+
+
 def open_dat(menu):
     global reghive
     global recbin
@@ -3839,7 +3894,7 @@ def open_dat(menu):
         else:
             root.wait_window(hive(root).win)
 
-        x = menu.entrycget(0, "label")
+        x = menu.entrycget(2, "label")
         message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, filename, reghive, recbin,),
@@ -3852,7 +3907,7 @@ def open_dat(menu):
 def read_sql(menu):
     global reghive
     global recbin
-    folder_name = filedialog.askdirectory(initialdir="/", title="Open")
+    folder_name = filedialog.askdirectory(initialdir="/", title="Open SQLite folder")
 
     if folder_name:
         if keyboard.is_pressed('shift') or menu_data['hive']:
@@ -3860,7 +3915,7 @@ def read_sql(menu):
         else:
             root.wait_window(hive(root).win)
 
-        x = menu.entrycget(1, "label")
+        x = menu.entrycget(3, "label")
         message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, folder_name, reghive, recbin,),
@@ -3868,14 +3923,36 @@ def read_sql(menu):
     reghive = ''
 
 
+def open_profile(menu):
+    global reghive
+    global recbin
+
+    folder_name = filedialog.askdirectory(initialdir="/", title="Open Profile folder")
+
+    if folder_name:
+        if keyboard.is_pressed('shift') or menu_data['hive']:
+            pass
+        else:
+            root.wait_window(hive(root).win)
+
+        x = menu.entrycget(0, "label")
+        message.unbind('<Double-Button-1>', bind_id)
+        threading.Thread(target=start_parsing,
+                         args=(x, folder_name, reghive, recbin,),
+                         daemon=True).start()
+
+    reghive = ''
+    recbin = ''
+
+
 def import_json(menu):
     filename = filedialog.askopenfile(initialdir="/",
-                                      title="Import JSON",
+                                      title="Import OD JSON",
                                       filetypes=(("OneDrive json file",
                                                   "*.json"),))
 
     if filename:
-        x = menu.entrycget(2, "label")
+        x = menu.entrycget(4, "label")
         message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, filename,),
@@ -3884,12 +3961,12 @@ def import_json(menu):
 
 def import_csv(menu):
     filename = filedialog.askopenfile(initialdir="/",
-                                      title="Import CSV",
+                                      title="Import OD CSV",
                                       filetypes=(("OneDrive csv file",
                                                   "*.csv"),))
 
     if filename:
-        x = menu.entrycget(3, "label")
+        x = menu.entrycget(5, "label")
         message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, filename,),
@@ -3897,7 +3974,7 @@ def import_csv(menu):
 
 
 def open_odl():
-    folder_name = filedialog.askdirectory(initialdir="/", title="Open")
+    folder_name = filedialog.askdirectory(initialdir="/", title="Open log folder")
 
     if folder_name:
         threading.Thread(target=odl,
@@ -3907,7 +3984,7 @@ def open_odl():
 
 def import_odl():
     filename = filedialog.askopenfile(initialdir="/",
-                                      title="Import CSV",
+                                      title="Import log CSV",
                                       filetypes=(("ODL csv file",
                                                   "*.csv"),))
     if filename:
@@ -3931,6 +4008,7 @@ def odl(folder_name, csv=False):
     start = time.time()
 
     if csv:
+        pname = folder_name.name.replace('/', '\\').split(os.sep)[-1].split('_')[0]
         key = folder_name.name.split('/')[-1].split('_')[0]
         header_list = ['Profile',
                        'Key_Type',
@@ -3970,12 +4048,13 @@ def odl(folder_name, csv=False):
             odl = pd.DataFrame()
             logging.error(f'{folder_name.name} not a valid ODL csv.')
     else:
+        pname = folder_name.replace('/', '\\').split(os.sep)[-2]
         key = re.findall(key_find, folder_name)
         if len(key) == 0:
             key = 'ODL'
         else:
             key = key[-1]
-        odl = parse_odl(folder_name, key, pb, value_label, gui=True)
+        odl = parse_odl(folder_name, pname, pb, value_label, gui=True)
 
     tb = ttk.Frame()
 
@@ -3988,15 +4067,15 @@ def odl(folder_name, csv=False):
                                       enable_menus=True,
                                       editable=False)
         pt.adjustColumnWidths()
-        tv_frame.add(tb, text=f'{key} Logs  ')
+        tv_frame.add(tb, text=f'{pname} Logs  ')
         pt.show()
-        user_logs.setdefault(f'{key}_logs.csv', pt)
+        user_logs.setdefault(f'{pname}_logs.csv', pt)
     pb.stop()
 
     if menu_data['odl_save'] is True and not csv:
-        log_output = f'{menu_data["path"]}/{key}_logs.csv'
+        log_output = f'{menu_data["path"]}/{pname}_logs.csv'
         try:
-            value_label['text'] = f"Saving {key}_logs.csv. Please wait...."
+            value_label['text'] = f"Saving {pname}_logs.csv. Please wait...."
             pb.configure(mode='indeterminate')
             pb.start()
             odl.to_csv(log_output, index=False)
@@ -4033,8 +4112,7 @@ def save_settings():
         json.dump(menu_data, jsonfile)
 
 
-def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
-    global df_GraphMetadata_Records
+def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, live_profile=False, user=False):
     breadcrumb.clear()
     if len(tv.selection()) > 0:
         tv.selection_remove(tv.selection()[0])
@@ -4051,30 +4129,18 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
     if not live:
         widgets_disable()
     start = time.time()
-    dat = False
 
     if x == 'Load <UserCid>.dat' + (' '*10):
         account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
-        name = os.path.split(filename)[1]
+        name = f'{account}_{os.path.split(filename)[1]}'
 
-        df, rbin_df, df_scope, scopeID, localHashAlgorithm = DATParser.parse_dat(filename, account,
-                                                                                 gui=True, pb=pb,
-                                                                                 value_label=value_label)
+        od_settings = DATParser.parse_dat(filename, account,
+                                          gui=True, pb=pb,
+                                          value_label=value_label)
 
-        if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df,
-                                                           df_scope,
-                                                           df_GraphMetadata_Records,
-                                                           scopeID, filename,
-                                                           rbin_df, account,
-                                                           reghive,
-                                                           recbin,
-                                                           localHashAlgorithm=localHashAlgorithm,
-                                                           gui=True,
-                                                           pb=pb,
-                                                           value_label=value_label)
-
-        dat = True
+        if od_settings:
+            if not od_settings.df.empty:
+                parse_results(od_settings, filename, name, start, x, reghive, recbin, pd.DataFrame(columns=['resourceID', 'ListSync']), gui=True, pb=pb, value_label=value_label)
 
     elif x == 'Load from SQLite':
         filename = filename.replace('/', '\\')
@@ -4088,113 +4154,152 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
         pb.configure(mode='indeterminate')
         value_label['text'] = 'Building folder list. Please wait....'
         pb.start()
-        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, localHashAlgorithm = SQLiteParser.parse_sql(filename)
+        od_settings = SQLiteParser.parse_sql(filename)
 
-        if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df,
-                                                           df_scope,
-                                                           df_GraphMetadata_Records,
-                                                           scopeID,
-                                                           filename,
-                                                           rbin_df,
-                                                           account,
-                                                           reghive,
-                                                           recbin,
-                                                           localHashAlgorithm=localHashAlgorithm,
-                                                           gui=True,
-                                                           pb=pb,
-                                                           value_label=value_label)
+        if od_settings:
+            if not od_settings.df.empty:
+                parse_results(od_settings, filename, od_settings.account, start, x, reghive, recbin, pd.DataFrame(columns=['resourceID', 'ListSync']), gui=True, pb=pb, value_label=value_label)
+
+    elif x == 'Profile':
+        if live:
+            profile = live_profile
+        else:
+            profile = {}
+            filename = filename.replace('/', '\\')
+            settings_dir = re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$')
+            listsync_settings_dir = re.compile(r'\\ListSync\\(?P<account>Business[0-9])\\settings$')
+            logs_dir = re.compile(r'\\(?P<logs>logs)$')
+
+            for path, subdirs, files in os.walk(filename):
+                settings_find = re.findall(settings_dir, path)
+                listsync_find = re.findall(listsync_settings_dir, path)
+                logs_find = re.findall(logs_dir, path)
+
+                if settings_find:
+                    profile.setdefault(settings_find[0], {})
+                    profile[settings_find[0]].setdefault('settings', '')
+                    profile[settings_find[0]]['settings'] = path
+
+                if listsync_find:
+                    profile.setdefault(listsync_find[0], {})
+                    profile[listsync_find[0]].setdefault('listsync', '')
+                    profile[listsync_find[0]]['listsync'] = path
+
+                if logs_find:
+                    profile.setdefault(logs_find[0], [])
+                    profile[logs_find[0]].append(path)
+
+        for key, value in profile.items():
+            offline_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
+            if key == 'logs':
+                if menu_data['odl'] is True:
+                    for folder_name in value:
+                        if user:
+                            pname = f'{user}_{folder_name.split(os.sep)[-2]}'
+                        else:
+                            pname = folder_name.split(os.sep)[-2]
+
+                        odl = parse_odl(folder_name, pname, pb, value_label, gui=True)
+
+                        tb = ttk.Frame()
+
+                        if not odl.empty:
+                            pt = pandastablepatch.MyTable(tb,
+                                                          dataframe=odl,
+                                                          maxcellwidth=900,
+                                                          showtoolbar=False,
+                                                          showstatusbar=False,
+                                                          enable_menus=True,
+                                                          editable=False)
+                            tv_frame.add(tb, text=f'{pname} Logs  ')
+                            pt.adjustColumnWidths()
+                            pt.show()
+                            user_logs.setdefault(f'{pname}_logs.csv', pt)
+
+                        if menu_data['odl_save'] is True:
+                            value_label['text'] = f"Saving {pname}_logs.csv. Please wait...."
+                            pb.configure(mode='indeterminate')
+                            pb.start()
+                            log_output = f'{menu_data["path"]}/{pname}_logs.csv'
+                            odl.to_csv(log_output, index=False)
+                            pb.stop()
+
+                continue
+
+            # First, process "listsync" if it exists
+            if "listsync" in value:
+                v = value["listsync"].replace('/', '\\')
+                pb.configure(mode='indeterminate')
+                value_label['text'] = 'Gathering offline data. Please wait....'
+                pb.start()
+                exporter = SQLiteTableExporter.SQLiteTableExporter(f'{v}\\Microsoft.ListSync.db')
+                offline_db = exporter.get_offline_data()
+                pb.stop()
+
+            # Then process "settings" if it exists
+            if "settings" in value:
+                v = value["settings"].replace('/', '\\')
+                pb.configure(mode='indeterminate')
+                value_label['text'] = 'Building folder list. Please wait....'
+                pb.start()
+                for path, subdirs, files in os.walk(v):
+                    for name in files:
+                        if name.endswith('.dat'):
+                            od_settings = DATParser.parse_dat(f'{v}\\{name}', key,
+                                                              gui=True, pb=pb,
+                                                              value_label=value_label)
+                            if od_settings:
+                                if not od_settings.df.empty:
+                                    if user:
+                                        pname = f'{user}_{od_settings.account}_{name}'
+                                    else:
+                                        pname = f'{od_settings.account}_{name}'
+                                    parse_results(od_settings, f'{v}\\{name}', pname, start, x, reghive, recbin, pd.DataFrame(columns=['resourceID', 'ListSync']), gui=True, pb=pb, value_label=value_label)
+                pb.configure(mode='indeterminate')
+                value_label['text'] = 'Building folder list. Please wait....'
+                pb.start()
+                od_settings = SQLiteParser.parse_sql(v)
+                if od_settings:
+                    if not od_settings.df.empty:
+                        if user:
+                            pname = f'{user}_{key}'
+                        else:
+                            pname = key
+                        parse_results(od_settings, v, pname, start, x, reghive, recbin, offline_db, gui=True, pb=pb, value_label=value_label)
+                pb.stop()
 
         pb.stop()
-        dat = True
+        pb.configure(mode='determinate')
+        value_label['text'] = 'Profile complete'
 
     elif x == 'Import JSON':
         cache = json.load(filename)
         df = pd.DataFrame()
         rbin_df = pd.DataFrame()
 
+        pb.stop()
+        pb.configure(mode='indeterminate')
+        value_label['text'] = "Building tree. Please wait..."
+        pb.start()
+        parent_child(cache)
+        pb.stop()
+
+        od_counts(filename.name, df, rbin_df, start, x)
+
     elif x == 'Import CSV':
         pb.configure(mode='indeterminate')
         value_label['text'] = 'Building folder list. Please wait....'
         pb.start()
         account = ''
-        df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID = parse_csv(filename)
+        od_settings = parse_csv(filename)
 
-        if not df.empty:
-            cache, rbin_df = OneDriveParser.parse_onedrive(df,
-                                                           df_scope,
-                                                           df_GraphMetadata_Records,
-                                                           scopeID, filename.name,
-                                                           rbin_df,
-                                                           account,
-                                                           reghive,
-                                                           recbin,
-                                                           localHashAlgorithm=False,
-                                                           gui=True,
-                                                           pb=pb,
-                                                           value_label=value_label)
+        if od_settings:
+            if not od_settings.df.empty:
+                parse_results(od_settings, filename.name, '', start, x, reghive, recbin, od_settings.offline_db, gui=True, pb=pb, value_label=value_label, save=False)
 
     elif x == 'Project':
         name = filename
         pass
-
-    file_count = df.Type.value_counts().get('File', 0) if not df.empty else 0
-    folder_count = df.Type.value_counts().get('Folder', 0) if not df.empty else 0
-    del_count = len(rbin_df) if not rbin_df.empty else 0
-
-    if not df.empty or x == 'Import JSON':
-        pb.configure(mode='indeterminate')
-        value_label['text'] = "Building tree. Please wait..."
-        pb.start()
-        if x == 'Import JSON':
-            parent_child(cache, None, True)
-            df_GraphMetadata_Records = pd.DataFrame(dfs_to_concat)
-            curItem = tv.get_children()[-1]
-            file_count, del_count, folder_count = json_count(item=curItem)
-        else:
-            parent_child(cache)
-
-        pb.stop()
-        pb.configure(mode='determinate')
-
-        if menu_data['json'] and dat:
-            value_label['text'] = "Saving JSON. Please wait...."
-            pb.configure(mode='indeterminate')
-            pb.start()
-            try:
-                print_json(cache, name, menu_data['pretty'], menu_data['path'])
-            except Exception as e:
-                logging.warning(f'Unable to save json. {e}')
-            pb.stop()
-
-        if menu_data['csv'] and dat:
-            value_label['text'] = "Saving CSV. Please wait...."
-            pb.configure(mode='indeterminate')
-            pb.start()
-            try:
-                print_csv(df, rbin_df, df_GraphMetadata_Records, name, menu_data['path'])
-            except Exception as e:
-                logging.warning(f'Unable to save csv. {e}')
-            pb.stop()
-
-        if menu_data['html'] and dat:
-            value_label['text'] = "Saving HTML. Please wait...."
-            pb.configure(mode='indeterminate')
-            pb.start()
-            try:
-                print_html(df, rbin_df, name, menu_data['path'])
-            except Exception as e:
-                logging.warning(f'Unable to save html. {e}')
-            pb.stop()
-
-        pb['value'] = 0
-        pb.configure(mode='determinate')
-        value_label['text'] = f'{file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
-        try:
-            filename = filename.replace('/', '\\')
-        except Exception:
-            filename = filename.name.replace('/', '\\')
-        logging.info(f'{filename}: {file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
 
     else:
         try:
@@ -4227,6 +4332,83 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False):
 
     if not live:
         widgets_normal()
+
+
+def parse_results(od_settings, filename, key, start, x, reghive, recbin, offline_db, gui, pb, value_label, save=True):
+    pb.configure(mode='indeterminate')
+    value_label['text'] = 'Building folder list. Please wait....'
+    pb.start()
+    cache, df, rbin_df = OneDriveParser.parse_onedrive(od_settings,
+                                                       filename,
+                                                       reghive,
+                                                       recbin,
+                                                       offline_db,
+                                                       gui=True,
+                                                       pb=pb,
+                                                       value_label=value_label)
+
+    pb.stop()
+    pb.configure(mode='indeterminate')
+    value_label['text'] = "Building tree. Please wait..."
+    pb.start()
+    if cache:
+        parent_child(cache, None, od_settings.account)
+    pb.stop()
+
+    od_counts(key, df, rbin_df, start, x)
+    if save:
+        save_output(cache, df, rbin_df, key)
+
+
+def od_counts(filename, df, rbin_df, start, x):
+    if x == 'Import JSON':
+        curItem = tv.get_children()[-1]
+        file_count, del_count, folder_count = json_count(item=curItem)
+    else:
+        file_count = df.Type.value_counts().get('File', 0) if not df.empty else 0
+        folder_count = df.Type.value_counts().get('Folder', 0) if not df.empty else 0
+        del_count = len(rbin_df) if not rbin_df.empty else 0
+
+    pb['value'] = 0
+    pb.configure(mode='determinate')
+    value_label['text'] = f'{file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds'
+    logging.info(f'{filename}: {file_count} file(s) - {del_count} deleted, {folder_count} folder(s) in {format((time.time() - start), ".4f")} seconds')
+
+
+def save_output(cache, df, rbin_df, name):
+    if menu_data['json']:
+        value_label['text'] = "Saving JSON. Please wait...."
+        pb.configure(mode='indeterminate')
+        pb.start()
+        try:
+            print_json(cache, name, menu_data['pretty'], menu_data['path'])
+        except Exception as e:
+            logging.warning(f'Unable to save json. {e}')
+        pb.stop()
+
+    if menu_data['csv']:
+        value_label['text'] = "Saving CSV. Please wait...."
+        pb.configure(mode='indeterminate')
+        pb.start()
+        try:
+            print_csv(df, rbin_df, name, menu_data['path'])
+        except Exception as e:
+            logging.warning(f'Unable to save csv. {e}')
+        pb.stop()
+
+    if menu_data['html']:
+        value_label['text'] = "Saving HTML. Please wait...."
+        pb.configure(mode='indeterminate')
+        pb.start()
+        try:
+            print_html(df, rbin_df, name, menu_data['path'])
+        except Exception as e:
+            logging.warning(f'Unable to save html. {e}')
+        pb.stop()
+
+    pb['value'] = 0
+    pb.configure(mode='determinate')
+    value_label['text'] = 'Complete'
 
 
 def del_logs():
@@ -4289,7 +4471,7 @@ def load_proj():
         q = Queue()
         stop_event = threading.Event()
         threading.Thread(target=load_project,
-                         args=(filename, df_GraphMetadata_Records, q, stop_event, tv, file_items, pb, value_label,),
+                         args=(filename, q, stop_event, tv, file_items, pb, value_label,),
                          daemon=True,).start()
         threading.Thread(target=proj_parse,
                          args=(q, proj_name,),
@@ -4313,7 +4495,6 @@ def load_proj():
 
 
 def proj_parse(q, proj_name):
-    global df_GraphMetadata_Records
     widgets_disable()
     search_entry.delete(0, 'end')
     search_entry.state(['invalid'])
@@ -4338,10 +4519,6 @@ def proj_parse(q, proj_name):
             pt.show()
             user_logs.setdefault(f'{key}_logs.csv', pt)
             q.task_done()
-
-        if isinstance(data[0], pd.core.frame.DataFrame):
-            df_GraphMetadata_Records = data[0]
-            continue
 
         if data[0] == 'done':
             pb.stop()
@@ -4406,7 +4583,7 @@ def thread_save(filename):
     breadcrumb.unbind_up()
     breadcrumb.disable_crumbs()
 
-    save_project(tv, file_items, df_GraphMetadata_Records, filename, user_logs, s_image, pb, value_label)
+    save_project(tv, file_items, filename, user_logs, s_image, pb, value_label)
 
     widgets_normal()
     breadcrumb.bindings()
@@ -4556,8 +4733,8 @@ def widgets_disable():
     menubar.entryconfig("View", state="disabled")
     menubar.entryconfig("Help", state="disabled")
     btn.configure(state="disabled")
-    details_frame.delete_tab(2)
-    details_frame.delete_tab(1)
+    for tab_index in reversed(range(1, details_frame.tab_count())):
+        details_frame.delete_tab(tab_index)
     tv.grid_forget()
 
 
@@ -4722,6 +4899,7 @@ ods_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/cloud_c
 proj_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/tables.png'))
 saveas_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/floppy_35inch_black.png'))
 exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/no.png'))
+pro_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/profile.png'))
 load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/repeat_green.png'))
 sql_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/IDI_DB4S-1.png'))
 json_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/file_yellow_hierarchy1_expanded.png'))
@@ -4750,6 +4928,7 @@ tenant_sync_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/
 vault_closed_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon109.png'))  # treeview 1
 vault_open_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/Icon114.png'))  # treeview 1
 od_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon11.ico'))  # treeview 1 & popup
+od_p_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon282.ico'))  # treeview 1
 merror_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error_small.png'))  # messages
 minfo_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info_small.png'))  # messages
 warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/warning.png'))  # messages
@@ -4828,6 +5007,7 @@ locked_img = Image.open(application_path + '/Images/status/locked.png')
 # search images
 hdd_big_img = Image.open(application_path + '/Images/search/hdd.png')
 cloud_big_img = Image.open(application_path + '/Images/search/cloud_big.png')
+cloud_p_big_img = Image.open(application_path + '/Images/search/cloud_p_big.png')
 building_big_img = Image.open(application_path + '/Images/search/building_big.png')
 directory_big_img = Image.open(application_path + '/Images/search/directory_big.png')
 vault_big_img = Image.open(application_path + '/Images/search/vault_big.png')
@@ -5074,10 +5254,15 @@ for theme_name in sorted(root.get_themes()):
                                                       submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'),
                                                       save_settings(), pane_config(), ButtonNotebook(), ButtonEntry()])
 
+odsmenu.add_command(label="Profile", image=pro_img, compound='left',
+                    command=lambda: threading.Thread(target=open_profile,
+                                                     args=(odsmenu,),
+                                                     daemon=True).start(),
+                    accelerator="Ctrl+O")
+odsmenu.add_separator()
 odsmenu.add_command(label="Load <UserCid>.dat" + (' '*10),
                     image=load_img, compound='left',
-                    command=lambda: open_dat(odsmenu),
-                    accelerator="Ctrl+O")
+                    command=lambda: open_dat(odsmenu))
 odsmenu.add_command(label="Load from SQLite",
                     image=sql_img, compound='left',
                     command=lambda: read_sql(odsmenu))
@@ -5085,6 +5270,7 @@ odsmenu.add_command(label="Import JSON", image=json_img,
                     compound='left', command=lambda: import_json(odsmenu))
 odsmenu.add_command(label="Import CSV", image=csv_img, compound='left',
                     command=lambda: import_csv(odsmenu))
+odsmenu.add_separator()
 odsmenu.add_command(label="Unload all files", image=uaf_img, compound='left',
                     command=lambda: thread_clear_all(), accelerator="Alt+0")
 odsmenu.entryconfig("Unload all files", state='disable')

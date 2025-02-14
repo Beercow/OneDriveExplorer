@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -39,7 +39,7 @@ if getattr(sys, 'frozen', False):
 else:
     application_path = f'{os.path.dirname(os.path.abspath(__file__))}/..'
 
-spec = spec_from_loader("schema", SourceFileLoader("schema", f"{application_path}/ode/helpers/schema"))
+spec = spec_from_loader("schema", SourceFileLoader("schema", "D:/Projects/OneDriveExplorer/OneDriveExplorer/ode/helpers/schema"))
 schema = module_from_spec(spec)
 spec.loader.exec_module(schema)
 
@@ -183,24 +183,28 @@ def change_dtype(df, df_name=None, schema_version=0):
     # Define mappings for dtype changes and fill values
     dtype_fill_map = {
         'df_scope': {
-            'dtype_changes': {'Type': 'str', 'scopeID': 'str', 'siteID': 'str', 'webID': 'str', 'listID': 'str', 'spoPermissions': 'Int64', 'shortcutVolumeID': 'Int64', 'shortcutItemIndex': 'Int64'},
-            'fill_values': {'Type': 'Scope', 'scopeID': '', 'siteID': '', 'webID': '', 'listID': '', 'spoPermissions': 0, 'shortcutVolumeID': 0, 'shortcutItemIndex': 0}
+            'dtype_changes': {'Type': 'str', 'scopeID': 'str', 'siteID': 'str', 'webID': 'str', 'listID': 'str', 'spoPermissions': 'Int64', 'shortcutVolumeID': 'Int64', 'shortcutItemIndex': 'Int64', 'libraryType': 'str'},
+            'fill_values': {'Type': 'Scope', 'scopeID': '', 'siteID': '', 'webID': '', 'listID': '', 'spoPermissions': 0, 'shortcutVolumeID': 0, 'shortcutItemIndex': 0, 'libraryType': ''}
         },
         'df_files': {
-            'dtype_changes': {'Type': 'str', 'parentResourceID': 'str', 'resourceID': 'str', 'eTag': 'str', 'Name': 'str', 'fileStatus': 'Int64', 'spoPermissions': 'Int64', 'volumeID': 'Int64', 'itemIndex': 'Int64', 'size': 'Int64', 'sharedItem': 'Int64', 'Width': 'Int64', 'Height': 'Int64', 'Duration': 'Int64'},
-            'fill_values': {'Type': 'File', 'parentResourceID': '', 'resourceID': '', 'eTag': '', 'Name': '', 'fileStatus': 0, 'spoPermissions': 0, 'volumeID': 0, 'itemIndex': 0, 'size': 0, 'sharedItem': 0, 'Width': 0, 'Height': 0, 'Duration': 0}
+            'dtype_changes': {'Type': 'str', 'parentResourceID': 'str', 'resourceID': 'str', 'eTag': 'str', 'Name': 'str', 'fileStatus': 'Int64', 'spoPermissions': 'Int64', 'volumeID': 'Int64', 'itemIndex': 'Int64', 'size': 'Int64', 'localHashAlgorithm': 'Int64', 'sharedItem': 'Int64', 'Width': 'Int64', 'Height': 'Int64', 'Duration': 'Int64'},
+            'fill_values': {'Type': 'File', 'parentResourceID': '', 'resourceID': '', 'eTag': '', 'Name': '', 'fileStatus': 0, 'spoPermissions': 0, 'volumeID': 0, 'itemIndex': 0, 'size': 0, 'localHashAlgorithm': 0, 'sharedItem': 0, 'Width': 0, 'Height': 0, 'Duration': 0}
         },
         'df_folders': {
             'dtype_changes': {'Type': 'str', 'parentScopeID': 'str', 'parentResourceID': 'str', 'resourceID': 'str', 'eTag': 'str', 'Name': 'str', 'folderStatus': 'Int64', 'spoPermissions': 'Int64', 'volumeID': 'Int64', 'itemIndex': 'Int64', 'sharedItem': 'Int64'},
             'fill_values': {'Type': 'Folder', 'parentScopeID': '', 'parentResourceID': '', 'resourceID': '', 'eTag': '', 'Name': '', 'folderStatus': 0, 'spoPermissions': 0, 'volumeID': 0, 'itemIndex': 0, 'sharedItem': 0}
         },
         'df_GraphMetadata_Records': {
-            'dtype_changes': {'fileName': 'str', 'resourceID': 'str', 'graphMetadataJSON': 'str', 'spoCompositeID': 'str', 'createdBy': 'str', 'modifiedBy': 'str', 'lastWriteCount': 'Int64'},
-            'fill_values': {'fileName': '', 'resourceID': '', 'graphMetadataJSON': '', 'spoCompositeID': '', 'createdBy': '', 'modifiedBy': '', 'lastWriteCount': 0}
+            'dtype_changes': {'resourceID': 'str', 'graphMetadataJSON': 'str', 'spoCompositeID': 'str', 'createdBy': 'str', 'modifiedBy': 'str', 'lastWriteCount': 'Int64'},
+            'fill_values': {'resourceID': '', 'graphMetadataJSON': '', 'spoCompositeID': '', 'createdBy': '', 'modifiedBy': '', 'lastWriteCount': 0}
         },
         'rbin_df': {
             'dtype_changes': {'Type': 'str', 'parentResourceId': 'str', 'resourceId': 'str', 'eTag': 'str', 'Path': 'str', 'Name': 'str', 'inRecycleBin': 'Int64', 'volumeId': 'Int64', 'fileId': 'str', 'DeleteTimeStamp': 'Int64', 'notificationTime': 'Int64', 'size': 'Int64', 'hash': 'str', 'deletingProcess': 'str'},
             'fill_values': {'Type': '', 'parentResourceId': '', 'resourceId': '', 'eTag': '', 'Path': '', 'Name': '', 'inRecycleBin': 0, 'volumeId': 0, 'fileId': '', 'DeleteTimeStamp': 0, 'notificationTime': 0, 'size': 0, 'hash': '', 'deletingProcess': ''}
+        },
+        'offline': {
+            'dtype_changes': {'resourceID': 'str', 'SharedWithDetails': 'str', 'MediaServiceMetadata': 'str'},
+            'fill_values': {'resourceID': '', 'SharedWithDetails': '', 'MediaServiceMetadata': ''}
         }
     }
 
@@ -238,7 +242,13 @@ def change_dtype(df, df_name=None, schema_version=0):
 
 
 def progress(count, total, status=''):
-    bar_len = 60
+    # Get terminal width
+    terminal_width = shutil.get_terminal_size((80, 20)).columns
+
+    # Reserve space for percentage and status text
+    reserved_space = len(f' 100.0% ...{status}')
+
+    bar_len = min(60, max(10, terminal_width - reserved_space))
     filled_len = int(round(bar_len * count / float(total)))
 
     percents = round(100.0 * count / float(total), 1)

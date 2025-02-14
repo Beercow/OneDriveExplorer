@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -26,10 +26,8 @@ import ast
 import csv
 import os
 import zipfile
-import re
-from io import StringIO, BytesIO
+from io import StringIO
 from PIL import ImageTk, Image
-import tempfile
 import pandas as pd
 import logging
 from ode.utils import progress_gui
@@ -57,7 +55,7 @@ def load_images(zip_name):
         log.error(f'Error loading images from {zip_name.split("/")[-1]}. {e}')
 
 
-def load_project(zip_name, df_GraphMetadata_Records, q, stop_event, tv, file_items, pb, value_label):
+def load_project(zip_name, q, stop_event, tv, file_items, pb, value_label):
     try:
         with zipfile.ZipFile(zip_name, 'r') as archive:
             filenames = archive.namelist()
@@ -77,10 +75,6 @@ def load_project(zip_name, df_GraphMetadata_Records, q, stop_event, tv, file_ite
                         send_data = []
                         df = pd.read_csv(data, low_memory=False, quotechar='"')
                         df.fillna('', inplace=True)
-                        df_column = df['meta'].apply(lambda x: ast.literal_eval(x) if pd.notna(x) and x.strip() != "" else None).apply(pd.Series)
-                        df_Temp = pd.DataFrame(df_column)
-                        df_GraphMetadata_Records = pd.concat([df_GraphMetadata_Records.astype(df_Temp.dtypes), df_Temp.astype(df_GraphMetadata_Records.dtypes)], ignore_index=True, axis=0).drop_duplicates(subset='resourceID')
-                        df_GraphMetadata_Records.dropna(inplace=True)
                         total = len(df)
 
                         for row in df.to_dict('records'):
@@ -111,19 +105,15 @@ def load_project(zip_name, df_GraphMetadata_Records, q, stop_event, tv, file_ite
                         send_data.append(df)
                         q.put(send_data)
 
-            if not df_GraphMetadata_Records.empty:
-                df_GraphMetadata_Records['lastWriteCount'] = df_GraphMetadata_Records['lastWriteCount'].astype('Int64')
-            q.put([df_GraphMetadata_Records])
     except Exception as e:
         log.error(f'Error importing {zip_name.split("/")[-1]}. {e}')
 
     q.put(['done'])
 
 
-def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, s_image, pb, value_label):
+def save_project(tv, file_items, zip_name, user_logs, s_image, pb, value_label):
     def find_children(count, item=''):
         children = tv.get_children(item)
-        pattern = r'resourceID: |resourceId: '
 
         for child in children:
             count += 1
@@ -134,11 +124,8 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
             if child in file_items:
                 for i in file_items[child]:
                     count += 1
-                    line_value = re.split(pattern, tv.item(i, 'values')[3])[1]
-                    df_result = df_GraphMetadata_Records[df_GraphMetadata_Records['resourceID'] == line_value]
                     row = [child, 'end', i]
                     row.extend(list(tv.item(i).values()))
-                    row.extend(df_result.to_dict(orient='records'))
                     csvwriter.writerow(row)
                     progress_gui(total, count, pb, value_label, status=f'Saving {filename} to {zip_name.split("/")[-1]}.')
 
@@ -226,4 +213,3 @@ def save_project(tv, file_items, df_GraphMetadata_Records, zip_name, user_logs, 
     pb.stop()
     value_label['text'] = "Project saved successfuly."
     pb.configure(mode='determinate')
-

@@ -1,5 +1,5 @@
 # OneDriveExplorer
-# Copyright (C) 2022
+# Copyright (C) 2025
 #
 # This file is part of OneDriveExplorer
 #
@@ -31,6 +31,21 @@ import pandas as pd
 from ode.utils import permissions, change_dtype
 
 
+class ParseResult:
+    def __init__(self, df, rbin_df, df_scope, graphMetadata, scopeID, account, localHashAlgorithm):
+        self.df = df
+        self.rbin_df = rbin_df
+        self.df_scope = df_scope
+        self.graphMetadata = graphMetadata
+        self.scopeID = scopeID
+        self.account = account
+        self.localHashAlgorithm = localHashAlgorithm
+
+    def __repr__(self):
+        """Custom string representation for debugging."""
+        return f"ParseResult(df={len(self.df)} rows, rbin_df={len(self.rbin_df)} rows, scopeID={len(self.scopeID)})"
+
+
 class SQLiteParser:
     def __init__(self):
         self.log = logging.getLogger(__name__)
@@ -38,6 +53,12 @@ class SQLiteParser:
         self.scope_header = False
         self.files_header = False
         self.folders_header = False
+        self.df = pd.DataFrame()
+        self.rbin_df = pd.DataFrame()
+        self.df_scope = pd.DataFrame()
+        self.graphMetadata = pd.DataFrame(columns=['resourceID', 'Metadata'])
+        self.scopeID = []
+        self.account = None
         self.localHashAlgorithm = 0
         self.dict_1 = {'lastChange': 0,
                        'sharedItem': 0,
@@ -78,9 +99,9 @@ class SQLiteParser:
             return ''
 
     def parse_sql(self, sql_dir):
-        account = sql_dir.rsplit('\\', 1)[-1]
+        self.account = sql_dir.rsplit('\\', 1)[-1]
 
-        self.log.info(f'Start parsing {account}.')
+        self.log.info(f'Start parsing {self.account}.')
 
         try:
             SyncEngineDatabase = sqlite3.connect(f'file:/{sql_dir}/SyncEngineDatabase.db?mode=ro', uri=True)
@@ -89,14 +110,14 @@ class SQLiteParser:
 
             try:
                 if schema_version == 8:
-                    df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
+                    self.df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
                 else:
-                    df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, tenantID, webURL, remotePath, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
-                df_scope.insert(0, 'Type', 'Scope')
-                df_scope = change_dtype(df_scope, df_name='df_scope', schema_version=schema_version)
-                df_scope['spoPermissions'] = df_scope['spoPermissions'].apply(lambda x: permissions(x))
+                    self.df_scope = pd.read_sql_query("SELECT scopeID, siteID, webID, listID, tenantID, webURL, remotePath, spoPermissions, shortcutVolumeID, shortcutItemIndex, libraryType FROM od_ScopeInfo_Records", SyncEngineDatabase)
+                self.df_scope.insert(0, 'Type', 'Scope')
+                self.df_scope = change_dtype(self.df_scope, df_name='df_scope', schema_version=schema_version)
+                self.df_scope['spoPermissions'] = self.df_scope['spoPermissions'].apply(lambda x: permissions(x))
 
-                scopeID = df_scope['scopeID'].tolist()
+                self.scopeID = self.df_scope['scopeID'].tolist()
 
                 if schema_version >= 32:
                     df_files = pd.read_sql_query("SELECT parentResourceID, od_ClientFile_Records.resourceID, eTag, fileName, fileStatus, lastKnownPinState, spoPermissions, volumeID, itemIndex, diskLastAccessTime, diskCreationTime, lastChange, size, localHashDigest, localHashAlgorithm, sharedItem, mediaDateTaken, mediaWidth, mediaHeight, mediaDuration, od_HydrationData.* FROM od_ClientFile_Records LEFT OUTER JOIN od_HydrationData ON od_ClientFile_Records.resourceID = od_HydrationData.resourceID", SyncEngineDatabase)
@@ -120,7 +141,7 @@ class SQLiteParser:
 
                 # All need to be moved to utils.change_dtype
                 if 'notificationTime' in df_files:
-                    df_files.rename(columns={"notificationTime" : "HydrationTime"}, inplace=True)
+                    df_files.rename(columns={"notificationTime": "HydrationTime"}, inplace=True)
                     df_files['HydrationTime'] = pd.to_datetime(df_files['HydrationTime'], unit='s').astype(str)
                     df_files['HydrationTime'].replace('NaT', '', inplace=True)
 
@@ -161,55 +182,57 @@ class SQLiteParser:
                 df_folders = change_dtype(df_folders, df_name='df_folders', schema_version=schema_version)
                 df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
 
-                df = pd.concat([df_scope, df_files, df_folders], ignore_index=True, axis=0)
-                df = df.where(pd.notnull(df), None)
+                self.df = pd.concat([self.df_scope, df_files, df_folders], ignore_index=True, axis=0)
+                self.df = self.df.where(pd.notnull(self.df), None)
 
-                if df.empty:
+                if self.df.empty:
                     self.log.warning(f'{sql_dir}\SyncEngineDatabase.db is empty.')
 
                 if schema_version >= 10:
-                    df_GraphMetadata_Records = pd.read_sql_query("SELECT fileName, od_GraphMetadata_Records.* FROM od_GraphMetadata_Records INNER JOIN od_ClientFile_Records ON od_ClientFile_Records.resourceID = od_GraphMetadata_Records.resourceID", SyncEngineDatabase)
-                    df_GraphMetadata_Records = change_dtype(df_GraphMetadata_Records, df_name='df_GraphMetadata_Records', schema_version=schema_version)
-                    if not df_GraphMetadata_Records.empty:
+                    self.graphMetadata = pd.read_sql_query("SELECT od_GraphMetadata_Records.* FROM od_GraphMetadata_Records INNER JOIN od_ClientFile_Records ON od_ClientFile_Records.resourceID = od_GraphMetadata_Records.resourceID", SyncEngineDatabase)
+                    self.graphMetadata = change_dtype(self.graphMetadata, df_name='df_GraphMetadata_Records', schema_version=schema_version)
+                    if not self.graphMetadata.empty:
                         json_columns = ['graphMetadataJSON', 'filePolicies']
-                        df_GraphMetadata_Records[json_columns] = df_GraphMetadata_Records[json_columns].map(lambda x: json.loads(x) if pd.notna(x) and x.strip() else '')
+                        self.graphMetadata[json_columns] = self.graphMetadata[json_columns].map(lambda x: json.loads(x) if pd.notna(x) and x.strip() else '')
+                        columns2 = ['graphMetadataJSON', 'spoCompositeID', 'createdBy', 'modifiedBy', 'filePolicies', 'fileExtension', 'lastWriteCount']
+                        self.graphMetadata['Metadata'] = self.graphMetadata[columns2].to_dict(orient='records')
+                        self.graphMetadata = self.graphMetadata.drop(columns=columns2)
                 else:
-                    df_GraphMetadata_Records = pd.DataFrame()
+                    self.graphMetadata = pd.DataFrame(columns=['resourceID', 'Metadata'])
 
             except Exception as e:
                 self.log.warning(f'Unable to parse {sql_dir}\SyncEngineDatabase.db. {e}')
-                df = pd.DataFrame()
-                df_scope = pd.DataFrame()
-                df_GraphMetadata_Records = pd.DataFrame()
-                scopeID = []
+                self.df = pd.DataFrame()
+                self.df_scope = pd.DataFrame()
+                self.graphMetadata = pd.DataFrame(columns=['resourceID', 'Metadata'])
+                self.scopeID = []
 
             SyncEngineDatabase.close()
 
         except sqlite3.OperationalError:
             self.log.info('SyncEngineDatabase.db does not exist')
-            df = pd.DataFrame()
-            df_scope = pd.DataFrame()
-            df_GraphMetadata_Records = pd.DataFrame()
-            scopeID = []
+            self.df = pd.DataFrame()
+            self.df_scope = pd.DataFrame()
+            self.graphMetadata = pd.DataFrame(columns=['resourceID', 'Metadata'])
+            self.scopeID = []
 
         try:
             SafeDelete = sqlite3.connect(f'file:/{sql_dir}/SafeDelete.db?mode=ro', uri=True)
 
             try:
-                rbin_df = pd.read_sql_query("SELECT parentResourceId, resourceId, itemName, volumeId, fileId, notificationTime FROM items_moved_to_recycle_bin", SafeDelete)
+                self.rbin_df = pd.read_sql_query("SELECT parentResourceId, resourceId, itemName, volumeId, fileId, notificationTime FROM items_moved_to_recycle_bin", SafeDelete)
                 filter_delete_info_df = pd.read_sql_query("SELECT path, volumeId, fileId, notificationTime, process FROM filter_delete_info", SafeDelete)
 
-                rbin_df.rename(columns={"itemName": "Name"
-                                        }, inplace=True)
+                self.rbin_df.rename(columns={"itemName": "Name"}, inplace=True)
 
-                rbin_df.insert(0, 'Type', 'Deleted')
-                rbin_df.insert(3, 'eTag', '')
-                rbin_df.insert(4, 'Path', '')
-                rbin_df.insert(6, 'inRecycleBin', '')
-                rbin_df.insert(9, 'DeleteTimeStamp', '')
-                rbin_df.insert(11, 'size', '')
-                rbin_df.insert(12, 'hash', '')
-                rbin_df.insert(13, 'deletingProcess', '')
+                self.rbin_df.insert(0, 'Type', 'Deleted')
+                self.rbin_df.insert(3, 'eTag', '')
+                self.rbin_df.insert(4, 'Path', '')
+                self.rbin_df.insert(6, 'inRecycleBin', '')
+                self.rbin_df.insert(9, 'DeleteTimeStamp', '')
+                self.rbin_df.insert(11, 'size', '')
+                self.rbin_df.insert(12, 'hash', '')
+                self.rbin_df.insert(13, 'deletingProcess', '')
 
                 filter_delete_info_df.rename(columns={"path": "Path",
                                                       "process": "deletingProcess"
@@ -228,19 +251,27 @@ class SQLiteParser:
                 filter_delete_info_df['Name'] = filter_delete_info_df['Path'].str.rsplit('\\', n=1).str[-1]
                 filter_delete_info_df['Path'] = filter_delete_info_df['Path'].str.rsplit('\\', n=1).str[0]
 
-                rbin_df = pd.concat([rbin_df, filter_delete_info_df], ignore_index=True, axis=0)
+                self.rbin_df = pd.concat([self.rbin_df, filter_delete_info_df], ignore_index=True, axis=0)
 
-                rbin_df['notificationTime'] = pd.to_datetime(rbin_df['notificationTime'], unit='s').astype(str)
-                rbin_df['volumeId'] = rbin_df['volumeId'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*format(x, '08x')).upper())
+                self.rbin_df['notificationTime'] = pd.to_datetime(self.rbin_df['notificationTime'], unit='s').astype(str)
+                self.rbin_df['volumeId'] = self.rbin_df['volumeId'].apply(lambda x: '{}{}{}{}-{}{}{}{}'.format(*format(x, '08x')).upper())
 
             except Exception as e:
                 self.log.warning(f'Unable to parse {sql_dir}\SafeDelete.db. {e}')
-                rbin_df = pd.DataFrame()
+                self.rbin_df = pd.DataFrame()
 
             SafeDelete.close()
 
         except sqlite3.OperationalError:
             self.log.info('SafeDelete.db does not exist')
-            rbin_df = pd.DataFrame()
+            self.rbin_df = pd.DataFrame()
 
-        return df, rbin_df, df_scope, df_GraphMetadata_Records, scopeID, account, self.localHashAlgorithm
+        return ParseResult(
+            self.df,
+            self.rbin_df,
+            self.df_scope,
+            self.graphMetadata,
+            self.scopeID,
+            self.account,
+            self.localHashAlgorithm
+        )
