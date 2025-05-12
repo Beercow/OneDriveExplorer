@@ -29,8 +29,11 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def print_json(cache, name, pretty, json_path):
+def print_json(cache, name, fus, pretty, json_path):
     log.info('Started writing JSON file')
+
+    if fus:
+        cache["FileUsageSync"] = fus
 
     if not os.path.exists(json_path):
         os.makedirs(json_path)

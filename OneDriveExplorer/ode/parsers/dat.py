@@ -492,7 +492,7 @@ class DATParser:
                             progress(count, total, status='Building folder list. Please wait....')
 
         except Exception as e:
-            # log.error(e)
+            log.error(f'Unable to parse {usercid}. {e}')
             return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
                                self.graphMetadata, [], self.account,
                                self.localHashAlgorithm)

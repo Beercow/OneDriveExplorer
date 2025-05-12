@@ -41,6 +41,10 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 import logging
 import ctypes
+import concurrent.futures
+import queue
+import threading
+import itertools
 
 kernel32 = ctypes.windll.kernel32
 kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
@@ -605,10 +609,23 @@ def process_odl(filename, map):
     return pd.DataFrame.from_records(odl_rows)
 
 
+def progress_bar(q, total, pb, value_label, key, gui=False):
+    while True:
+        count = q.get()
+        if count is None:
+            break
+        if gui:
+            progress_gui(total, count, pb, value_label, status=f'Parsing log files for {key}. Please wait....')
+        else:
+            progress(count, total, status=f'Parsing log files for {key}. Please wait....')
+        q.task_done()
+
+
 def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
     filenames = []
     obfuscation_maps = []
     map = {}
+    q = queue.Queue()
 
     df = pd.DataFrame()
 
@@ -630,21 +647,28 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
             map = read_obfuscation_map(obfuscation_map_file, map)
 
     total = len(filenames)
-    count = 0
-
     if total == 0:
         return df
 
+    results = []
+    counter = itertools.count(1)
+
+    def worker(filename):
+        log_df = process_odl(filename, map)
+        count = next(counter)
+        q.put(count)
+        return log_df
+
     if gui:
         pb.configure(mode='determinate')
-    for filename in filenames:
-        count += 1
-        log_df = process_odl(filename, map)
-        if gui:
-            progress_gui(total, count, pb, value_label, status=f'Parsing log files for {key}. Please wait....')
-        else:
-            progress(count, total, status=f'Parsing log files for {key}. Please wait....')
 
-        df = pd.concat([df, log_df], ignore_index=True, axis=0)
+    t = threading.Thread(target=progress_bar, args=(q, total, pb, value_label, key, gui,))
+    t.start()
 
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(worker, filenames))
+
+    df = pd.concat(results, ignore_index=True, axis=0)
+    q.put(None)
+    t.join()
     return df

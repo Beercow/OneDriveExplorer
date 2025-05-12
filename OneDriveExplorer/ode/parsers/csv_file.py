@@ -22,6 +22,7 @@
 # SOFTWARE.
 #
 
+import json
 import pandas as pd
 import logging
 
@@ -29,7 +30,7 @@ log = logging.getLogger(__name__)
 
 
 class ParseResult:
-    def __init__(self, df, rbin_df, df_scope, graphMetadata, scopeID, account, localHashAlgorithm, offline_db):
+    def __init__(self, df, rbin_df, df_scope, graphMetadata, scopeID, account, localHashAlgorithm, offline_db, comment):
         self.df = df
         self.rbin_df = rbin_df
         self.df_scope = df_scope
@@ -38,6 +39,7 @@ class ParseResult:
         self.account = account
         self.localHashAlgorithm = localHashAlgorithm
         self.offline_db = offline_db
+        self.comment = comment
 
     def __repr__(self):
         """Custom string representation for debugging."""
@@ -45,7 +47,7 @@ class ParseResult:
 
 
 def parse_csv(filename):
-    file = open(filename.name, 'r', encoding='utf-8')
+    file = open(filename, 'r', encoding='utf-8')
     columns_to_drop = ['parentResourceId', 'resourceId', 'inRecycleBin', 'volumeId', 'fileId',
                        'DeleteTimeStamp', 'notificationTime', 'hash', 'deletingProcess']
     columns_to_drop_2 = ['MountPoint']
@@ -66,19 +68,26 @@ def parse_csv(filename):
         csv_name = ''
 
     log.info(f'Started parsing {csv_name}')
+    comment = file.readline()
+    cleaned_str = comment.lstrip("#")
+    data_dict = json.loads(cleaned_str)
 
     try:
-        df = pd.read_csv(file, low_memory=False, quotechar='"', dtype=dtypes)
+        df = pd.read_csv(file, low_memory=False, quotechar='"', dtype=dtypes, comment="#")
 
-        df_scope = df.loc[df['Type'] == 'Scope',
-                          ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID',
-                           'webURL', 'remotePath', 'spoPermissions', 'shortcutVolumeID',
-                           'shortcutItemIndex', 'libraryType']]
-        columns_to_fill = df_scope.columns.difference(['libraryType'])
-        df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
-        df_scope['remotePath'] = df_scope['remotePath'].fillna('')
+        try:
+            df_scope = df.loc[df['Type'] == 'Scope',
+                                            ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID',
+                                             'webURL', 'remotePath', 'spoPermissions', 'shortcutVolumeID',
+                                             'shortcutItemIndex', 'libraryType']]
+            columns_to_fill = df_scope.columns.difference(['libraryType'])
+            df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
+            df_scope['remotePath'] = df_scope['remotePath'].fillna('')
 
-        scopeID = df_scope['scopeID'].tolist()
+            scopeID = df_scope['scopeID'].tolist()
+        except Exception:
+            df_scope = pd.DataFrame()
+            scopeID = []
 
         if 'inRecycleBin' in df.columns:
             df = df.astype({'fileId': 'str', 'inRecycleBin': 'Int64'})
@@ -92,10 +101,16 @@ def parse_csv(filename):
         else:
             rbin_df = pd.DataFrame()
 
-        df.drop(columns=columns_to_drop_2, inplace=True)
+        try:
+            df.drop(columns=columns_to_drop_2, inplace=True)
+        except Exception:
+            pass
         df['Path'] = df['Path'].astype(str).fillna('')
         df['Name'] = df['Name'].astype(str).fillna('')
-        df.localHashDigest.fillna('', inplace=True)
+        try:
+            df.localHashDigest.fillna('', inplace=True)
+        except Exception:
+            pass
 
         for col in ['notificationTime', 'firstHydrationTime', 'lastHydrationTime',
                     'diskLastAccessTime', 'diskCreationTime']:
@@ -111,7 +126,7 @@ def parse_csv(filename):
     except Exception as e:
         log.error(f'Not a valid csv: {csv_name} - Error: {e}')
         return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
-                           pd.DataFrame(), [], '', 0, pd.DataFrame())
+                           pd.DataFrame(), [], '', 0, pd.DataFrame(), data_dict)
 
     return ParseResult(df, rbin_df, df_scope, pd.DataFrame(columns=['resourceID', 'Metadata']),
-                       scopeID, '', 0, pd.DataFrame(columns=['resourceID', 'ListSync']))
+                       scopeID, '', 0, pd.DataFrame(columns=['resourceID', 'ListSync']), data_dict)

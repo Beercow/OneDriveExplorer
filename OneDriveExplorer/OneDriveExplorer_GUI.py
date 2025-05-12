@@ -37,9 +37,10 @@ import hashlib
 import tkinter as tk
 from tkinter import ttk
 from ttkthemes import ThemedTk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import tkinter.font as tkFont
 import threading
+import traceback
 from queue import Queue
 from io import StringIO, BytesIO
 from collections import defaultdict
@@ -47,6 +48,7 @@ import pandas as pd
 import numpy as np
 from pandastable import config
 from PIL import ImageTk, Image, ImageGrab
+from Registry import Registry
 import time
 import keyboard
 from ruamel.yaml import YAML
@@ -63,6 +65,7 @@ from ode.renderers.project import load_images
 import ode.parsers.dat as dat_parser
 from ode.parsers.csv_file import parse_csv
 import ode.parsers.offline as SQLiteTableExporter
+import ode.parsers.fileusagesync as fileusagesync
 import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
 import ode.parsers.sqlite_db as sqlite_parser
@@ -71,6 +74,8 @@ from ode.helpers import pandastablepatch
 from ode.helpers import ScrollableNotebookpatch
 from ode.utils import schema
 from ode.helpers.AnimatedGif import AnimatedGif
+from ode.views.fileusage import FileUsageFrame
+from ode.views.multiselect import FileSelectDialog
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -79,6 +84,7 @@ pd.set_option('future.no_silent_downcasting', True)
 DATParser = dat_parser.DATParser()
 OneDriveParser = onedrive_parser.OneDriveParser()
 SQLiteParser = sqlite_parser.SQLiteParser()
+fus = fileusagesync.SQLiteTableExporter()
 
 # Per monitor DPI aware. This app checks for the DPI when it is
 # created and adjusts the scale factor whenever the DPI changes.
@@ -105,7 +111,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.02.14"
+__version__ = "2025.05.13"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -122,7 +128,6 @@ delay = None
 cstruct_df = ''
 v = Validator()
 file_items = defaultdict(list)
-dfs_to_concat = []
 folder_type = []
 dragging_sash = False
 sync_message = None
@@ -162,6 +167,45 @@ if os.path.isfile('ode.settings'):
             logging.error(f'{jsonfile.name} is not valid. {v.errors}')
             menu_data = None
         jsonfile.close()
+
+
+def report_callback_exception(exc, val, tb):
+    error_msg = ''.join(traceback.format_exception(exc, val, tb))
+
+    try:
+        log_date = datetime.now().strftime("%Y-%m-%dT%H%M%S")
+        with open(f'{application_path}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
+            f.write('The following error has occured and ODE is shutting down.\n')
+            f.write(f'For further assistance: {__email__}\n')
+            f.write(f'OneDriveExplorer v{__version__}\n')
+            f.write(error_msg + '\n')
+    except Exception as file_err:
+        print("Failed to write error to file:", file_err)
+
+    messagebox.showerror("Unhandled Exception", f"See {application_path}\ODE_error_{log_date}.log for further assistance.\nAn error occurred:\n{error_msg}")
+    root.quit()
+    sys.exit(1)
+
+
+def thread_exception_handler(args):
+    error_msg = ''.join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+
+    try:
+        log_date = datetime.now().strftime("%Y-%m-%dT%H%M%S")
+        with open(f'{application_path}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
+            f.write('The following error has occured and ODE is shutting down.\n')
+            f.write(f'For further assistance: {__email__}\n')
+            f.write(f'OneDriveExplorer v{__version__}\n')
+            f.write(error_msg + '\n')
+    except Exception as file_err:
+        print("Failed to write error to file:", file_err)
+
+    messagebox.showerror("Thread Exception", f"See {application_path}\ODE_error_{log_date}.log for further assistance.\nA thread error occurred:\n{error_msg}")
+    root.quit()
+    sys.exit(1)
+
+
+threading.excepthook = thread_exception_handler
 
 if menu_data is None:
     logging.info('Creating ode.settings file.')
@@ -1453,7 +1497,7 @@ class Result:
 
     def process_folder_status(self, values_list):
         if self.folder:
-            folderColor = next((item.split(' ')[1] for item in self.args[0] if 'foldercolor:' in item.lower() and len(item.split(' ')) > 1), '')
+            folderColor = next((item.split(' ')[1] for item in self.args[0] if 'foldercolor:' in item.lower() and len(item.split(' ')) > 1), 0)
             if int(folderColor) in range(1, 16):
                 self.type.append(self.get_folder_color(folderColor))
             else:
@@ -1864,12 +1908,13 @@ class ToolTipManager:
 
 
 class FileManager:
-    def __init__(self, tv, parent, cur_sel, columns=('Date_created', 'Date_accessed', 'Date_modified', 'Size')):
+    def __init__(self, tv, parent, cur_sel, handle, columns=('Date_created', 'Date_accessed', 'Date_modified', 'Size')):
         self.tv = tv
         self.bgf = style.lookup('Treeview', 'background')
         self.parent = parent
         self.columns = columns
         self.cur_sel = cur_sel
+        self.handle = handle
         self.breadcrumb_list = breadcrumb
         self.stop = threading.Event()
         self.status = []
@@ -2045,7 +2090,8 @@ class FileManager:
             self.tv.selection_set(cur_item[0])
             item_id = cur_item[0]
         while True:
-            parent = self.tv.parent(item_id)
+            if item_id:
+                parent = self.tv.parent(item_id)
             if parent:
                 self.tv.item(parent, open=True)
                 item_id = parent
@@ -3426,6 +3472,8 @@ def ButtonEntry(do_bind=False):
 
 
 def pane_config():
+    sel_bg = style.lookup("Treeview", "background", state=["selected"])
+
     bg = style.lookup('TFrame', 'background')
     bgf = style.lookup('Treeview', 'background')
     fgf = style.lookup('Treeview', 'foreground')
@@ -3437,7 +3485,11 @@ def pane_config():
     pwh.config(background=bgf, sashwidth=6)
     details.config(background=bgf, foreground=fgf)
     details_frame.update_textbox_theme(bgf, fgf)
+    file_usage_frame.email_header.update_textbox_theme(bgf, fgf)
+    separator.config(bg=sel_bg)
+
     style.configure('Result.Treeview', rowheight=40)
+
     tv_pane_frame.configure(background=bgf)
     breadcrumb.update_theme()
     try:
@@ -3454,6 +3506,13 @@ def pane_config():
     if str(message.cget('background')) == '#eff0f1':
         message['background'] = ''
         message['foreground'] = ''
+
+    # below are fixes for when changing from breeze theme
+    for child in selector_frame.winfo_children():
+        if isinstance(child, ttk.Label):
+            bg = child.cget('background')
+            if str(bg) == '#eff0f1':
+                child.configure(background='', foreground='')
 
     value_label['background'] = ''
     value_label['foreground'] = ''
@@ -3640,14 +3699,13 @@ def json_count(item='', file_count=0, del_count=0, folder_count=0):
 
 
 def parent_child(d, parent_id=None, account=False):
-    global dfs_to_concat
     if parent_id is None:
         # This line is only for the first call of the function
         parent_id = tv.insert("",
                               "end",
                               image=root_drive_img,
                               text=f" {d['Name']}",
-                              values=([f'{k}: {v}' for k, v in d.items() if 'Data' not in k]))
+                              values=([f'{k}: {v}' for k, v in d.items() if 'Data' not in k and 'FileUsageSync' not in k]))
 
     if 'Data' in d:
         for c in d['Data']:
@@ -3781,6 +3839,11 @@ def parent_child(d, parent_id=None, account=False):
                                           text=f" {b['Name']}",
                                           values=(z)), account)
 
+    if 'FileUsageSync' in d:
+        if isinstance(d['FileUsageSync'], list):
+            fus.load_data(d['FileUsageSync'])
+            file_usage_frame.set_data(fus.df_data)
+
 
 def live_system(menu):
     global reghive
@@ -3832,6 +3895,8 @@ def live_system(menu):
                 profile[user][logs_find[0]].append(path)
 
     for key, value in profile.items():
+        print(f'key: {key}')
+        print(f'value: {value}')
         if has_settings(value):
             value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
             pb.configure(mode='indeterminate')
@@ -3879,50 +3944,6 @@ def has_settings(data):
     return False
 
 
-def open_dat(menu):
-    global reghive
-    global recbin
-    filename = filedialog.askopenfilename(initialdir="/",
-                                          title="Open <UserCid>.dat",
-                                          filetypes=(("OneDrive dat file",
-                                                      "*.dat *.dat.previous"),
-                                                     ))
-
-    if filename:
-        if keyboard.is_pressed('shift') or menu_data['hive']:
-            pass
-        else:
-            root.wait_window(hive(root).win)
-
-        x = menu.entrycget(2, "label")
-        message.unbind('<Double-Button-1>', bind_id)
-        threading.Thread(target=start_parsing,
-                         args=(x, filename, reghive, recbin,),
-                         daemon=True).start()
-
-    reghive = ''
-    recbin = ''
-
-
-def read_sql(menu):
-    global reghive
-    global recbin
-    folder_name = filedialog.askdirectory(initialdir="/", title="Open SQLite folder")
-
-    if folder_name:
-        if keyboard.is_pressed('shift') or menu_data['hive']:
-            pass
-        else:
-            root.wait_window(hive(root).win)
-
-        x = menu.entrycget(3, "label")
-        message.unbind('<Double-Button-1>', bind_id)
-        threading.Thread(target=start_parsing,
-                         args=(x, folder_name, reghive, recbin,),
-                         daemon=True).start()
-    reghive = ''
-
-
 def open_profile(menu):
     global reghive
     global recbin
@@ -3952,7 +3973,7 @@ def import_json(menu):
                                                   "*.json"),))
 
     if filename:
-        x = menu.entrycget(4, "label")
+        x = 'Import JSON'
         message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
                          args=(x, filename,),
@@ -3960,16 +3981,79 @@ def import_json(menu):
 
 
 def import_csv(menu):
-    filename = filedialog.askopenfile(initialdir="/",
-                                      title="Import OD CSV",
-                                      filetypes=(("OneDrive csv file",
-                                                  "*.csv"),))
+    fields = [
+        ("OneDrive csv file", "_OneDrive.csv"),
+        ("FileUsageSync csv file", "_FileUsageSync.csv")
+    ]
 
-    if filename:
-        x = menu.entrycget(5, "label")
+    icon_path = application_path + '/Images/titles/table.ico'
+
+    FileSelectDialog(root, fields=fields, callback=on_files_selected,
+                     title="Import CSV Files", icon_path=icon_path)
+
+
+def load_ind():
+    fields = [
+        ("Load <UserCid>.dat", "*.dat *.dat.previous"),
+        ("Load SyncEngineDatabase.db", "SyncEngineDatabase.db"),
+        ("Load SafeDelete.db", "SafeDelete.db"),
+        ("Load Microsoft.ListSync.db", "Microsoft.ListSync.db"),
+        ("Load Microsoft.FileUsageSync.db", "Microsoft.FileUsageSync.db"),
+        ("Load NTUSER.DAT", "NTUSER.DAT"),
+        ("Load $Recycle.Bin", "$Recycle.Bin")
+    ]
+
+    icon_path = application_path + '/Images/titles/files_yellow_combine.ico'
+
+    FileSelectDialog(root, fields=fields, callback=threaded_on_files_selected,
+                     title="Load Individual Files", icon_path=icon_path)
+
+
+def threaded_on_files_selected(file_paths):
+    # Run your function in a thread
+    threading.Thread(target=on_files_selected, args=(file_paths,), daemon=True).start()
+
+
+def on_files_selected(file_paths):
+    if '_OneDrive.csv' in file_paths:
+        if file_paths['_OneDrive.csv'] != '':
+            x = 'Import CSV'
+            message.unbind('<Double-Button-1>', bind_id)
+            threading.Thread(target=start_parsing,
+                             args=(x, file_paths,),
+                             daemon=True).start()
+
+        if file_paths['_FileUsageSync.csv'] != '':
+            widgets_disable()
+            fus.load_csv(file_paths['_FileUsageSync.csv'])
+            file_usage_frame.set_data(fus.df_data)
+            widgets_normal()
+
+    if '*.dat *.dat.previous' in file_paths:
+        reghive = ''
+        recbin = ''
+        if file_paths['NTUSER.DAT'] != '':
+            try:
+                Registry.Registry(file_paths['NTUSER.DAT'])
+                reghive = file_paths['NTUSER.DAT']
+            except Exception:
+                try:
+                    alt_path = os.path.split(os.path.splitdrive(file_paths['NTUSER.DAT'])[1])[0]
+                    key = alt_path.split('/')[-1]
+                    value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
+                    pb.configure(mode='indeterminate')
+                    pb.start()
+                    reghive = live_hive(key, alt_path)
+                except Exception:
+                    pass
+
+        if file_paths['$Recycle.Bin'] != '':
+            recbin = file_paths['$Recycle.Bin']
+
+        x = 'loose'
         message.unbind('<Double-Button-1>', bind_id)
         threading.Thread(target=start_parsing,
-                         args=(x, filename,),
+                         args=(x, file_paths, reghive, recbin,),
                          daemon=True).start()
 
 
@@ -4113,6 +4197,7 @@ def save_settings():
 
 
 def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, live_profile=False, user=False):
+    switch_view(od_btn, True)
     breadcrumb.clear()
     if len(tv.selection()) > 0:
         tv.selection_remove(tv.selection()[0])
@@ -4130,35 +4215,65 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         widgets_disable()
     start = time.time()
 
-    if x == 'Load <UserCid>.dat' + (' '*10):
-        account = os.path.dirname(filename.replace('/', '\\')).rsplit('\\', 1)[-1]
-        name = f'{account}_{os.path.split(filename)[1]}'
+    if x == 'loose':
+        offline_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
 
-        od_settings = DATParser.parse_dat(filename, account,
-                                          gui=True, pb=pb,
-                                          value_label=value_label)
+        if filename['Microsoft.ListSync.db'] != '':
+            pb.configure(mode='indeterminate')
+            value_label['text'] = 'Gathering offline data. Please wait....'
+            pb.start()
+            logging.info("Stared parsing Microsoft.ListSync.db")
+            exporter = SQLiteTableExporter.SQLiteTableExporter(filename['Microsoft.ListSync.db'])
+            offline_db = exporter.get_offline_data()
+            pb.stop()
+            value_label['text'] = 'Complete'
 
-        if od_settings:
-            if not od_settings.df.empty:
-                parse_results(od_settings, filename, name, start, x, reghive, recbin, pd.DataFrame(columns=['resourceID', 'ListSync']), gui=True, pb=pb, value_label=value_label)
+        if filename['Microsoft.FileUsageSync.db'] != '':
+            cache = {"Path": '', "Name": '', "Hash": '', "Account": ''}
+            has_menu_data = any(menu_data[key] for key in ['json', 'csv', 'html'])
+            missing_all_files = not any([
+                filename['*.dat *.dat.previous'],
+                filename['SyncEngineDatabase.db'],
+                filename['SafeDelete.db']
+            ])
+            directory, file = os.path.split(filename['Microsoft.FileUsageSync.db'])
+            value_label['text'] = 'Gathering file usage data. Please wait....'
+            fus.set_db_path(directory)
+            logging.info("Stared parsing Microsoft.FileUsageSync.db")
+            fus.get_recent_files_formatted_spo()
+            file_usage_frame.set_data(fus.df_data)
+            pb.stop()
+            value_label['text'] = 'Complete'
+            if has_menu_data and missing_all_files:
+                save_output(cache, pd.DataFrame(), pd.DataFrame(), '')
 
-    elif x == 'Load from SQLite':
-        filename = filename.replace('/', '\\')
-        sql_dir = re.compile(r'\\Users\\(?P<user>.*?)\\AppData\\Local\\Microsoft\\OneDrive\\settings\\(?P<account>.*?)$')
-        sql_find = re.findall(sql_dir, filename)
-        try:
-            name = f'{sql_find[0][0]}_{sql_find[0][1]}'
-        except Exception:
-            name = 'SQLite_DB'
+        if filename['*.dat *.dat.previous'] != '':
+            account = os.path.dirname(filename['*.dat *.dat.previous'].replace('/', '\\')).rsplit('\\', 1)[-1]
+            name = f'{account}_{os.path.split(filename["*.dat *.dat.previous"])[1]}'
 
-        pb.configure(mode='indeterminate')
-        value_label['text'] = 'Building folder list. Please wait....'
-        pb.start()
-        od_settings = SQLiteParser.parse_sql(filename)
+            od_settings = DATParser.parse_dat(filename['*.dat *.dat.previous'], account,
+                                              gui=True, pb=pb,
+                                              value_label=value_label)
 
-        if od_settings:
-            if not od_settings.df.empty:
-                parse_results(od_settings, filename, od_settings.account, start, x, reghive, recbin, pd.DataFrame(columns=['resourceID', 'ListSync']), gui=True, pb=pb, value_label=value_label)
+            if od_settings:
+                if not od_settings.df.empty:
+                    parse_results(od_settings, filename['*.dat *.dat.previous'], name, start, x, reghive, recbin, offline_db, gui=True, pb=pb, value_label=value_label)
+
+        if filename['SyncEngineDatabase.db'] != '' or filename['SafeDelete.db'] != '':
+            sedb = filename['SyncEngineDatabase.db'].replace('/', '\\')
+            sddb = filename['SafeDelete.db'].replace('/', '\\')
+            filename = False
+
+            pb.configure(mode='indeterminate')
+            value_label['text'] = 'Building folder list. Please wait....'
+            pb.start()
+            od_settings = SQLiteParser.parse_sql(filename, sedb, sddb)
+
+            if not filename:
+                filename = [sedb, sddb]
+
+            if od_settings:
+                parse_results(od_settings, filename, od_settings.account, start, x, reghive, recbin, offline_db, gui=True, pb=pb, value_label=value_label)
 
     elif x == 'Profile':
         if live:
@@ -4169,6 +4284,21 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             settings_dir = re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$')
             listsync_settings_dir = re.compile(r'\\ListSync\\(?P<account>Business[0-9])\\settings$')
             logs_dir = re.compile(r'\\(?P<logs>logs)$')
+
+            if reghive:
+                try:
+                    Registry.Registry(reghive)
+                except Exception:
+                    try:
+                        parts = os.path.splitdrive(reghive)[1].replace('\\', '/').rsplit('/', 2)
+                        alt_path = f'{parts[0]}/{parts[1]}'
+                        key = parts[-2]
+                        value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
+                        pb.configure(mode='indeterminate')
+                        pb.start()
+                        reghive = live_hive(key, alt_path)
+                    except Exception:
+                        pass
 
             for path, subdirs, files in os.walk(filename):
                 settings_find = re.findall(settings_dir, path)
@@ -4232,8 +4362,14 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 pb.configure(mode='indeterminate')
                 value_label['text'] = 'Gathering offline data. Please wait....'
                 pb.start()
+                logging.info("Stared parsing Microsoft.ListSync.db")
                 exporter = SQLiteTableExporter.SQLiteTableExporter(f'{v}\\Microsoft.ListSync.db')
                 offline_db = exporter.get_offline_data()
+                value_label['text'] = 'Gathering file usage data. Please wait....'
+                fus.set_db_path(f'{v}')
+                logging.info("Stared parsing Microsoft.FileUsageSync.db")
+                fus.get_recent_files_formatted_spo()
+                file_usage_frame.set_data(fus.df_data)
                 pb.stop()
 
             # Then process "settings" if it exists
@@ -4281,7 +4417,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         pb.configure(mode='indeterminate')
         value_label['text'] = "Building tree. Please wait..."
         pb.start()
-        parent_child(cache)
+        parent_child(cache, account=cache['Account'])
         pb.stop()
 
         od_counts(filename.name, df, rbin_df, start, x)
@@ -4291,11 +4427,10 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         value_label['text'] = 'Building folder list. Please wait....'
         pb.start()
         account = ''
-        od_settings = parse_csv(filename)
+        od_settings = parse_csv(filename['_OneDrive.csv'])
 
         if od_settings:
-            if not od_settings.df.empty:
-                parse_results(od_settings, filename.name, '', start, x, reghive, recbin, od_settings.offline_db, gui=True, pb=pb, value_label=value_label, save=False)
+            parse_results(od_settings, filename['_OneDrive.csv'], '', start, x, reghive, recbin, od_settings.offline_db, gui=True, pb=pb, value_label=value_label, save=False)
 
     elif x == 'Project':
         name = filename
@@ -4352,7 +4487,8 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, offline
     value_label['text'] = "Building tree. Please wait..."
     pb.start()
     if cache:
-        parent_child(cache, None, od_settings.account)
+        parent_child(cache, None, od_settings.comment['Account'] if hasattr(od_settings, "comment") else od_settings.account)
+
     pb.stop()
 
     od_counts(key, df, rbin_df, start, x)
@@ -4381,7 +4517,7 @@ def save_output(cache, df, rbin_df, name):
         pb.configure(mode='indeterminate')
         pb.start()
         try:
-            print_json(cache, name, menu_data['pretty'], menu_data['path'])
+            print_json(cache, name, fus.json_data, menu_data['pretty'], menu_data['path'])
         except Exception as e:
             logging.warning(f'Unable to save json. {e}')
         pb.stop()
@@ -4390,8 +4526,18 @@ def save_output(cache, df, rbin_df, name):
         value_label['text'] = "Saving CSV. Please wait...."
         pb.configure(mode='indeterminate')
         pb.start()
+
+        comment = {
+            "Path": cache["Path"],
+            "Name": cache["Name"],
+            "Hash": cache["Hash"],
+            "Account": cache["Account"]
+        }
+
+        comment_json = json.dumps(comment)
+
         try:
-            print_csv(df, rbin_df, name, menu_data['path'])
+            print_csv(df, rbin_df, name, menu_data['path'], comment_json, fus.df_data)
         except Exception as e:
             logging.warning(f'Unable to save csv. {e}')
         pb.stop()
@@ -4401,7 +4547,7 @@ def save_output(cache, df, rbin_df, name):
         pb.configure(mode='indeterminate')
         pb.start()
         try:
-            print_html(df, rbin_df, name, menu_data['path'])
+            print_html(df, rbin_df, name, menu_data['path'], fus.df_data)
         except Exception as e:
             logging.warning(f'Unable to save html. {e}')
         pb.stop()
@@ -4471,7 +4617,7 @@ def load_proj():
         q = Queue()
         stop_event = threading.Event()
         threading.Thread(target=load_project,
-                         args=(filename, q, stop_event, tv, file_items, pb, value_label,),
+                         args=(filename, q, stop_event, tv, file_items, fus, pb, value_label,),
                          daemon=True,).start()
         threading.Thread(target=proj_parse,
                          args=(q, proj_name,),
@@ -4524,6 +4670,7 @@ def proj_parse(q, proj_name):
             pb.stop()
             break
 
+    file_usage_frame.set_data(fus.df_data)
     widgets_normal()
     mcount = (len(log_capture_string.getvalue().split('\n')) - 1)
     message['text'] = mcount
@@ -4583,7 +4730,7 @@ def thread_save(filename):
     breadcrumb.unbind_up()
     breadcrumb.disable_crumbs()
 
-    save_project(tv, file_items, filename, user_logs, s_image, pb, value_label)
+    save_project(tv, file_items, filename, user_logs, s_image, fus.df_data, pb, value_label)
 
     widgets_normal()
     breadcrumb.bindings()
@@ -4651,9 +4798,21 @@ def font_changed(font):
         if '!mytable' in str(item):
             config.apply_options(options, item)
             item.redraw()
+    style.configure('Result.Treeview', rowheight=40)
     menu_data['font'] = default_font
     file_manager.update_font()
     save_settings()
+
+
+def apply_font_to_all(widget, font_obj):
+    """Recursively apply the font to all child widgets."""
+    try:
+        widget["font"] = font_obj
+    except tk.TclError:
+        pass  # Some ttk widgets don't accept "font" directly
+
+    for child in widget.winfo_children():
+        apply_font_to_all(child, font_obj)
 
 
 def click(event):
@@ -4736,6 +4895,20 @@ def widgets_disable():
     for tab_index in reversed(range(1, details_frame.tab_count())):
         details_frame.delete_tab(tab_index)
     tv.grid_forget()
+    unbind_events(od_btn)
+    od_btn.config(state='disable')
+    unbind_events(email_btn)
+    email_btn.config(state='disable')
+    unbind_events(t_meeting_btn)
+    t_meeting_btn.config(state='disable')
+    unbind_events(event_btn)
+    event_btn.config(state='disable')
+    unbind_events(chat_btn)
+    chat_btn.config(state='disable')
+    unbind_events(notes_btn)
+    notes_btn.config(state='disable')
+    unbind_events(sp_btn)
+    sp_btn.config(state='disable')
 
 
 def widgets_normal():
@@ -4754,6 +4927,26 @@ def widgets_normal():
         search_entry.configure(cursor='xterm')
         btn.configure(state="normal")
     tv.grid(row=1, column=0, sticky="nsew")
+    bind_events(od_btn, on_enter, on_leave, lambda event: switch_view(od_btn, True))
+    od_btn.config(state='normal')
+    if len(file_usage_frame.emails_tree.get_children()) > 0:
+        bind_events(email_btn, on_enter, on_leave, lambda event: [switch_view(email_btn), file_usage_frame.show_emails_list()])
+        email_btn.config(state='normal')
+    if len(file_usage_frame.meetings_tree.get_children()) > 0:
+        bind_events(t_meeting_btn, on_enter, on_leave, lambda event: [switch_view(t_meeting_btn), file_usage_frame.show_meetings_list()])
+        t_meeting_btn.config(state='normal')
+    if len(file_usage_frame.events_tree.get_children()) > 0:
+        bind_events(event_btn, on_enter, on_leave, lambda event: [switch_view(event_btn), file_usage_frame.show_events_list()])
+        event_btn.config(state='normal')
+    if len(file_usage_frame.chats_tree.get_children()) > 0:
+        bind_events(chat_btn, on_enter, on_leave, lambda event: [switch_view(chat_btn), file_usage_frame.show_chats_list()])
+        chat_btn.config(state='normal')
+    if len(file_usage_frame.notes_tree.get_children()) > 0:
+        bind_events(notes_btn, on_enter, on_leave, lambda event: [switch_view(notes_btn), file_usage_frame.show_notes_list()])
+        notes_btn.config(state='normal')
+    if len(file_usage_frame.files_tree.get_children()) > 0:
+        bind_events(sp_btn, on_enter, on_leave, lambda event: [switch_view(sp_btn), file_usage_frame.show_sp_list()])
+        sp_btn.config(state='normal')
 
 
 def get_total_column_width():
@@ -4778,20 +4971,80 @@ def restrict_sash(*args):
         pwh.after(1, restrict_sash)
 
 
-# Function to start checking when the drag begins
-def start_drag(event):
-    global dragging_sash
-    dragging_sash = True
-    restrict_sash()
+def switch_view(selected, od=False):
+    separator.grid_forget()
+    separator.grid(row=selected.grid_info()['row'], column=0, sticky="ns")
+
+    if od:
+        file_usage_frame.grid_forget()
+        main_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+    else:
+        main_frame.grid_forget()
+        file_usage_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
 
-# Function to stop checking when the drag ends
-def stop_drag(event):
-    global dragging_sash
-    dragging_sash = False
+def on_enter(event, label, bg):
+    # Lighten the default background color
+    hover_color = change_color(bg, 0.3)
+    style.configure(f'{label}Hover.TLabel', background=hover_color, foreground='black')
+
+
+def on_leave(event, label):
+    fg = style.lookup('TLabel', 'foreground')
+
+    if fg == '':
+        fg = 'black'
+    style.configure(f'{label}Hover.TLabel', background=style.lookup('TLabel', 'background'), foreground=fg)
+
+
+def change_color(hex_color, saturation_factor=0.2, brightness_factor=-0.2, lighten=True):
+    hex_color = str(hex_color).lstrip('#')
+    try:
+        sbf_rgb = root.winfo_rgb(hex_color)
+        hex_color = "{:02X}{:02X}{:02X}".format(sbf_rgb[0] // 256, sbf_rgb[1] // 256, sbf_rgb[2] // 256)
+    except Exception:
+        pass
+    rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    hls = colorsys.rgb_to_hls(*[c / 255.0 for c in rgb])
+    if lighten:
+        change_hls = (hls[0], min(1, hls[1] + saturation_factor), hls[2])
+    else:
+        change_hls = (hls[0], max(0, hls[1] - saturation_factor), max(0, hls[2] + brightness_factor))
+    change_rgb = tuple(int(c * 255) for c in colorsys.hls_to_rgb(*change_hls))
+    change_hex = "#{:02X}{:02X}{:02X}".format(*change_rgb)
+    return change_hex
+
+
+def update_theme_colors(event=None):
+    global bg, bgf, fgf  # Ensure we update the global variables
+
+    bg = style.lookup('TFrame', 'background')
+    bgf = style.lookup('Treeview', 'background')
+    fgf = style.lookup('Treeview', 'foreground') or "black"
+
+    # Apply the updated colors to relevant widgets
+    style.configure("Custom.TFrame", background=bg)
+    style.configure("Treeview", background=bgf, foreground=fgf)
+
+    style.configure("Disabled.TEntry", foreground="gray", fieldbackground="#bbbbbb")
+
+    root.update_idletasks()  # Force a visual refresh
+
+
+def bind_events(widget, enter_func, leave_func, click_func):
+    widget.bind("<Enter>", lambda event, l=widget.cget("text"): enter_func(event, l, bgf))
+    widget.bind("<Leave>", lambda event, l=widget.cget("text"): leave_func(event, l))
+    widget.bind("<Button-1>", click_func)
+
+
+def unbind_events(widget):
+    widget.unbind("<Enter>")
+    widget.unbind("<Leave>")
+    widget.unbind("<Button-1>")
 
 
 root = ThemedTk(gif_override=True)
+root.report_callback_exception = report_callback_exception
 ttk.Style().theme_use(menu_data['theme'])
 root.title(f'OneDriveExplorer v{__version__}')
 root.iconbitmap(application_path + '/Images/titles/OneDrive.ico')
@@ -4808,14 +5061,19 @@ root.tk.call('tk', 'fontchooser', 'configure', '-font', default_font,
              '-command', root.register(font_changed))
 
 style = ttk.Style()
+font = split_font(default_font)
 style.configure('Result.Treeview', rowheight=40)
 style.map("Treeview",
           foreground=fixed_map("foreground"),
           background=fixed_map("background"))
 
+style.configure("Disabled.TEntry", foreground="gray", fieldbackground="#bbbbbb")
+
+sel_bg = style.lookup("Treeview", "background", state=["selected"])
 bg = style.lookup('TFrame', 'background')
 bgf = style.lookup('Treeview', 'background')
 fgf = style.lookup('Treeview', 'foreground')
+
 if not fgf:
     fgf = 'black'
 
@@ -4900,8 +5158,6 @@ proj_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/tables
 saveas_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/floppy_35inch_black.png'))
 exit_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/no.png'))
 pro_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/profile.png'))
-load_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/repeat_green.png'))
-sql_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/IDI_DB4S-1.png'))
 json_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/file_yellow_hierarchy1_expanded.png'))
 csv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/table.png'))
 uaf_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/delete_red.png'))
@@ -4919,6 +5175,8 @@ message_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/lan
 cstruct_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/table_column.png'))
 question_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/question_small.png'))
 ode_small_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/ode_small.png'))
+saved_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/saved.png'))
+loadi_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/menu/files_yellow_combine.png'))
 
 # gui images
 search_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/magnifier.png'))  # main
@@ -4940,6 +5198,12 @@ reg_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/registry
 trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/trashcan.png'))  # recbin
 ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/ode.png'))  # about
 meta_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/tools.png'))  # about
+calendar_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/calendar.png'))  # sidebar
+chat_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/chat-bubble.png'))  # sidebar
+onedrive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/onedrive.png'))  # sidebar
+email_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/email.png'))  # sidebar
+note_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/note.png'))  # sidebar
+sharepoint_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/sharepoint.png'))  # sidebar
 
 # small file images
 file_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/files/file_yellow.png'))
@@ -5060,16 +5324,48 @@ main_frame = ttk.Frame(outer_frame, relief='groove', padding=5)
 
 bottom_frame = ttk.Frame(main_frame)
 
+selector_frame = ttk.Frame(outer_frame)
+
 outer_frame.grid(row=0, column=0, sticky="nsew")
-main_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+main_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+selector_frame.grid(row=0, column=0, sticky="nsew", padx=(5, 0), pady=5)
 bottom_frame.grid(row=1, column=0, pady=(5, 0), stick='nsew')
 
 outer_frame.grid_rowconfigure(0, weight=1)
-outer_frame.grid_columnconfigure(0, weight=1)
+outer_frame.grid_columnconfigure(1, weight=1)
 main_frame.grid_rowconfigure(0, weight=1)
 main_frame.grid_columnconfigure(0, weight=1)
 bottom_frame.grid_rowconfigure(0, weight=1)
 bottom_frame.grid_columnconfigure(0, weight=1)
+
+file_usage_frame = FileUsageFrame(outer_frame, padding=5, relief="groove")
+od_btn = ttk.Label(selector_frame, text="OneDrive", image=onedrive_img, compound="top")
+email_btn = ttk.Label(selector_frame, text="Email", image=email_img, compound="top")
+t_meeting_btn = ttk.Label(selector_frame, text="Meeting", image=calendar_img, compound="top")
+event_btn = ttk.Label(selector_frame, text="Events", image=calendar_img, compound="top")
+chat_btn = ttk.Label(selector_frame, text="Chat", image=chat_img, compound="top")
+notes_btn = ttk.Label(selector_frame, text="Notes", image=note_img, compound="top")
+sp_btn = ttk.Label(selector_frame, text="SarePoint", image=sharepoint_img, compound="top")
+
+od_btn.grid(row=0, column=1, sticky="ew")
+email_btn.grid(row=1, column=1, sticky="ew")
+t_meeting_btn.grid(row=2, column=1, sticky="ew")
+event_btn.grid(row=3, column=1, sticky="ew")
+chat_btn.grid(row=4, column=1, sticky="ew")
+notes_btn.grid(row=5, column=1, sticky="ew")
+sp_btn.grid(row=6, column=1, sticky="ew")
+
+od_btn.config(state='disable', style=f'{od_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
+email_btn.config(state='disable', style=f'{email_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
+t_meeting_btn.config(state='disable', style=f'{t_meeting_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
+event_btn.config(state='disable', style=f'{event_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
+chat_btn.config(state='disable', style=f'{chat_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
+notes_btn.config(state='disable', style=f'{notes_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
+sp_btn.config(state='disable', style=f'{sp_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
+
+separator = tk.Frame(selector_frame, width=3, bg=sel_bg)
+
+switch_view(od_btn, True)
 
 pwv = tk.PanedWindow(main_frame, orient=tk.VERTICAL,
                      background=bg, sashwidth=6)
@@ -5082,6 +5378,7 @@ tv_frame.enable_traversal()
 tv_inner_frame = ttk.Frame(tv_frame)
 tv_frame.add(tv_inner_frame, text='OneDrive Folders  ')
 
+handle = tk.Frame(root, bg="black", cursor="sb_h_double_arrow")
 pwh = tk.PanedWindow(tv_inner_frame, orient=tk.HORIZONTAL,
                      background=bgf, sashwidth=6, showhandle=False)
 
@@ -5164,7 +5461,7 @@ tvr.tag_configure('red', foreground="red")
 rscrollbv = ttk.Scrollbar(result_frame, orient="vertical", command=tvr.yview)
 tvr.configure(yscrollcommand=rscrollbv.set)
 popup_manager = PopupManager(root, tv, application_path, details, breadcrumb)
-file_manager = FileManager(tv, pwh, cur_sel)
+file_manager = FileManager(tv, pwh, cur_sel, handle)
 pwh.add(tv_pane_frame, minsize=40, width=250)
 pwh.add(file_manager.tv2, minsize=80, width=170)
 pwh.add(file_manager.tab2, minsize=247)
@@ -5213,7 +5510,7 @@ tvr.bind('<<TreeviewSelect>>', file_manager.new_selection)
 tvr.bind('<Double-Button-1>', file_manager.handle_double_click)
 tv.bind('<Alt-Down>', lambda event=None: popup_manager.open_children(tv.selection()))
 tv.bind('<Alt-Up>', lambda event=None: popup_manager.close_children(tv.selection()))
-root.bind('<Control-o>', lambda event=None: open_dat(file_menu))
+root.bind('<Control-o>', lambda event=None: open_profile(file_menu))
 root.bind('<Control-m>', lambda event=None: Messages(root))
 root.bind('<Alt-KeyPress-0>', lambda event=None: clear_all())
 root.bind('<Alt-KeyPress-2>', lambda event=None: load_proj())
@@ -5225,14 +5522,14 @@ search_entry.bind('<KeyRelease>', click)
 bind_id = message.bind('<Double-Button-1>', lambda event=None: Messages(root))
 infoNB.bind('<Motion>', tool_tip_manager.motion)
 search_entry.bind('<Motion>', tool_tip_manager.motion)
-#pwh.bind("<Button-1>", start_drag)
-#pwh.bind("<ButtonRelease-1>", stop_drag)
 root.nametowidget('.!frame.!frame.!myscrollablenotebook.!notebook2').bind('<Motion>', tool_tip_manager.motion)
+root.bind("<<ThemeChanged>>", update_theme_colors)
 
 keyboard.is_pressed('shift')
 
 file_menu = tk.Menu(menubar, tearoff=0)
 odsmenu = tk.Menu(file_menu, tearoff=0)
+importmenu = tk.Menu(odsmenu, tearoff=0)
 odlmenu = tk.Menu(file_menu, tearoff=0)
 projmenu = tk.Menu(file_menu, tearoff=0)
 exportmenu = tk.Menu(file_menu, tearoff=0)
@@ -5254,22 +5551,21 @@ for theme_name in sorted(root.get_themes()):
                                                       submenu.entryconfig(submenu.index(ttk.Style().theme_use()), background='grey'),
                                                       save_settings(), pane_config(), ButtonNotebook(), ButtonEntry()])
 
+importmenu.add_command(label="Import JSON", image=json_img,
+                       compound='left', command=lambda: import_json(odsmenu))
+importmenu.add_command(label="Import CSV", image=csv_img, compound='left',
+                       command=lambda: import_csv(odsmenu))
+
 odsmenu.add_command(label="Profile", image=pro_img, compound='left',
                     command=lambda: threading.Thread(target=open_profile,
                                                      args=(odsmenu,),
                                                      daemon=True).start(),
                     accelerator="Ctrl+O")
 odsmenu.add_separator()
-odsmenu.add_command(label="Load <UserCid>.dat" + (' '*10),
-                    image=load_img, compound='left',
-                    command=lambda: open_dat(odsmenu))
-odsmenu.add_command(label="Load from SQLite",
-                    image=sql_img, compound='left',
-                    command=lambda: read_sql(odsmenu))
-odsmenu.add_command(label="Import JSON", image=json_img,
-                    compound='left', command=lambda: import_json(odsmenu))
-odsmenu.add_command(label="Import CSV", image=csv_img, compound='left',
-                    command=lambda: import_csv(odsmenu))
+odsmenu.add_command(label="Load Individual Files", image=loadi_img,
+                    compound='left', command=lambda: load_ind())
+odsmenu.add_cascade(label="Import Saved Data", image=saved_img, compound='left',
+                    menu=importmenu)
 odsmenu.add_separator()
 odsmenu.add_command(label="Unload all files", image=uaf_img, compound='left',
                     command=lambda: thread_clear_all(), accelerator="Alt+0")
@@ -5308,7 +5604,7 @@ file_menu.add_command(label="Live system",
                                        args=(file_menu,),
                                        daemon=True).start()])
 
-file_menu.add_cascade(label="OneDrive settings", menu=odsmenu,
+file_menu.add_cascade(label="OneDrive metadata", menu=odsmenu,
                       image=ods_img, compound='left')
 
 file_menu.add_cascade(label="OneDrive logs", menu=odlmenu,

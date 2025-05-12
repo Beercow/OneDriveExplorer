@@ -246,7 +246,7 @@ def progress(count, total, status=''):
     terminal_width = shutil.get_terminal_size((80, 20)).columns
 
     # Reserve space for percentage and status text
-    reserved_space = len(f' 100.0% ...{status}')
+    reserved_space = len(f'[] 100.0% ...{status}')
 
     bar_len = min(60, max(10, terminal_width - reserved_space))
     filled_len = int(round(bar_len * count / float(total)))

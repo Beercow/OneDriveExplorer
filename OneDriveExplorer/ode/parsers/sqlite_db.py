@@ -24,6 +24,7 @@
 
 import logging
 import codecs
+import os
 import json
 import sqlite3
 from dissect import cstruct
@@ -98,13 +99,23 @@ class SQLiteParser:
         else:
             return ''
 
-    def parse_sql(self, sql_dir):
-        self.account = sql_dir.rsplit('\\', 1)[-1]
+    def parse_sql(self, sql_dir=False, sedb=False, sddb=False):
+        if sql_dir:
+            self.account = sql_dir.rsplit('\\', 1)[-1]
+            sedb = f'file:/{sql_dir}/SyncEngineDatabase.db?mode=ro'
+            sddb = f'file:/{sql_dir}/SafeDelete.db?mode=ro'
+        else:
+            if sedb:
+                self.account = sedb.split('\\')[-2]
+            elif sddb:
+                self.account = sddb.split('\\')[-2]
+            sedb = f'file:/{sedb}?mode=ro'
+            sddb = f'file:/{sddb}?mode=ro'
 
         self.log.info(f'Start parsing {self.account}.')
 
         try:
-            SyncEngineDatabase = sqlite3.connect(f'file:/{sql_dir}/SyncEngineDatabase.db?mode=ro', uri=True)
+            SyncEngineDatabase = sqlite3.connect(sedb, uri=True)
             cursor = SyncEngineDatabase.execute("SELECT value FROM __oddbm_schema WHERE name = 'version'")
             schema_version = cursor.fetchall()[0][0]
 
@@ -217,7 +228,7 @@ class SQLiteParser:
             self.scopeID = []
 
         try:
-            SafeDelete = sqlite3.connect(f'file:/{sql_dir}/SafeDelete.db?mode=ro', uri=True)
+            SafeDelete = sqlite3.connect(sddb, uri=True)
 
             try:
                 self.rbin_df = pd.read_sql_query("SELECT parentResourceId, resourceId, itemName, volumeId, fileId, notificationTime FROM items_moved_to_recycle_bin", SafeDelete)

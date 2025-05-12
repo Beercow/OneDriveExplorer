@@ -55,7 +55,7 @@ def load_images(zip_name):
         log.error(f'Error loading images from {zip_name.split("/")[-1]}. {e}')
 
 
-def load_project(zip_name, q, stop_event, tv, file_items, pb, value_label):
+def load_project(zip_name, q, stop_event, tv, file_items, fus, pb, value_label):
     try:
         with zipfile.ZipFile(zip_name, 'r') as archive:
             filenames = archive.namelist()
@@ -95,6 +95,9 @@ def load_project(zip_name, q, stop_event, tv, file_items, pb, value_label):
                             if count % 20 == 0:
                                 progress_gui(total, count, pb, value_label, status=f'Importing {filename} from {arc_name} project.')
 
+                    if '_FileUsageSync.csv' in filename:
+                        fus.load_csv(data)
+
                     if '_logs.csv' in filename:
                         value_label['text'] = f'Importing {filename} from {arc_name} project.'
                         pb.configure(mode='indeterminate')
@@ -111,7 +114,7 @@ def load_project(zip_name, q, stop_event, tv, file_items, pb, value_label):
     q.put(['done'])
 
 
-def save_project(tv, file_items, zip_name, user_logs, s_image, pb, value_label):
+def save_project(tv, file_items, zip_name, user_logs, s_image, fus, pb, value_label):
     def find_children(count, item=''):
         children = tv.get_children(item)
 
@@ -187,6 +190,13 @@ def save_project(tv, file_items, zip_name, user_logs, s_image, pb, value_label):
 
             pb.configure(mode='indeterminate')
             pb.start()
+
+            if not fus.empty:
+                fus.to_csv(string_buffer, index=False, encoding='utf-8')
+                filename = '_FileUsageSync.csv'
+                archive.writestr(filename, string_buffer.getvalue())
+                string_buffer.truncate(0)
+                string_buffer.seek(0)
 
             for key, value in user_logs.items():
                 value_label['text'] = f"Saving {key} to {zip_name}. Please wait...."

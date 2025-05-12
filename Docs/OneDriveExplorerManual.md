@@ -10,17 +10,18 @@
 2023-09-07 Rev. 5 - Updated for v2023.09.07  
 2023-12-13 Rev. 6 - Updated for v2023.12.13  
 2024-10-31 Rev. 7 - Updated for v2024.11.01
+2025-05-13 Rev. 8 - Updated for v2025.05.13
 
 ## OneDriveExplorer GUI Introduction
 OneDriveExplorer GUI is used to view the contents of \<UserCid>.dat files. It can load multiple settings, logs, and $Recycle.bin files at once. Search across all settings files, view OneDrive logs and much more.
 ## Getting Started
-After starting OneDriveExplorer, the main interface is displayed.
+After starting OneDriveExplorer, the OneDrive data view is displayed.
 
 ![](.\manual\startup.png)
 
 Settings for themes, fonts, logs, output to csv, json, html are saved and reloaded between program executions. You can reset these options by deleting the ode.settings file.
 
-### Interface sections
+### OneDrive Data View sections
 There are five sections to the main interface.
 
 #### Navigation Pane
@@ -118,13 +119,13 @@ Live system scans the current system looking for \<UserCid>.dat/SQLite, NTUSER.d
 
 ![](.\manual\live.png)
 
-#### OneDrive settings
-OneDrive settings contains four options for loading \<UserCid>.dat/SQLite data: Load \<UserCid>.dat, Load from SQLite, Import JSON, and Import CSV.
+#### OneDrive metadata
+OneDrive metadat contains three options for loading a user's profile, individual files, or saved data from OneDriveExplorer.
 
 ![](.\manual\odsettings.png)
 
-##### Load \<UserCid>.dat
-Use this option to load a \<UserCid>.dat file. Default location is *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\settings\\<Personal\Business>*. Once a file is selected, OneDriveExplorer will prompt to load a User Hive and the $Recycle.Bin folder.
+##### Profile
+Use this option to load a user's OneDrive profile. Default location is *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\\*. Once the folder is selected, OneDriveExplorer will prompt to load a User Hive and the $Recycle.Bin folder.
 
 ![](.\manual\userhive.png)
 
@@ -136,22 +137,32 @@ You can bypass these dialogs in one of two ways:
 
 ![](.\manual\preferences1.png)
 
-##### Load from SQLite
-Use this option to load OneDrive SQLite databases. Default location is *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\settings*. Once a folder is selected, OneDriveExplorer will prompt to load a User Hive.
+##### Load Individual Files
+Use this option to loose or individual OneDrive metadata files. When selected, OneDriveExplorer will present options for metadata files to load.
 
-![](.\manual\userhive.png)
+![](.\manual\loose.png)
 
-You can bypass this dialog in one of two ways:
-* Holding down SHIFT when loading \<UserCid>.dat
-* In the Preferences dialog
+Default location for metadata files:  
+**\<userCid>.dat**: *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\settings\\<Personal\Business[1-9]>*  
+**SyncEngineDatabase.db**: *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\settings\\<Personal\Business[1-2]>*  
+**SafeDelete.db**: *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\settings\\<Personal\Business[1-9]>*  
+**Microsoft.ListSync.db**: *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\ListSync\Business1[1-9]\settings\\<Personal\Business[1-9]>*  
+**Microsoft.FileUsageSync.db**: *%USERPROFILE%\\%AppData%\Local\Microsoft\OneDrive\ListSync\Business1[1-9]\settings\\<Personal\Business[1-9]>*  
+**NTUSER.DAT**: *%USERPROFILE%*  
+**$Recycle.Bin**: *%SystemDrive%*
 
-![](.\manual\preferences1.png)
+##### Import Saved data
+Import Saved Data has two options. Import JSON and Import CSV.
 
-##### Import JSON
+![](.\manual\import_saved_data.png) 
+
+###### Import JSON
 Import JSON allows for loading a previously saved JSON file from the command line or GUI application.
 
-##### Import CSV
+###### Import CSV
 Import CSV allows for loading a previously saved CSV file from the command line or GUI application.
+
+![](.\manual\import_csv.png)
 
 #### OneDrive logs
 *Note: This option is only available if enabled in the Preferences dialog.  
@@ -229,6 +240,96 @@ From the OneDrive Folders tab, selecting a file/folder will populate the Log Ent
 
 ![](.\manual\logs2.png)
 
+### Email Data View sections
+There are three sections to the Email data view.
+
+![](.\manual\email.png)
+
+#### Email List
+List of emails and dates that are contained in the OneDrive metadata.
+
+#### Email Information
+Information on the selected email such as: Subject, ConversationId, From, To, Date, and File Name.
+
+#### File data
+This section contains information on the file being shared in the email.
+
+### Meeting Data View sections
+There are four sections to the Meeting data view.
+
+![](.\manual\meeting.png)
+
+#### Meeting List
+List of meetings that are contained in the OneDrive metadata.
+
+#### Meeting Information
+Information on the selected meeting such as: Title, ICalUid, ConversationId, MeetingStartTime, isRecurring, File Name, File Share Data.
+
+#### File data
+This section contains information on the file being shared in the meeting.
+
+#### Participant List
+List of participants in the meeting.
+
+### Event Data View sections
+There are four sections to the Event data view.
+
+![](.\manual\event.png)
+
+#### Event List
+List of events that are contained in the OneDrive metadata.
+
+#### Event Information
+Information on the selected event such as: Title, ICalUid, ConversationId, MeetingStartTime, isRecurring, File Name, File Share Data.
+
+#### File data
+This section contains information on the file being shared in the event.
+
+#### Participant List
+List of participants in the event.
+
+### Chat Data View sections
+There are three sections to the Chat data view.
+
+![](.\manual\chat.png)
+
+#### Chat List
+List of Teams chats that are contained in the OneDrive metadata.
+
+#### File data
+This section contains information on the file being shared in the Teams chat.
+
+#### Participant List
+List of participants in the Teams Chat.
+
+### Note Data View sections
+There are three sections to the Note data view. These are Teams chats that are with the user only.
+
+![](.\manual\note.png)
+
+#### Note List
+List of Teams chats that are contained in the OneDrive metadata.
+
+#### File data
+This section contains information on the file being shared in the Teams chat.
+
+#### Participant List
+List of participants in the Teams Chat.
+
+### SharePoint Data View sections
+There are three sections to the SharePoint data view. These are Teams chats that are with the user only.
+
+![](.\manual\sharepoint.png)
+
+#### SharePoint List
+List of SharePoint sites that are contained in the OneDrive metadata.
+
+#### SharePoint Shared files
+List of files shared with the user from SharePoint.
+
+#### File data
+This section contains information on the file being shared from SharePoint.
+
 ### CStructs
 cstruct files provide a means to better parse ODL entries. The parameters of ODL entries consist of structured binary data and are parsed with a regex looking for ascii characters. cstruct files give us a means to define the structured data and extract it accordingly.
 
@@ -255,27 +356,35 @@ OneDriveExplorer is a tool used to parse \<UserCid\>.dat files and reconstruct t
 Running OneDriveExplorer.exe without any arguments displays a list of command line options:
 
 ```
-usage: OneDriveExplorer.exe [-h] [-f FILE] [-s SQL] [-d DIR] [-l [LOGS]] [-r REGHIVE] [-rb RECYCLE_BIN] [--csv CSV]
-                            [--csvf CSVF] [--html HTML] [--json JSON] [--pretty] [--clist] [--cstructs CSTRUCTS]
-                            [--sync] [--debug] [--guids]
+usage: OneDriveExplorer.py [-h] [--LIVE LIVE] [--PROFILE PROFILE] [--SETTINGS_DAT SETTINGS_DAT]
+                           [--SYNC_ENGINE SYNC_ENGINE] [--SAFE_DEL SAFE_DEL] [--LIST_SYNC LIST_SYNC]
+                           [--FILE_USAGE_SYNC FILE_USAGE_SYNC] [--REG_HIVE REG_HIVE] [--RECYCLE_BIN RECYCLE_BIN]
+                           [--LOGS [LOGS]] [--output-dir OUTPUT_DIR] [--csv] [--html] [--json] [--pretty] [--clist]
+                           [--cstructs CSTRUCTS] [--sync] [--debug] [--guids]
 
 options:
   -h, --help            show this help message and exit
-  -f FILE, --file FILE  <UserCid>.dat file to be parsed
-  -s SQL, --sql SQL     OneDrive folder containing SQLite databases
-  -d DIR, --dir DIR     Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and
+  --LIVE LIVE           Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and
                         ODL logs. This mode is primarily used with KAPE.
-  -l [LOGS], --logs [LOGS]
-                        Directory to recursively process for ODL logs.
-  -r REGHIVE, --REG_HIVE REGHIVE
-                        If a registry hive is provided then the mount points of the SyncEngines will be resolved.
-  -rb RECYCLE_BIN, --RECYCLE_BIN RECYCLE_BIN
-                        $Recycle.Bin
-  --csv CSV             Directory to save CSV formatted results to. Be sure to include the full path in double quotes.
-  --csvf CSVF           File name to save CSV formatted results to. When present, overrides default name.
-  --html HTML           Directory to save html formatted results to. Be sure to include the full path in double
-                        quotes.
-  --json JSON           Directory to save json representation to. Use --pretty for a more human readable layout.
+  --PROFILE PROFILE     Profile folder to process. Default location: %APPDATALOCAL%\Microsoft\OneDrive
+  --SETTINGS_DAT SETTINGS_DAT
+                        <UserCid>.dat file to be parsed
+  --SYNC_ENGINE SYNC_ENGINE
+                        SyncEngineDatabase.db file to load.
+  --SAFE_DEL SAFE_DEL   SafeDelete.db file to load.
+  --LIST_SYNC LIST_SYNC
+                        Microsoft.ListSync.db file to load.
+  --FILE_USAGE_SYNC FILE_USAGE_SYNC
+                        Microsoft.FileUsageSync.db file to load.
+  --REG_HIVE REG_HIVE   If a registry hive is provided then the mount points of the SyncEngines will be resolved.
+  --RECYCLE_BIN RECYCLE_BIN
+                        $Recycle.Bin folder to load.
+  --LOGS [LOGS]         Directory to recursively process for ODL logs.
+  --output-dir OUTPUT_DIR
+                        Directory to save results to. Be sure to include the full path in double quotes.
+  --csv                 Save CSV formatted results.
+  --html                Save html formatted results.
+  --json                Save json formatted results. Use --pretty for a more human readable layout.
   --pretty              When exporting to json, use a more human readable layout. Default is FALSE
   --clist               List available cstructs. Defaults to 'cstructs' folder where program was executed. Use
                         --cstructs for different cstruct folder.
@@ -285,24 +394,32 @@ options:
                         https://github.com/Beercow/ODEFiles prior to running. Default is FALSE
   --debug               Show debug information during processing.
   --guids               OneDriveExplorer will generate 10 GUIDs and exit. Useful when creating new Cstructs. Default
-                        is FALSE  
+                        is FALSE
   ```
   
 There are several groups of command line options for OneDriveExplorer.
 
 ### Source
   
-* **-f**: Full path, including \<UserCid>.dat, of \<UserCid>.dat file to be parse
+* **--LIVE**: Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and ODL logs. This mode is primarily used with KAPE.
 
-* **-s**: Directory containing OneDrive SQLite databases
+* **--PROFILE**: Profile folder to process.
 
-* **-d**: Directory to recursively process, looking for <UserCid>.dat, NTUSER hive, $Recycle.Bin, and ODL logs. This mode is primarily used with KAPE.
+* **--SETTINGS_DAT**: Full path, including \<UserCid>.dat, of \<UserCid>.dat file to be parse
 
-* **-r**: This switch will instruct OneDriveExplorer to use the registry hive supplied to resolve OneDrive mount points.  
+* **--SYNC_ENGINE**: Full path, including SyncEngineDatabase.db, of SyncEngineDatabase.db file to be parse
+
+* **--SAFE_DEL**: Full path, including SafeDelete.db, of SafeDelete.db file to be parse
+
+* **--LIST_SYNC**: Full path, including Microsoft.ListSync.db, of Microsoft.ListSync.db file to be parse
+
+* **--FILE_USAGE_SYNC**: Full path, including Microsoft.FileUsageSync.db, of .db file to be parse
+
+* **--REG_HIVE**: This switch will instruct OneDriveExplorer to use the registry hive supplied to resolve OneDrive mount points.  
  
-* **-rb**: This switch will instruct OneDriveExplorer to use the $Recycle.Bin supplied to look for deleted files. This switch can only be used when a registry hive is supplied.  
+* **--RECYCLE_BIN**: This switch will instruct OneDriveExplorer to use the $Recycle.Bin supplied to look for deleted files. This switch can only be used when a registry hive is supplied.  
 
-* **-l**: Directory to recursively process for ODL logs.
+* **--LOGS**: Directory to recursively process for ODL logs.
 
 ### Output
 
@@ -329,17 +446,81 @@ There are several groups of command line options for OneDriveExplorer.
 * **--guids**: Generates 10 random GUIDs for use with cstruct files.
 
 ### Usage
-To use OneDriveExplorer, simply provide the `.\<UserCid>.dat` file to the `-f` argument
+To use OneDriveExplorer, simply provide the profile path to the `--PROFILE` argument
 
 ```bash
-OneDriveExplorer.py -f business1\d1a7c039-6175-4ddb-bcdb-a8de45cf1678.dat
+OneDriveExplorer.py --PROFILE %APPDATALOCAL%\Microsoft\OneDrive
 ```
 
 Depending on the options, OneDriveExplorer can produce JSON, CSV, or HTML files of the parsed data. The `--pretty` option can be used to output the JSON into a more human readable layout.
 
-A user registry hive can be supplied with the `-r` argument. This will resolve some of the mount points associated with OneDrive. Along with the registry hive, $Recycle.Bin can be added with the `-rb` option to look for deleted files.
+A user registry hive can be supplied with the `--REG_HIVE` argument. This will resolve some of the mount points associated with OneDrive. Along with the registry hive, $Recycle.Bin can be added with the `--RECYCLE_BIN` option to look for deleted files.
 
 # Version changes
+## v2025.05.13
+### Added
+#### GUI
+* Ability to add, parse, and individual files
+* Data Views
+  * OneDrive
+  * Email
+  * Meeting
+  * Events
+  * Teams Chat
+  * Notes
+  * SharePoint
+#### GUI/commandline
+* Microsoft.FileUsageSync.db (recent_files_formatted_spo)
+* Profile option (no need to input individual files)
+* Unmanaged exception handling
+#### commandline
+* command line options have changed (see -h) 
+### Fixed
+#### GUI
+* Search not working properly
+
+Code clean up  
+ODL parsing speed improvement  
+Bug fixes  
+## v2025.02.14
+### Added
+#### GUI
+* Indicates between OneDrive Personal/Business
+#### GUI/commandline
+* Offline mode data (OCR, SharedWith)
+#### commandline
+* --output-dir use to change the output directory
+* --csv, --html, --json are now output types, no need to add a save path
+* --csvf has been removed
+### Fixed
+#### GUI
+* Metadata tabs not populating rare
+## v2024.11.20
+### Fixed
+#### GUI
+* please wait does not stay on top all of the time
+* Long searches lock up gui
+* Remove OneDrive Folder lock up gui
+* Unload all files lock up gui
+* Log crash issue
+#### GUI/commandline
+* Improved log naming
+* Minor fixes
+## v2024.11.12
+### Added
+#### GUI
+* Colored folders to sync/link
+#### GUI/commandline
+* Better handling of v3 logs
+* Profile, Key_Type, Log_Type, Context_Data to log files
+### Fixed
+#### GUI
+* Missing image
+#### commandline
+* No indication of parsing SQLite
+* No indication of file save
+#### GUI/commandline
+* Error with folder schema
 ## v2024.11.01
 ### Added
 #### GUI

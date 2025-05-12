@@ -29,28 +29,35 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def print_csv(df, rbin_df, name, csv_path, csv_name=False):
+def print_csv(df, rbin_df, name, csv_path, comment, fus):
     log.info('Started writing CSV file')
 
     if not os.path.exists(csv_path):
         os.makedirs(csv_path)
 
-    df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
-                        ascending=[False, False, False, True, False, False])
+    if not df.empty:
+        df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+                            ascending=[False, False, False, True, False, False])
 
-    df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
+        df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
 
     if not rbin_df.empty:
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
-
-    if csv_name:
-        csv_file = csv_name
+    fus_file = os.path.basename(name).split('.')[0]+"_FileUsageSync.csv"
 
     file_extension = os.path.splitext(name)[1][1:]
 
     if file_extension == 'previous' and not csv_name:
         csv_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv"
+        fus_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_FileUsageSync.csv"
 
-    df.to_csv(csv_path + '/' + csv_file, index=False, encoding='utf-8')
+    if not df.empty:
+        with open(csv_path + '/' + csv_file, 'w', encoding='utf-8', newline='') as f:
+            f.write(f'#{comment}\n')  # Add your comment here
+            df.to_csv(f, index=False, encoding='utf-8')
+
+    if not fus.empty:
+        with open(csv_path + '/' + fus_file, 'w', encoding='utf-8', newline='') as f:
+            fus.to_csv(f, index=False, encoding='utf-8')

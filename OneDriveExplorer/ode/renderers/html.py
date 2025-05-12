@@ -29,28 +29,38 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def print_html(df, rbin_df, name, html_path):
+def print_html(df, rbin_df, name, html_path, fus):
     log.info('Started writing HTML file')
 
     if not os.path.exists(html_path):
         os.makedirs(html_path)
 
-    df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
-                        ascending=[False, False, False, True, False, False])
+    if not df.empty:
+        df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+                            ascending=[False, False, False, True, False, False])
 
-    df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
+        df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
 
     if not rbin_df.empty:
         df = pd.concat([df, rbin_df], ignore_index=True, axis=0)
 
-    df = df.apply(lambda x: x.fillna(0) if x.dtype == 'Int64' else x.fillna('') if x.dtype == 'object' else x)
+    if not df.empty:
+        df = df.apply(lambda x: x.fillna(0) if x.dtype == 'Int64' else x.fillna('') if x.dtype == 'object' else x)
 
     html_file = os.path.basename(name).split('.')[0]+"_OneDrive.html"
+    fus_file = os.path.basename(name).split('.')[0]+"_FileUsageSync.html"
     file_extension = os.path.splitext(name)[1][1:]
 
     if file_extension == 'previous':
         html_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.html"
+        fus_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_FileUsageSync.html"
 
-    output = open(html_path + '/' + html_file, 'w', encoding='utf-8')
-    output.write(df.to_html(index=False))
-    output.close()
+    if not df.empty:
+        output = open(html_path + '/' + html_file, 'w', encoding='utf-8')
+        output.write(df.to_html(index=False))
+        output.close()
+
+    if not fus.empty:
+        output = open(html_path + '/' + fus_file, 'w', encoding='utf-8')
+        output.write(fus.to_html(index=False))
+        output.close()
