@@ -478,10 +478,12 @@ def process_odl(filename, map):
             context_data_len = int.from_bytes(signature[4:6], byteorder='little')
             f.seek(-8, 1)
             if header.odl_version == 3:
-                db_size = 32 + context_data_len
+                db_size = 32
+                first_db_size = 32 + context_data_len
             else:
                 db_size = 56
-            data_block = f.read(db_size)  # odl complete header is 56 bytes
+                first_db_size = 56
+            data_block = f.read(first_db_size)  # odl complete header is 56 bytes
         while data_block:
             description = ''
             odl = {

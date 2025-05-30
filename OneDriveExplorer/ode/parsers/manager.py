@@ -214,7 +214,7 @@ class ParsingManager:
                 log.info('Building folder list. Please wait....')
                 for path, subdirs, files in os.walk(v):
                     for name in files:
-                        if name.endswith('.dat'):
+                        if name.endswith('.dat') and not (name.endswith('import.dat') or name.endswith('screenshot.dat')):
                             od_settings = self.DATParser.parse_dat(f'{v}\\{name}', key)
                             if od_settings and not od_settings.df.empty:
                                 if user:

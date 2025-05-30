@@ -111,7 +111,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.05.13"
+__version__ = "2025.05.30"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -4380,7 +4380,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 pb.start()
                 for path, subdirs, files in os.walk(v):
                     for name in files:
-                        if name.endswith('.dat'):
+                        if name.endswith('.dat') and not (name.endswith('import.dat') or name.endswith('screenshot.dat')):
                             od_settings = DATParser.parse_dat(f'{v}\\{name}', key,
                                                               gui=True, pb=pb,
                                                               value_label=value_label)

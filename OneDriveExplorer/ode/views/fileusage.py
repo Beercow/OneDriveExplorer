@@ -751,7 +751,8 @@ class FileUsageFrame(ttk.Frame):
                         self.meetings_tree.insert("", "end", values=(data["Subject"],), iid=unique_id)
                     elif has_sender:
                         self.emails_tree.insert("", "end", values=(f'{data["SharedByDisplayName"]}\r{data["Subject"]}',f'{data["SharedByTime"][:10]}\r ',), iid=unique_id)
-                    elif 'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
+                    elif isinstance(row.get("file.ItemProperties.Shared.TeamsMessageThreadId"), str) and 'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
+                    #elif 'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
                         if data["Subject"] == '':
                             text = data["SharedByDisplayName"]
                         else:
@@ -761,7 +762,7 @@ class FileUsageFrame(ttk.Frame):
                         chat_subject = self.get_chat_subject(data)
                         self.chats_tree.insert("", "end", values=(chat_subject,), iid=unique_id)
             else:
-                parts = row.get("file.ItemProperties.SemanticProperties.ContainerName", "N/A").split(" - ", 1)
+                parts = str(row.get("file.ItemProperties.SemanticProperties.ContainerName", "N/A")).split(" - ", 1)
                 team = parts[0].strip()
                 sub = parts[1].strip() if len(parts) > 1 else None
 
@@ -828,10 +829,13 @@ class FileUsageFrame(ttk.Frame):
 
         values = self.files_tree.item(selected_item, 'values')
         text = self.files_tree.item(selected_item, 'text')
-        indexes = set(map(int, values[0].strip('{}').split(', ')))
-        for idx in indexes:
-            file_name = self.data.iloc[idx].get("file.FileName")
-            self.sp_header.build_tree(text, file_name, idx)
+        try:
+            indexes = set(map(int, values[0].strip('{}').split(', ')))
+            for idx in indexes:
+                file_name = self.data.iloc[idx].get("file.FileName")
+                self.sp_header.build_tree(text, file_name, idx)
+        except Exception:
+            return
 
         self.sp_header.tree.bind("<<TreeviewSelect>>", self.on_teams_file_select)
 
