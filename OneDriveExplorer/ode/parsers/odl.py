@@ -552,8 +552,9 @@ def process_odl(filename, map):
                 return pd.DataFrame.from_records(odl_rows)
 
             if params_len:
+                c_string = f"{data.code_file_name.decode('utf8', 'ignore').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8', 'ignore').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}"
                 try:
-                    structure = getattr(cparser, f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
+                    structure = getattr(cparser, c_string)
                     try:
                         params = structure(f.read(params_len))
                         if len(params) == 0:
@@ -580,9 +581,9 @@ def process_odl(filename, map):
 
                             params = ', '.join(params)
 
-                        description = ''.join([v for (k, v) in cparser.consts.items() if k == f"{data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}_des"])
+                        description = ''.join([v for (k, v) in cparser.consts.items() if k == f"{c_string}_des"])
                     except EOFError:
-                        log.warning(f"EOFError while parsing {data.code_file_name.decode('utf8').lower().split('.')[0]}_{data.flags}_{data.code_function_name.decode('utf8').split('::')[-1].replace('~', '_').replace(' ()', '_').lower()}")
+                        log.warning(f"EOFError while parsing {c_string}")
                         f.seek(- params_len, 1)
                         params = extract_strings(f.read(params_len).decode('utf8', 'ignore'), map)
                 except AttributeError:
@@ -592,9 +593,9 @@ def process_odl(filename, map):
                 params = ''
 
             odl['Key_Type'] = key_type
-            odl['Code_File'] = data.code_file_name.decode('utf8')
+            odl['Code_File'] = data.code_file_name.decode('utf8', 'ignore')
             odl['Flags'] = data.flags
-            odl['Function'] = data.code_function_name.decode('utf8')
+            odl['Function'] = data.code_function_name.decode('utf8', 'ignore')
             if hasattr(data_block, 'context_data') and data_block.context_data:
                 odl['Context_Data'] = extract_context_data(data_block.context_data)
             odl['Description'] = description
