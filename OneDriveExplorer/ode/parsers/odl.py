@@ -516,12 +516,17 @@ def process_odl(filename, map):
                 'Param13': ''
             }
 
-            if header.odl_version in [1, 2]:
-                data_block = cparser.Data_block_V2(data_block)
-            elif header.odl_version == 3:
-                data_block = cparser.Data_block_V3(data_block)
-            else:
-                log.error(f'Unknown odl_version = {header.odl_version}')
+            try:
+                if header.odl_version in [1, 2]:
+                    data_block = cparser.Data_block_V2(data_block)
+                elif header.odl_version == 3:
+                    data_block = cparser.Data_block_V3(data_block)
+                else:
+                    log.error(f'Unknown odl_version = {header.odl_version}')
+                    return pd.DataFrame()
+            except Exception as e:
+                log.warning(f'Unable to parse {basename} completely. {type(e).__name__}')
+                return pd.DataFrame.from_records(odl_rows)
 
             if data_block.signature != 0xffeeddcc:
                 log.warning(f'Unable to parse {basename} completely. Did not find 0xCCDDEEFF')
