@@ -4,13 +4,21 @@ OneDriveExplorer is a command line and GUI based application for reconstructing 
 
 ## Usage
 
-Settings files are found in the following loacations:
+Settings files are found in the following locations:  
+ **Windows**
  * \AppData\Local\Microsoft\OneDrive\settings\Business<span style="color:yellow"><1-9></span>
  * \AppData\Local\Microsoft\OneDrive\settings\Personal
  
-Log files are found in the following loacations:
+ **macOS**
+ * /Users/\<username>/Library/Application Support/Onedrive
+ 
+Log files are found in the following locations:  
+**Windows**
  * \AppData\Local\Microsoft\OneDrive\logs\Business<span style="color:yellow"><1-9></span>
  * \AppData\Local\Microsoft\OneDrive\logs\Personal
+ 
+ **macOS**
+ * /Users/\<username>/Library/Logs/OneDrive
  
  Log files will be unobfuscated if the `ObfuscationStringMap.txt` and\or [`general.keystore`, `vault.keystore`] file(s) are present.
 
