@@ -90,11 +90,11 @@ typedef struct _Data_block_V2{
     uint64     timestamp;
     uint32     unk1;
     uint32     unk2;
-    uint128    unk3_guid;
+    uint128    guid;
+    uint32     unk3;
     uint32     unk4;
-    uint32     unk5;
     uint32     data_len;
-    uint32     unk6;
+    uint32     unk5;
     // followed by Data
 } Data_block_V2;
 
@@ -120,9 +120,9 @@ typedef struct _Data_v2{
 } Data_v2;
 
 typedef struct _Data_v3{
-    uint128    unk1_guid;
+    uint128    guid;
+    uint32     unk1;
     uint32     unk2;
-    uint32     unk3;
     uint32     code_file_name_len;
     char       code_file_name[code_file_name_len];
     uint32     flags;
@@ -677,6 +677,11 @@ def parse_odl(rootDir, key='', pb=False, value_label=False, gui=False):
         results = list(executor.map(worker, filenames))
 
     df = pd.concat(results, ignore_index=True, axis=0)
+    df = df.astype({
+         'File_Index': 'Int64',
+         'Flags': 'Int64'
+         })
+
     q.put(None)
     t.join()
     return df

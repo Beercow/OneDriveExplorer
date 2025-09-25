@@ -23,6 +23,7 @@
 #
 
 import os
+import json
 import pandas as pd
 import logging
 
@@ -31,7 +32,9 @@ log = logging.getLogger(__name__)
 
 def print_csv(df, rbin_df, name, csv_path, comment, fus):
     log.info('Started writing CSV file')
+    data_dict = json.loads(comment)
 
+    print(f'saving {data_dict["Name"]}')
     if not os.path.exists(csv_path):
         os.makedirs(csv_path)
 
@@ -47,9 +50,12 @@ def print_csv(df, rbin_df, name, csv_path, comment, fus):
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
     fus_file = os.path.basename(name).split('.')[0]+"_FileUsageSync.csv"
 
+    if data_dict["Name"] == 'Microsoft.ListSync.db':
+        csv_file = os.path.basename(name).split('.')[0]+"_OneDrive_offline.csv"
+
     file_extension = os.path.splitext(name)[1][1:]
 
-    if file_extension == 'previous' and not csv_name:
+    if file_extension == 'previous':
         csv_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.csv"
         fus_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_FileUsageSync.csv"
 

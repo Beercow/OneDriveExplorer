@@ -24,7 +24,6 @@
 
 import logging
 import codecs
-import os
 import json
 import sqlite3
 from dissect import cstruct

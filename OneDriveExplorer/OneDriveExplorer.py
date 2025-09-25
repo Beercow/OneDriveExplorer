@@ -51,7 +51,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.06.27"
+__version__ = "2025.09.24"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()
@@ -203,16 +203,20 @@ def main():
         sys.exit()
 
     # Ensure only one mode is used
-    if sum(bool(mode) for mode in [args.LIVE, args.PROFILE] + [getattr(args, f) for f in fields_to_check[:5]]) > 1:
+    # Evaluate the three groups:
+    live_mode = bool(args.LIVE)
+    profile_mode = bool(args.PROFILE)
+    fields_mode = any(getattr(args, f) for f in fields_to_check)  # any field chosen counts as one "mode"
+
+    # Count how many of the three mode groups are active:
+    active_modes = sum((live_mode, profile_mode, fields_mode))
+
+    if active_modes > 1:
         parser.error("Only one of --LIVE, --PROFILE, or any of --SETTINGS_DAT, --SYNC_ENGINE, --SAFE_DEL, --LIST_SYNC, --FILE_USAGE_SYNC can be used.")
 
     # Enforce dependency: --RECYCLE_BIN requires --REG_HIVE
     if args.RECYCLE_BIN and not args.REG_HIVE:
         parser.error("--RECYCLE_BIN requires --REG_HIVE to be specified.")
-
-    # Enforce dependency: --LIST_SYNC requires --SYNC_ENGINE or --SETTINGS_DAT
-    if args.LIST_SYNC and not (args.SYNC_ENGINE or args.SETTINGS_DAT):
-        parser.error("--LIST_SYNC requires either --SYNC_ENGINE or --SETTINGS_DAT to be provided.")
 
     # --PROFILE allows --REG_HIVE and --RECYCLE_BIN; --LIVE does not
     if args.LIVE and (args.REG_HIVE or args.RECYCLE_BIN):

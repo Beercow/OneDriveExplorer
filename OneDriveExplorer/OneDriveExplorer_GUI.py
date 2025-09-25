@@ -63,9 +63,10 @@ from ode.renderers.project import save_project
 from ode.renderers.project import load_project
 from ode.renderers.project import load_images
 import ode.parsers.dat as dat_parser
+import ode.parsers.dat_legacy as dat_parser_legacy
 from ode.parsers.csv_file import parse_csv
-import ode.parsers.offline as SQLiteTableExporter
-import ode.parsers.fileusagesync as fileusagesync
+import ode.parsers.Nucleus.offline as SQLiteTableExporter
+import ode.parsers.Nucleus.fileusagesync as fileusagesync
 import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
 import ode.parsers.sqlite_db as sqlite_parser
@@ -82,6 +83,7 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 pd.set_option('future.no_silent_downcasting', True)
 
 DATParser = dat_parser.DATParser()
+DATParserLegacy = dat_parser_legacy.DATParser()
 OneDriveParser = onedrive_parser.OneDriveParser()
 SQLiteParser = sqlite_parser.SQLiteParser()
 fus = fileusagesync.SQLiteTableExporter()
@@ -111,7 +113,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.06.27"
+__version__ = "2025.09.24"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -219,6 +221,7 @@ if menu_data is None:
                              "odl": false,\
                              "odl_cor": false,\
                              "odl_save": false,\
+                             "legacy": false,\
                              "font": null,\
                              "Date_created": true,\
                              "Date_accessed": true,\
@@ -316,11 +319,12 @@ class Preferences:
         self.json_pretty = tk.BooleanVar(value=menu_data['pretty'])
         self.csv_save = tk.BooleanVar(value=menu_data['csv'])
         self.html_save = tk.BooleanVar(value=menu_data['html'])
-        self.auto_path = tk.StringVar(value=menu_data['path'])
-        self.skip_hive = tk.BooleanVar(value=menu_data['hive'])
         self.odl = tk.BooleanVar(value=menu_data['odl'])
         self.odl_cor = tk.BooleanVar(value=menu_data['odl_cor'])
         self.odl_save = tk.BooleanVar(value=menu_data['odl_save'])
+        self.auto_path = tk.StringVar(value=menu_data['path'])
+        self.skip_hive = tk.BooleanVar(value=menu_data['hive'])
+        self.legacy = tk.BooleanVar(value=menu_data['legacy'])
 
     def create_preferences_window(self):
         self.win = tk.Toplevel(self.root)
@@ -341,7 +345,7 @@ class Preferences:
         self.inner_frame = ttk.Frame(self.frame, relief='groove', padding=5)
         self.select_frame = ttk.LabelFrame(self.inner_frame, text="<UserCid>.dat/SQLite output")
         self.path_frame = ttk.Frame(self.inner_frame)
-        self.hive_frame = ttk.Frame(self.inner_frame)
+        self.other_frame = ttk.Frame(self.inner_frame)
         self.odl_frame = ttk.LabelFrame(self.inner_frame, text="ODL settings")
         self.exit_frame = ttk.Frame(self.inner_frame)
 
@@ -368,7 +372,7 @@ class Preferences:
         self.select_frame.grid(row=0, column=0, sticky="nsew")
         self.odl_frame.grid(row=1, column=0, pady=25, sticky="nsew")
         self.path_frame.grid(row=2, column=0, pady=(0, 25), sticky="nsew")
-        self.hive_frame.grid(row=3, column=0, pady=(0, 25), sticky="nsew")
+        self.other_frame.grid(row=3, column=0, pady=(0, 25), sticky="nsew")
         self.exit_frame.grid(row=4, column=0, sticky="nsew")
 
     def create_checkbuttons(self):
@@ -376,19 +380,21 @@ class Preferences:
         self.pretty = ttk.Checkbutton(self.select_frame, text="--pretty", var=self.json_pretty, offvalue=False, onvalue=True, takefocus=False)
         self.auto_csv = ttk.Checkbutton(self.select_frame, text="Auto Save to CSV", var=self.csv_save, offvalue=False, onvalue=True, takefocus=False)
         self.auto_html = ttk.Checkbutton(self.select_frame, text="Auto Save to HTML", var=self.html_save, offvalue=False, onvalue=True, takefocus=False)
-        self.reghive = ttk.Checkbutton(self.hive_frame, text="Disable loading user hive dialog", var=self.skip_hive, offvalue=False, onvalue=True, takefocus=False)
         self.en_odl = ttk.Checkbutton(self.odl_frame, text="Enable ODL log parsing", var=self.odl, offvalue=False, onvalue=True, takefocus=False, command=self.odl_config)
         self.en_cor = ttk.Checkbutton(self.odl_frame, text="Enable ODL log correlation", var=self.odl_cor, offvalue=False, onvalue=True, takefocus=False)
         self.auto_odl = ttk.Checkbutton(self.odl_frame, text="Auto Save ODL", var=self.odl_save, offvalue=False, onvalue=True, takefocus=False)
+        self.reghive = ttk.Checkbutton(self.other_frame, text="Disable loading user hive dialog", var=self.skip_hive, offvalue=False, onvalue=True, takefocus=False)
+        self.en_legacy = ttk.Checkbutton(self.other_frame, text="Enable legacy <UserCid>.dat parser", var=self.legacy, offvalue=False, onvalue=True, takefocus=False)
 
         self.auto_json.grid(row=0, column=0, padx=5)
         self.pretty.grid(row=0, column=1, sticky="w")
         self.auto_csv.grid(row=1, column=0, columnspan=2, padx=5, sticky="w")
         self.auto_html.grid(row=2, column=0, columnspan=2, padx=5, sticky="w")
-        self.reghive.grid(row=0, column=2, padx=5)
         self.en_odl.grid(row=0, column=0, padx=5, sticky="w")
         self.en_cor.grid(row=1, column=0, padx=(15, 5), sticky="w")
         self.auto_odl.grid(row=2, column=0, padx=5, sticky="w")
+        self.reghive.grid(row=0, column=2, padx=5, sticky="w")
+        self.en_legacy.grid(row=1, column=2, padx=5, sticky="w")
 
     def create_path_entry(self):
         self.label = ttk.Label(self.path_frame, text="Auto Save Path")
@@ -454,11 +460,12 @@ class Preferences:
         menu_data['pretty'] = self.json_pretty.get()
         menu_data['csv'] = self.csv_save.get()
         menu_data['html'] = self.html_save.get()
-        menu_data['path'] = self.auto_path.get()
-        menu_data['hive'] = self.skip_hive.get()
         menu_data['odl'] = self.odl.get()
         menu_data['odl_cor'] = self.odl_cor.get()
         menu_data['odl_save'] = self.odl_save.get()
+        menu_data['path'] = self.auto_path.get()
+        menu_data['hive'] = self.skip_hive.get()
+        menu_data['legacy'] = self.legacy.get()
 
         if menu_data['odl']:
             file_menu.entryconfig("OneDrive logs", state='normal')
@@ -1468,10 +1475,13 @@ class Result:
 
         elif image_key in [str(od_folder_img), str(od_p_folder_img), str(tenant_sync_img)]:
             spoPermissions = next(
-                (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
+                (
+                    ast.literal_eval(item.split('spoPermissions: ', 1)[1])
+                    for item in self.args[0]
+                    if item.startswith('spoPermissions: ')
+                ),
                 ''
             )
-
             if '+' in self.args[0][2]:
                 self.type.append(building_big_img)
             else:
@@ -1512,10 +1522,13 @@ class Result:
 
     def handle_folder_status(self, num, values_list):
         spoPermissions = next(
-            (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
-            ''
-        )
-
+                (
+                    ast.literal_eval(item.split('spoPermissions: ', 1)[1])
+                    for item in self.args[0]
+                    if item.startswith('spoPermissions: ')
+                ),
+                ''
+            )
         # Might need to look into this.
         if num == '7' and len(values_list) > 13:
             shortcut_item = next((item for item in self.args[0] if 'shortcutitemindex:' in item.lower()), None)
@@ -1548,20 +1561,42 @@ class Result:
             self.type.append(file_del_big_img) if self.tags == 'red' else self.type.append(file_yellow_big_img)
             values_list[0] = f'  Date modified: {self.args[0][0]}\n  Size: {self.args[0][1]}'
             spoPermissions = next(
-                (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in self.args[0] if 'spoPermissions: ' in item),
+                (
+                    ast.literal_eval(item.split('spoPermissions: ', 1)[1])
+                    for item in self.args[0]
+                    if item.startswith('spoPermissions: ')
+                ),
                 ''
             )
             sharedItem = next(
-                (item.split(' ')[1] for item in self.args[0] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1),
+                (
+                    item.split(' ')[1]
+                    for item in self.args[0]
+                    if item.lower().startswith('shareditem:') and len(item.split(' ')) > 1
+                ),
                 ''
             )
 
-            hydrationType = next((item.split(' ')[1] for item in self.args[0] if 'lasthydrationtype:' in item.lower() and len(item.split(' ')) > 1), '')
+            hydrationType = next(
+                (
+                    item.split(' ')[1]
+                    for item in self.args[0]
+                    if item.lower().startswith('lasthydrationtype:') and len(item.split(' ')) > 1
+                ),
+                ''
+            )
 
-            lastKnownPinState = next((item.split(' ')[1] for item in self.args[0] if 'lastknownpinstate:' in item.lower() and len(item.split(' ')) > 1), '')
+            lastKnownPinState = next(
+                (
+                    item.split(' ')[1]
+                    for item in self.args[0]
+                    if item.lower().startswith('lastknownpinstate:') and len(item.split(' ')) > 1
+                ),
+                ''
+            )
 
             for num in ['2', '5', '6', '7', '8']:
-                if any(('filestatus:' in item.lower() or 'inrecyclebin:' in item.lower()) and num in item for item in self.args[0]):
+                if any((item.lower().startswith('filestatus:') or item.lower().startswith('inrecyclebin:')) and num in item for item in self.args[0]):
                     if lastKnownPinState in ['0', '1'] and num == '2':
                         self.status.append(self.get_pin_state(lastKnownPinState))
                     elif hydrationType.lower() == 'passive' and num == '2':
@@ -1576,7 +1611,8 @@ class Result:
                 self.status.append(shared_big_img)
 
             if not set(self.lock_list).intersection(spoPermissions) and not any('inrecyclebin:' in item.lower() for item in self.args[0]):
-                self.status.append(locked_big_img)
+                if len(spoPermissions) > 0:
+                    self.status.append(locked_big_img)
 
     def get_folder_color(self, num):
         folder_color = {
@@ -2519,10 +2555,13 @@ class FileManager:
             folderStatus = next((item.split(' ')[1] for item in values if 'folderstatus:' in item.lower() and len(item.split(' ')) > 1), '')
 
             spoPermissions = next(
-                    (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in values if 'spoPermissions: ' in item),
-                    ''
+                (
+                    ast.literal_eval(item.split('spoPermissions: ', 1)[1])
+                    for item in values
+                    if item.startswith('spoPermissions: ')
+                ),
+                ''
             )
-
             if folderStatus == '7':
                 if image_key == str(link_directory_img):
                     self.status.append(online_link_img)
@@ -2587,7 +2626,11 @@ class FileManager:
                     lastKnownPinState = next((item.split(' ')[1] for item in values_i if 'lastknownpinstate:' in item.lower() and len(item.split(' ')) > 1), '')
 
                     spoPermissions_i = next(
-                        (ast.literal_eval(item.split('spoPermissions: ')[1]) for item in values_i if 'spopermissions: ' in item.lower()), 
+                        (
+                            ast.literal_eval(item.split('spoPermissions: ', 1)[1])
+                            for item in values_i
+                            if item.startswith('spoPermissions: ')
+                        ),
                         ''
                     )
 
@@ -2607,7 +2650,8 @@ class FileManager:
                         self.status.append(shared_img)
 
                     if not set(lock_list).intersection(spoPermissions_i) and str(tags_i) != 'red':
-                        self.status.append(locked_img)
+                        if len(spoPermissions_i) > 0:
+                            self.status.append(locked_img)
 
                     image_creator = CreateImage(self.status)
                     image_sha1 = image_creator.sha1_digest
@@ -2616,7 +2660,8 @@ class FileManager:
                         tags_i = 2
                     self.insert_into_treeview(i, image_sha1, values_i, tags_i)
 
-        except Exception:
+        except Exception as e:
+            print(e)
             pass
 
         if self.file:
@@ -2629,10 +2674,12 @@ class FileManager:
     def insert_into_treeview(self, iid, image_sha1, values, tags):
         if not tags:
             print('no tag')
-        creationDate = next((item.split(' ', 1)[1] for item in values if 'diskcreationtime:' in item.lower() and len(item.split(' ', 1)) > 1), '')
-        accessDate = next((item.split(' ', 1)[1] for item in values if 'disklastaccesstime:' in item.lower() and len(item.split(' ', 1)) > 1), '')
 
-        new_values = [creationDate, accessDate, values[0], values[1]]
+        creationDate = next((item.split(' ', 1)[1] for item in values if (item.lower().startswith('diskcreationtime:') or item.lower().startswith('created:')) and len(item.split(' ', 1)) > 1), '')
+        accessDate = next((item.split(' ', 1)[1] for item in values if item.lower().startswith('disklastaccesstime:') and len(item.split(' ', 1)) > 1), '')
+        modifiedDate = next((item.split(' ', 1)[1] for item in values if item.lower().startswith('lastchange:') and len(item.split(' ', 1)) > 1), values[0])
+
+        new_values = [creationDate, accessDate, modifiedDate, values[1]]
         if iid:
             self.tv3.insert("", "end", iid=iid, image=s_image[image_sha1], values=new_values, tags=tags)
         else:
@@ -3605,8 +3652,6 @@ def search_result():
 
 
 def clear_search():
-    global s_image
-
     position = None
     threading.Thread(target=clear_tvr,
                      daemon=True).start()
@@ -3895,8 +3940,6 @@ def live_system(menu):
                 profile[user][logs_find[0]].append(path)
 
     for key, value in profile.items():
-        print(f'key: {key}')
-        print(f'value: {value}')
         if has_settings(value):
             value_label['text'] = f"Searching for {key}'s NTUSER.DAT. Please wait...."
             pb.configure(mode='indeterminate')
@@ -4211,20 +4254,23 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
     clear_search()
     projmenu.entryconfig("Load", state='disable')
     root.unbind('<Alt-KeyPress-2>')
+
     if not live:
         widgets_disable()
     start = time.time()
 
-    if x == 'loose':
-        offline_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
+    od_offline = False
 
+    if x == 'loose':
         if filename['Microsoft.ListSync.db'] != '':
             pb.configure(mode='indeterminate')
             value_label['text'] = 'Gathering offline data. Please wait....'
             pb.start()
             logging.info("Stared parsing Microsoft.ListSync.db")
             exporter = SQLiteTableExporter.SQLiteTableExporter(filename['Microsoft.ListSync.db'])
-            offline_db = exporter.get_offline_data()
+            od_offline = exporter.get_offline_data()
+            if not od_offline.df_offline.empty:
+                parse_results(False, filename['Microsoft.ListSync.db'], od_offline.account, start, x, False, False, od_offline, gui=True, pb=pb, value_label=value_label)
             pb.stop()
             value_label['text'] = 'Complete'
 
@@ -4251,13 +4297,22 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             account = os.path.dirname(filename['*.dat *.dat.previous'].replace('/', '\\')).rsplit('\\', 1)[-1]
             name = f'{account}_{os.path.split(filename["*.dat *.dat.previous"])[1]}'
 
-            od_settings = DATParser.parse_dat(filename['*.dat *.dat.previous'], account,
-                                              gui=True, pb=pb,
-                                              value_label=value_label)
+            if not menu_data['legacy']:
+                od_settings, exit_code = DATParser.parse_dat(filename['*.dat *.dat.previous'], account,
+                                                             gui=True, pb=pb,
+                                                             value_label=value_label)
+            else:
+                exit_code = 1
+
+            if exit_code == 1:
+                logging.info(f"{filename['*.dat *.dat.previous']} failed to parse. Trying legacy parser.")
+                od_settings = DATParserLegacy.parse_dat(filename['*.dat *.dat.previous'], account,
+                                                        gui=True, pb=pb,
+                                                        value_label=value_label)
 
             if od_settings:
                 if not od_settings.df.empty:
-                    parse_results(od_settings, filename['*.dat *.dat.previous'], name, start, x, reghive, recbin, offline_db, gui=True, pb=pb, value_label=value_label)
+                    parse_results(od_settings, filename['*.dat *.dat.previous'], name, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
 
         if filename['SyncEngineDatabase.db'] != '' or filename['SafeDelete.db'] != '':
             sedb = filename['SyncEngineDatabase.db'].replace('/', '\\')
@@ -4273,7 +4328,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 filename = [sedb, sddb]
 
             if od_settings:
-                parse_results(od_settings, filename, od_settings.account, start, x, reghive, recbin, offline_db, gui=True, pb=pb, value_label=value_label)
+                parse_results(od_settings, filename, od_settings.account, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
 
     elif x == 'Profile':
         if live:
@@ -4320,7 +4375,6 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                     profile[logs_find[0]].append(path)
 
         for key, value in profile.items():
-            offline_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
             if key == 'logs':
                 if menu_data['odl'] is True:
                     for folder_name in value:
@@ -4364,7 +4418,9 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 pb.start()
                 logging.info("Stared parsing Microsoft.ListSync.db")
                 exporter = SQLiteTableExporter.SQLiteTableExporter(f'{v}\\Microsoft.ListSync.db')
-                offline_db = exporter.get_offline_data()
+                od_offline = exporter.get_offline_data()
+                if not od_offline.df_offline.empty:
+                    parse_results(False, f'{v}\\Microsoft.ListSync.db', key, start, x, False, False, od_offline, gui=True, pb=pb, value_label=value_label)
                 value_label['text'] = 'Gathering file usage data. Please wait....'
                 fus.set_db_path(f'{v}')
                 logging.info("Stared parsing Microsoft.FileUsageSync.db")
@@ -4381,16 +4437,25 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 for path, subdirs, files in os.walk(v):
                     for name in files:
                         if name.endswith('.dat') and not (name.endswith('import.dat') or name.endswith('screenshot.dat')):
-                            od_settings = DATParser.parse_dat(f'{v}\\{name}', key,
-                                                              gui=True, pb=pb,
-                                                              value_label=value_label)
+                            if not menu_data['legacy']:
+                                od_settings, exit_code = DATParser.parse_dat(f'{v}\\{name}', key,
+                                                                             gui=True, pb=pb,
+                                                                             value_label=value_label)
+                            else:
+                                exit_code = 1
+
+                            if exit_code == 1:
+                                logging.info(f"{v}\\{name} failed to parse. Trying legacy parser.")
+                                od_settings = DATParserLegacy.parse_dat(f'{v}\\{name}', key,
+                                                                        gui=True, pb=pb,
+                                                                        value_label=value_label)
                             if od_settings:
                                 if not od_settings.df.empty:
                                     if user:
                                         pname = f'{user}_{od_settings.account}_{name}'
                                     else:
                                         pname = f'{od_settings.account}_{name}'
-                                    parse_results(od_settings, f'{v}\\{name}', pname, start, x, reghive, recbin, pd.DataFrame(columns=['resourceID', 'ListSync']), gui=True, pb=pb, value_label=value_label)
+                                    parse_results(od_settings, f'{v}\\{name}', pname, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
                 pb.configure(mode='indeterminate')
                 value_label['text'] = 'Building folder list. Please wait....'
                 pb.start()
@@ -4401,7 +4466,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                             pname = f'{user}_{key}'
                         else:
                             pname = key
-                        parse_results(od_settings, v, pname, start, x, reghive, recbin, offline_db, gui=True, pb=pb, value_label=value_label)
+                        parse_results(od_settings, v, pname, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
                 pb.stop()
 
         pb.stop()
@@ -4427,10 +4492,10 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         value_label['text'] = 'Building folder list. Please wait....'
         pb.start()
         account = ''
-        od_settings = parse_csv(filename['_OneDrive.csv'])
+        od_settings, od_offline = parse_csv(filename['_OneDrive.csv'])
 
-        if od_settings:
-            parse_results(od_settings, filename['_OneDrive.csv'], '', start, x, reghive, recbin, od_settings.offline_db, gui=True, pb=pb, value_label=value_label, save=False)
+        if od_settings or od_offline:
+            parse_results(od_settings, filename['_OneDrive.csv'], '', start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label, save=False)
 
     elif x == 'Project':
         name = filename
@@ -4469,7 +4534,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         widgets_normal()
 
 
-def parse_results(od_settings, filename, key, start, x, reghive, recbin, offline_db, gui, pb, value_label, save=True):
+def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_offline, gui, pb, value_label, save=True):
     pb.configure(mode='indeterminate')
     value_label['text'] = 'Building folder list. Please wait....'
     pb.start()
@@ -4477,7 +4542,7 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, offline
                                                        filename,
                                                        reghive,
                                                        recbin,
-                                                       offline_db,
+                                                       od_offline,
                                                        gui=True,
                                                        pb=pb,
                                                        value_label=value_label)
@@ -4487,7 +4552,12 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, offline
     value_label['text'] = "Building tree. Please wait..."
     pb.start()
     if cache:
-        parent_child(cache, None, od_settings.comment['Account'] if hasattr(od_settings, "comment") else od_settings.account)
+        acount = get_account(od_settings, od_offline)
+        parent_child(
+            cache,
+            None,
+            acount
+        )
 
     pb.stop()
 
@@ -4496,12 +4566,42 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, offline
         save_output(cache, df, rbin_df, key)
 
 
+def get_account(od_settings, od_offline):
+    """
+    Return the 'Account' from either od_settings or od_offline.
+
+    Priority:
+    - First non-boolean object in (od_settings, od_offline)
+    - If it has a 'comment' attribute, return comment['Account'] if present
+    - Else return .account attribute if present
+    - Else return None
+    """
+    # pick the first usable object
+    obj = next((x for x in (od_settings, od_offline)
+                if x is not None and not isinstance(x, bool)), None)
+
+    if obj is None:
+        return None
+    if hasattr(obj, 'comment'):
+        # use .get to avoid KeyError if 'Account' is missing
+        comment = getattr(obj, 'comment', {})
+        if isinstance(comment, dict):
+            return comment.get('Account')
+        # in case comment is not a dict but still indexable
+        try:
+            return comment['Account']
+        except Exception:
+            pass
+
+    return getattr(obj, 'account', None)
+
+
 def od_counts(filename, df, rbin_df, start, x):
     if x == 'Import JSON':
         curItem = tv.get_children()[-1]
         file_count, del_count, folder_count = json_count(item=curItem)
     else:
-        file_count = df.Type.value_counts().get('File', 0) if not df.empty else 0
+        file_count = df['Type'].isin(['File', 'Document']).sum() if not df.empty else 0
         folder_count = df.Type.value_counts().get('Folder', 0) if not df.empty else 0
         del_count = len(rbin_df) if not rbin_df.empty else 0
 
@@ -4547,7 +4647,7 @@ def save_output(cache, df, rbin_df, name):
         pb.configure(mode='indeterminate')
         pb.start()
         try:
-            print_html(df, rbin_df, name, menu_data['path'], fus.df_data)
+            print_html(df, rbin_df, name, menu_data['path'], cache["Name"], fus.df_data)
         except Exception as e:
             logging.warning(f'Unable to save html. {e}')
         pb.stop()

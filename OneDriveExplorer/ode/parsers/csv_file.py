@@ -29,7 +29,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-class ParseResult:
+class ParseSettingResult:
     def __init__(self, df, rbin_df, df_scope, graphMetadata, scopeID, account, localHashAlgorithm, offline_db, comment):
         self.df = df
         self.rbin_df = rbin_df
@@ -43,7 +43,19 @@ class ParseResult:
 
     def __repr__(self):
         """Custom string representation for debugging."""
-        return f"ParseResult(df={len(self.df)} rows, rbin_df={len(self.rbin_df)} rows, scopeID={len(self.scopeID)})"
+        return f"ParseSettingResult(df={len(self.df)} rows, rbin_df={len(self.rbin_df)} rows, scopeID={len(self.scopeID)})"
+
+
+class ParseOfflineResult:
+    def __init__(self, ocr_db, df_offline, scopeID, account):
+        self.ocr_db = ocr_db
+        self.df_offline = df_offline
+        self.scopeID = scopeID
+        self.account = account
+
+    def __repr__(self):
+        """Custom string representation for debugging."""
+        return f"ParseOfflineResult(ocr_db={len(self.ocr_db)} rows, df_offline={len(self.df_offline)} rows, scopeID={len(self.scopeID)})"
 
 
 def parse_csv(filename):
@@ -52,15 +64,25 @@ def parse_csv(filename):
                        'DeleteTimeStamp', 'notificationTime', 'hash', 'deletingProcess']
     columns_to_drop_2 = ['MountPoint']
 
-    dtypes = {'Type': 'object', 'scopeID': 'object', 'siteID': 'object', 'webID': 'object',
-              'listID': 'object', 'tenantID': 'object', 'webURL': 'object', 'remotePath': 'object',
-              'libraryType': 'object', 'resourceID': 'object', 'parentResourceID': 'object',
-              'eTag': 'object', 'volumeID': 'str', 'itemIndex': 'Int64', 'localHashDigest': 'object',
+    dtypes = {'Type': 'str', 'scopeID': 'str', 'siteID': 'str', 'webID': 'str',
+              'listID': 'str', 'tenantID': 'str', 'webURL': 'str', 'remotePath': 'str',
+              'libraryType': 'str', 'resourceID': 'str', 'parentResourceID': 'str',
+              'eTag': 'str', 'volumeID': 'str', 'itemIndex': 'Int64', 'localHashDigest': 'object',
               'localHashAlgorithm': 'Int64', 'lastChange': 'object', 'size': 'object', 'Name': 'str',
-              'fileStatus': 'Int64', 'spoPermissions': 'object', 'sharedItem': 'Int64', 'Media': 'object',
-              'parentScopeID': 'object', 'folderStatus': 'Int64', 'Path': 'str',
+              'fileStatus': 'Int64', 'spoPermissions': 'object', 'sharedItem': 'Int64', 'SharedItem': 'Int64', 'Media': 'object',
+              'parentScopeID': 'str', 'folderStatus': 'Int64', 'Path': 'str',
               'shortcutVolumeID': 'str', 'shortcutItemIndex': 'Int64', 'hydrationCount': 'Int64',
-              'folderColor': 'Int64', 'ListSync': 'str', 'Metadata': 'str'}
+              'folderColor': 'Int64', 'ListSync': 'str', 'Metadata': 'str', 'lastHydrationType': 'str', 'Created': 'str'}
+
+    fill_values = {'Type': '', 'scopeID': '', 'siteID': '', 'webID': '',
+                   'listID': '', 'tenantID': '', 'webURL': '', 'remotePath': '',
+                   'libraryType': '', 'resourceID': '', 'parentResourceID': '',
+                   'eTag': '', 'volumeID': '', 'itemIndex': 0, 'localHashDigest': '',
+                   'localHashAlgorithm': 0, 'lastChange': '', 'size': '', 'Name': '',
+                   'fileStatus': 0, 'spoPermissions': '', 'sharedItem': 0, 'SharedItem': 0, 'Media': '',
+                   'parentScopeID': '', 'folderStatus': 0, 'Path': '',
+                   'shortcutVolumeID': '', 'shortcutItemIndex': 0, 'hydrationCount': 0,
+                   'folderColor': 0, 'ListSync': '', 'Metadata': '', 'lastHydrationType': '', 'Created': ''}
 
     try:
         csv_name = filename.name.replace('/', '\\')
@@ -74,18 +96,25 @@ def parse_csv(filename):
 
     try:
         df = pd.read_csv(file, low_memory=False, quotechar='"', dtype=dtypes, comment="#")
+        df = df.fillna(value=fill_values)
 
         try:
-            df_scope = df.loc[df['Type'] == 'Scope',
-                                            ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID',
-                                             'webURL', 'remotePath', 'spoPermissions', 'shortcutVolumeID',
-                                             'shortcutItemIndex', 'libraryType']]
-            columns_to_fill = df_scope.columns.difference(['libraryType'])
-            df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
-            df_scope['remotePath'] = df_scope['remotePath'].fillna('')
+            if data_dict["Name"] == "Microsoft.ListSync.db":
+                df_scope = df.loc[df['Type'] == 'Scope',
+                                                ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID',
+                                                 'webURL', 'libraryType']]
+            else:
+                df_scope = df.loc[df['Type'] == 'Scope',
+                                                ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID',
+                                                 'webURL', 'remotePath', 'spoPermissions', 'shortcutVolumeID',
+                                                 'shortcutItemIndex', 'libraryType']]
+                columns_to_fill = df_scope.columns.difference(['libraryType'])
+                df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
+                df_scope['remotePath'] = df_scope['remotePath'].fillna('')
 
             scopeID = df_scope['scopeID'].tolist()
-        except Exception:
+        except Exception as e:
+            log.error(f'Comething went wrong while reading csv: {csv_name} - Error: {e}')
             df_scope = pd.DataFrame()
             scopeID = []
 
@@ -124,9 +153,23 @@ def parse_csv(filename):
             df.remotePath.fillna('', inplace=True)
 
     except Exception as e:
+        print(e)
         log.error(f'Not a valid csv: {csv_name} - Error: {e}')
-        return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
-                           pd.DataFrame(), [], '', 0, pd.DataFrame(), data_dict)
+        return ParseSettingResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
+                                  pd.DataFrame(), [], '', 0, pd.DataFrame(), data_dict)
 
-    return ParseResult(df, rbin_df, df_scope, pd.DataFrame(columns=['resourceID', 'Metadata']),
-                       scopeID, '', 0, pd.DataFrame(columns=['resourceID', 'ListSync']), data_dict)
+    if data_dict["Name"] == "Microsoft.ListSync.db":
+        ocr_db = df[['resourceID', 'ListSync']]
+        ocr_db = ocr_db[
+            ocr_db['ListSync'].notna() & (ocr_db['ListSync'] != '')
+            ]
+
+        return False, ParseOfflineResult(
+                                         ocr_db,
+                                         df,
+                                         scopeID,
+                                         data_dict["Account"]
+                                     )
+
+    return ParseSettingResult(df, rbin_df, df_scope, pd.DataFrame(columns=['resourceID', 'Metadata']),
+                              scopeID, '', 0, pd.DataFrame(columns=['resourceID', 'ListSync']), data_dict), False

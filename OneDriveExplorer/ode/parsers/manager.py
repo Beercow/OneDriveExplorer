@@ -30,10 +30,11 @@ import re
 from Registry import Registry
 from ode.helpers.mft import live_hive
 import ode.parsers.dat as dat_parser
+import ode.parsers.dat_legacy as dat_parser_legacy
 import ode.parsers.onedrive as onedrive_parser
 import ode.parsers.sqlite_db as sqlite_parser
-import ode.parsers.offline as SQLiteTableExporter
-import ode.parsers.fileusagesync as fileusagesync
+import ode.parsers.Nucleus.offline as SQLiteTableExporter
+import ode.parsers.Nucleus.fileusagesync as fileusagesync
 from ode.parsers.odl import parse_odl, load_cparser
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
@@ -59,11 +60,13 @@ class ParsingManager:
         self.profile = {}
         self.fields_to_check = ['SETTINGS_DAT', 'SYNC_ENGINE', 'SAFE_DEL', 'LIST_SYNC', 'FILE_USAGE_SYNC', 'LOGS']
         self.DATParser = dat_parser.DATParser()
+        self.DATParserLegacy = dat_parser_legacy.DATParser()
         self.OneDriveParser = onedrive_parser.OneDriveParser()
         self.SQLiteParser = sqlite_parser.SQLiteParser()
         self.start = time.time()
 
     def start_parsing(self):
+        od_offline = False
         if self.args.REG_HIVE:
             try:
                 Registry.Registry(self.args.REG_HIVE)
@@ -80,13 +83,13 @@ class ParsingManager:
                 print('\r\n')
 
         if any(getattr(self.args, field) for field in self.fields_to_check):
-            offline_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
-
             if self.args.LIST_SYNC != '':
                 log.info("Stared parsing Microsoft.ListSync.db")
                 self.q.put('Stared parsing Microsoft.ListSync.db. Please wait....')
                 exporter = SQLiteTableExporter.SQLiteTableExporter(self.args.LIST_SYNC)
-                offline_db = exporter.get_offline_data()
+                od_offline = exporter.get_offline_data()
+                if not od_offline.df_offline.empty:
+                    self.parse_results(False, self.args.LIST_SYNC, od_offline.account, self.start, False, False, False, od_offline)
                 self.q.put('')
                 print('\r\n')
 
@@ -106,10 +109,15 @@ class ParsingManager:
                 account = os.path.dirname(self.args.SETTINGS_DAT.replace('/', '\\')).rsplit('\\', 1)[-1]
                 name = f'{account}_{os.path.split(self.args.SETTINGS_DAT)[1]}'
 
-                od_settings = self.DATParser.parse_dat(self.args.SETTINGS_DAT, account)
+                od_settings, exit_code = self.DATParser.parse_dat(self.args.SETTINGS_DAT, account)
+
+                if exit_code == 1:
+                    log.info(f"{self.args.SETTINGS_DAT} failed to parse. Trying legacy parser.")
+                    print(f"{self.args.SETTINGS_DAT} failed to parse. Trying legacy parser.")
+                    od_settings = self.DATParserLegacy.parse_dat(self.args.SETTINGS_DAT, account)
 
                 if od_settings and not od_settings.df.empty:
-                    self.parse_results(od_settings, self.args.SETTINGS_DAT, name, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, offline_db)
+                    self.parse_results(od_settings, self.args.SETTINGS_DAT, name, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, od_offline)
 
             if self.args.SYNC_ENGINE != '' or self.args.SAFE_DEL != '':
                 self.q.put('Parsing settings SQLite. Please wait....')
@@ -123,7 +131,7 @@ class ParsingManager:
                     filename = [sedb, sddb]
 
                 if od_settings:
-                    self.parse_results(od_settings, filename, od_settings.account, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, offline_db)
+                    self.parse_results(od_settings, filename, od_settings.account, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, od_offline)
                 self.q.put('')
                 print('\r\n')
 
@@ -172,8 +180,8 @@ class ParsingManager:
                 self.parse_profile(self.profile)
 
     def parse_profile(self, profile, user=False):
+        od_offline = False
         for key, value in profile.items():
-            offline_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
             if key == 'logs':
                 load_cparser(self.args.cstructs)
                 if self.args.LOGS:
@@ -198,7 +206,9 @@ class ParsingManager:
                 log.info('Gathering offline data. Please wait....')
                 self.q.put('Gathering offline data. Please wait....')
                 exporter = SQLiteTableExporter.SQLiteTableExporter(f'{v}\\Microsoft.ListSync.db')
-                offline_db = exporter.get_offline_data()
+                od_offline = exporter.get_offline_data()
+                if not od_offline.df_offline.empty:
+                    self.parse_results(False, f'{v}\\Microsoft.ListSync.db', key, self.start, False, False, False, od_offline)
                 self.q.put('')
                 print('\r\n')
                 log.info('Gathering file usage data. Please wait....')
@@ -215,13 +225,19 @@ class ParsingManager:
                 for path, subdirs, files in os.walk(v):
                     for name in files:
                         if name.endswith('.dat') and not (name.endswith('import.dat') or name.endswith('screenshot.dat')):
-                            od_settings = self.DATParser.parse_dat(f'{v}\\{name}', key)
+                            od_settings, exit_code = self.DATParser.parse_dat(f'{v}\\{name}', key)
+
+                            if exit_code == 1:
+                                log.info(f"{v}\\{name} failed to parse. Trying legacy parser.")
+                                print(f"{v}\\{name} failed to parse. Trying legacy parser.")
+                                od_settings = self.DATParserLegacy.parse_dat(f'{v}\\{name}', key)
+
                             if od_settings and not od_settings.df.empty:
                                 if user:
                                     pname = f'{user}_{od_settings.account}_{name}'
                                 else:
                                     pname = f'{od_settings.account}_{name}'
-                                self.parse_results(od_settings, f'{v}\\{name}', pname, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, pd.DataFrame(columns=['resourceID', 'ListSync']))
+                                self.parse_results(od_settings, f'{v}\\{name}', pname, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, od_offline)
                 self.q.put('Parsing SyncEngine/SafeDelete db. Please wait....')
                 od_settings = self.SQLiteParser.parse_sql(v)
 
@@ -231,7 +247,7 @@ class ParsingManager:
                             pname = f'{user}_{key}'
                         else:
                             pname = key
-                        self.parse_results(od_settings, v, pname, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, offline_db)
+                        self.parse_results(od_settings, v, pname, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, od_offline)
                 self.q.put('')
                 print('\r\n')
 
@@ -242,12 +258,12 @@ class ParsingManager:
             return any(self.has_settings(v) for v in data.values())
         return False
 
-    def parse_results(self, od_settings, filename, key, start, x=False, reghive=False, recbin=False, offline_db=False, gui=False, pb=False, value_label=False, save=True):
+    def parse_results(self, od_settings, filename, key, start, x=False, reghive=False, recbin=False, od_offline=False, gui=False, pb=False, value_label=False, save=True):
         cache, df, rbin_df = self.OneDriveParser.parse_onedrive(od_settings,
                                                                 filename,
                                                                 reghive,
                                                                 recbin,
-                                                                offline_db)
+                                                                od_offline)
 
         if not cache:
             filename = self.args.file.replace('/', '\\')
@@ -303,7 +319,7 @@ class ParsingManager:
             print('\r\n')
             self.q.put('Saving html. Please wait....')
             try:
-                print_html(df, rbin_df, name, self.args.output_dir, fus.df_data)
+                print_html(df, rbin_df, name, self.args.output_dir, cache["Name"], fus.df_data)
             except Exception as e:
                 log.warning(f'Unable to save HTML: {e}')
 
@@ -316,7 +332,7 @@ class ParsingManager:
                 log.warning(f'Unable to save JSON: {e}')
 
         try:
-            file_count = df.Type.value_counts().get('File', 0)
+            file_count = df['Type'].isin(['File', 'Document']).sum() if not df.empty else 0
             folder_count = df.Type.value_counts().get('Folder', 0)
             del_count = len(rbin_df) if rbin_df is not None else 0
         except Exception:

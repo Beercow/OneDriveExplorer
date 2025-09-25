@@ -131,12 +131,6 @@ class DATParser:
         temp_files = StringIO()
         temp_folders = StringIO()
 
-        #if reghive:
-        #    try:
-        #        reghive = (reghive).replace('/', '\\')
-        #    except AttributeError:
-        #        pass
-
         log.info(f'Start parsing {usercid}')
 
         try:
@@ -158,7 +152,6 @@ class DATParser:
                     chunk = 1048
                     BLOCK_CONSTANT = 1048
                     FOLDER_CONSTANT = 299
-                    DELETE_CONSTANT = 1032
                     LSCOPE_CONSTANT = 208
                     LFOLDER_CONSTANT = 825
                     VAULT_CONSTANT = 320
@@ -168,7 +161,6 @@ class DATParser:
                     chunk = 1080
                     BLOCK_CONSTANT = 1080
                     FOLDER_CONSTANT = 331
-                    DELETE_CONSTANT = 1064
                     LSCOPE_CONSTANT = 240
                     LFOLDER_CONSTANT = 857
                     VAULT_CONSTANT = 352
@@ -178,7 +170,6 @@ class DATParser:
                     chunk = 1080
                     BLOCK_CONSTANT = 1080
                     FOLDER_CONSTANT = 331
-                    DELETE_CONSTANT = 1064
                     LSCOPE_CONSTANT = 240
                     LFOLDER_CONSTANT = 857
                     VAULT_CONSTANT = 352
@@ -188,7 +179,6 @@ class DATParser:
                     chunk = 1096
                     BLOCK_CONSTANT = 1096
                     FOLDER_CONSTANT = 347
-                    DELETE_CONSTANT = 1080
                     LSCOPE_CONSTANT = 256
                     LFOLDER_CONSTANT = 873
                     VAULT_CONSTANT = 368
@@ -198,7 +188,6 @@ class DATParser:
                     chunk = 1104
                     BLOCK_CONSTANT = 1098
                     FOLDER_CONSTANT = 347
-                    DELETE_CONSTANT = 1082
                     LSCOPE_CONSTANT = 258
                     LFOLDER_CONSTANT = 875
                     VAULT_CONSTANT = 370
@@ -208,7 +197,6 @@ class DATParser:
                     chunk = 1128
                     BLOCK_CONSTANT = 1128
                     FOLDER_CONSTANT = 371
-                    DELETE_CONSTANT = 1112
                     LSCOPE_CONSTANT = 288
                     LFOLDER_CONSTANT = 905
                     VAULT_CONSTANT = 400
@@ -218,7 +206,6 @@ class DATParser:
                     chunk = 1128
                     BLOCK_CONSTANT = 1128
                     FOLDER_CONSTANT = 371
-                    DELETE_CONSTANT = 1112
                     LSCOPE_CONSTANT = 288
                     LFOLDER_CONSTANT = 905
                     VAULT_CONSTANT = 400
@@ -228,7 +215,6 @@ class DATParser:
                     chunk = 1152
                     BLOCK_CONSTANT = 1152
                     FOLDER_CONSTANT = 395
-                    DELETE_CONSTANT = 1136
                     LSCOPE_CONSTANT = 312
                     LFOLDER_CONSTANT = 929
                     VAULT_CONSTANT = 424
@@ -238,7 +224,6 @@ class DATParser:
                     chunk = 1160
                     BLOCK_CONSTANT = 1160
                     FOLDER_CONSTANT = 403
-                    DELETE_CONSTANT = 1144
                     LSCOPE_CONSTANT = 320
                     LFOLDER_CONSTANT = 937
                     VAULT_CONSTANT = 432
@@ -248,7 +233,6 @@ class DATParser:
                     chunk = 1160
                     BLOCK_CONSTANT = 1160
                     FOLDER_CONSTANT = 403
-                    DELETE_CONSTANT = 1144
                     LSCOPE_CONSTANT = 320
                     LFOLDER_CONSTANT = 937
                     VAULT_CONSTANT = 432
@@ -258,7 +242,6 @@ class DATParser:
                     chunk = 1160
                     BLOCK_CONSTANT = 1160
                     FOLDER_CONSTANT = 403
-                    DELETE_CONSTANT = 1144
                     LSCOPE_CONSTANT = 320
                     LFOLDER_CONSTANT = 937
                     VAULT_CONSTANT = 432
@@ -268,7 +251,6 @@ class DATParser:
                     chunk = 1160
                     BLOCK_CONSTANT = 1160
                     FOLDER_CONSTANT = 403
-                    DELETE_CONSTANT = 1144
                     LSCOPE_CONSTANT = 320
                     LFOLDER_CONSTANT = 937
                     VAULT_CONSTANT = 432
@@ -278,7 +260,6 @@ class DATParser:
                     chunk = 1176
                     BLOCK_CONSTANT = 1176
                     FOLDER_CONSTANT = 419
-                    DELETE_CONSTANT = 1160
                     LSCOPE_CONSTANT = 336
                     LFOLDER_CONSTANT = 953
                     VAULT_CONSTANT = 448
@@ -288,7 +269,6 @@ class DATParser:
                     chunk = 1232
                     BLOCK_CONSTANT = 1232
                     FOLDER_CONSTANT = 475
-                    DELETE_CONSTANT = 1216
                     LSCOPE_CONSTANT = 392
                     LFOLDER_CONSTANT = 1009
                     VAULT_CONSTANT = 504
@@ -298,22 +278,21 @@ class DATParser:
                     if not gui:
                         print(f'Unknown dat verison: {version} (Please report issue)')
                     log.error(f'Unknown dat verison: {version} (Please report issue)')
-                    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
+                    return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
+                                       self.graphMetadata, [], self.account,
+                                       self.localHashAlgorithm)
 
                 if account == 'Personal':
                     uuid4hex = re.compile(b'([A-F0-9]{16}![0-9]*\.[0-9]*)')
                 else:
                     uuid4hex = re.compile(b'"({[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}},[0-9]*)"', re.I)
                 f.seek(0)
-                dir_index = []
                 entries = re.finditer(uuid4hex, f.read())
                 current = next(entries, total)
                 while isinstance(current, re.Match):
                     s = current.start()
                     count = s
                     n_current = next(entries, total)
-                    hash = ''
-                    size = ''
                     ffoffset = s - 102
                     if version <= '29':
                         ffoffset = s - 94
@@ -325,15 +304,7 @@ class DATParser:
                         break
 
                     f. seek(-1, 1)
-                    #if version <= '29':
-                    #    f.seek(15, 1)
-                    #else:
-                    #    f.seek(23, 1)
-                    #DriveItemId = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
-                    #ParentId = f.read(39).decode("utf-8").split('\u0000\u0000', 1)[0]
-                    #eTag = f.read(56).decode("utf-8").split('\u0000\u0000', 1)[0]
-                    #f.seek(26, 1)
-                    print(ff)
+
                     if ff == b'\x01':
                         data_type = 'File'
                         if version == '29':
@@ -470,65 +441,23 @@ class DATParser:
                             progress_gui(total, count, pb, value_label, status='Building folder list. Please wait....')
                         else:
                             progress(count, total, status='Building folder list. Please wait....')
-                    #if type == 'File':
-                    #    if account == 'Personal':
-                    #        hash = f'SHA1({f.read(20).hex()})'
-                    #    else:
-                    #        hash = f'quickXor({codecs.encode(f.read(20), "base64").decode("utf-8").rstrip()})'
-                    #    if version <= '29':
-                    #        f.seek(4, 1)
-                    #    else:
-                    #        f.seek(12, 1)
-                    #    size = int.from_bytes(f.read(8), "little")
-                    try:
-                        buffer = n_current.start() - f.tell()
-                    except AttributeError:
-                        buffer = n_current - f.tell()
-                    #name = unicode_strings(f.read(buffer), DriveItemId)
-                    #if not dir_index:
-                    #    input = {'ParentId': '',
-                    #            'DriveItemId': ParentId,
-                    #            'eTag': '',
-                    #            'Type': 'Root Default',
-                    #            'Name': 'User Folder',
-                    #            'Size': '',
-                    #            'Hash': '',
-                    #            'Children': []
-                    #            }
-                    #    dir_index.append(input)
-                    #input = {'ParentId': ParentId,
-                    #        'DriveItemId': DriveItemId,
-                    #        'eTag': eTag,
-                    #        'Type': type,
-                    #        'Name': name.split('\u0000', 1)[0],
-                    #        'Size': size,
-                    #        'Hash': hash,
-                    #        'Children': []
-                    #        }
-                    #
-                    #dir_index.append(input)
-                    #
-                    #if gui:
-                    #    progress_gui(total, count, pb, value_label, status='Building folder list. Please wait....')
-                    #else:
-                    #    progress(count, total, status='Building folder list. Please wait....')
-    
+
                     current = n_current
-    
+
         except Exception as e:
             log.error(f'Unable to parse {usercid}. {e}')
             print(f'Unable to parse {usercid}. {e}')
             return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
                                self.graphMetadata, [], self.account,
                                self.localHashAlgorithm)
-    
+
         if not gui:
             print()
 
         temp_scope.seek(0)
         temp_files.seek(0)
         temp_folders.seek(0)
-        
+
         self.df_scope = pd.read_csv(temp_scope)
         temp_scope.close()
         self.df_scope.insert(0, 'Type', 'Scope')
@@ -538,7 +467,7 @@ class DATParser:
         self.df_scope = change_dtype(self.df_scope, df_name='df_scope')
         self.df_scope['spoPermissions'] = self.df_scope['spoPermissions'].apply(lambda x: permissions(x))
         self.scopeID = self.df_scope['scopeID'].tolist()
-        
+
         df_files = pd.read_csv(temp_files, usecols=['parentResourceID', 'resourceID', 'eTag', 'fileName', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'mediaDateTaken', 'mediaWidth', 'mediaHeight', 'mediaDuration'])
         temp_files.close()
         df_files['localHashAlgorithm'] = 0
@@ -569,11 +498,10 @@ class DATParser:
         df_folders.rename(columns={"folderName": "Name"}, inplace=True)
         df_folders = change_dtype(df_folders, df_name='df_folders')
         df_folders['spoPermissions'] = df_folders['spoPermissions'].apply(lambda x: permissions(x))
-        
+
         self.df = pd.concat([self.df_scope, df_files, df_folders], ignore_index=True, axis=0)
         self.df = self.df.where(pd.notnull(self.df), None)
-        
+
         return ParseResult(self.df, self.rbin_df, self.df_scope,
                            self.graphMetadata, self.scopeID, self.account,
                            self.localHashAlgorithm)
-        

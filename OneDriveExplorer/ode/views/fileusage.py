@@ -752,7 +752,6 @@ class FileUsageFrame(ttk.Frame):
                     elif has_sender:
                         self.emails_tree.insert("", "end", values=(f'{data["SharedByDisplayName"]}\r{data["Subject"]}',f'{data["SharedByTime"][:10]}\r ',), iid=unique_id)
                     elif isinstance(row.get("file.ItemProperties.Shared.TeamsMessageThreadId"), str) and 'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
-                    #elif 'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
                         if data["Subject"] == '':
                             text = data["SharedByDisplayName"]
                         else:

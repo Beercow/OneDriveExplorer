@@ -51,6 +51,10 @@ def print_json(cache, name, fus, pretty, json_path):
 
     if file_extension == 'previous':
         output = open(json_path + '\\' + os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.json", 'w')
+
+    elif cache['Name'] == 'Microsoft.ListSync.db':
+        output = open(json_path + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive_offline.json", 'w')
+
     else:
         output = open(json_path + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive.json", 'w')
 

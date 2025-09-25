@@ -99,24 +99,6 @@ class FileSelectDialog:
 
     def check_field_states(self):
         try:
-            dat_filled = bool(self.file_vars["*.dat *.dat.previous"].get().strip())
-            sync_filled = bool(self.file_vars["SyncEngineDatabase.db"].get().strip())
-            enable_listsync = dat_filled or sync_filled
-
-            if enable_listsync:
-                for widget in self.row_widgets["Microsoft.ListSync.db"]:
-                    if 'entry' in str(widget):
-                        widget.configure(style="TEntry", state="normal")
-                    else:
-                        widget.configure(state="normal")
-            else:
-                self.file_vars["Microsoft.ListSync.db"].set("")  # Clear it
-                for widget in self.row_widgets["Microsoft.ListSync.db"]:
-                    if 'entry' in str(widget):
-                        widget.configure(style="Disabled.TEntry", state="disabled")
-                    else:
-                        widget.configure(state="disabled")
-
             ntuser_filled = bool(self.file_vars["NTUSER.DAT"].get().strip())
             enable_recycle = ntuser_filled
 

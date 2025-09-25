@@ -29,7 +29,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def print_html(df, rbin_df, name, html_path, fus):
+def print_html(df, rbin_df, name, html_path, db_name, fus):
     log.info('Started writing HTML file')
 
     if not os.path.exists(html_path):
@@ -50,6 +50,9 @@ def print_html(df, rbin_df, name, html_path, fus):
     html_file = os.path.basename(name).split('.')[0]+"_OneDrive.html"
     fus_file = os.path.basename(name).split('.')[0]+"_FileUsageSync.html"
     file_extension = os.path.splitext(name)[1][1:]
+
+    if db_name == 'Microsoft.ListSync.db':
+        html_file = os.path.basename(name).split('.')[0]+"_OneDrive_offline.html"
 
     if file_extension == 'previous':
         html_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.html"

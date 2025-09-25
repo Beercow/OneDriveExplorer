@@ -49,7 +49,7 @@ cstruct = {
     }
 }
 
-# menu_data schema version 2.2
+# menu_data schema version 2.3
 menu_data = {
     'theme': {
         'required': True,
@@ -88,6 +88,10 @@ menu_data = {
         'type': 'boolean'
     },
     'odl_save': {
+        'required': True,
+        'type': 'boolean'
+    },
+    'legacy': {
         'required': True,
         'type': 'boolean'
     },

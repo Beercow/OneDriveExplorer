@@ -88,11 +88,139 @@ class OneDriveParser:
 
         return self.find_parent(value, id_name_dict, parent_dict) + "\\\\" + str(id_name_dict.get(value))
 
-    # Generate scopeID list instead of passing
-    def parse_onedrive(self, od_settings, file_path, reghive=False, recbin=False, offline_db=False, gui=False, pb=False, value_label=False):
+    def create_cache(self, df_data, gui, directory, filename, hash, account, scopeID=[], od_settings=False):
         cache = {}
         final = []
         is_del = []
+        df_scope = pd.DataFrame()
+        rbin_df = pd.DataFrame()
+        comment = None
+        account = account
+        allowed_keys = ['scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex']
+
+        if od_settings:
+            scopeID = od_settings.scopeID
+            df_scope = od_settings.df_scope
+            rbin_df = od_settings.rbin_df
+            account = od_settings.account
+            if hasattr(od_settings, "comment"):
+                comment = od_settings.comment
+
+        for row in df_data.sort_values(
+            by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+                ascending=[False, False, False, True, False, False]).to_dict('records'):
+            if row['Type'] == 'File':
+                try:
+                    if 'diskCreationTime' in row:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'lastKnownPinState','spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'diskCreationTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+
+                    elif 'diskLastAccessTime' in row:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+
+                    elif 'hydrationCount' in row:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+
+                    elif 'HydrationTime' in row:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+
+                    else:
+                        file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+
+                except Exception as e:
+                    if gui:
+                        log.error(f'Unable to read dataframe. Something went wrong. {e}')
+                    else:
+                        print(f'Unable to read dataframe. Something went wrong. {e}')
+                    return {}
+
+                folder = cache.setdefault(row['parentResourceID'], {})
+                folder.setdefault('Files', []).append(file)
+
+            elif row['Type'] == 'Document' and row['resourceID'] not in scopeID:
+                file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'Created', 'lastChange', 'SharedItem', 'size', 'localHashDigest', 'ListSync')}
+                folder = cache.setdefault(row['parentResourceID'], {})
+                folder.setdefault('Files', []).append(file)
+
+            else:
+                if 'Scope' in row['Type']:
+                    if row['scopeID'] not in scopeID:
+                        continue
+                    scope = {key: row[key] for key in row if key in allowed_keys}
+                    folder = cache.get(row['scopeID'], {})
+                    temp = {**scope, **folder}
+                    final.insert(0, temp)
+                else:
+                    if 'folderColor' in row:
+                        try:
+                            sub_folder = {key: row[key] for key in (
+                                        'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
+                                        'itemIndex', 'sharedItem', 'folderColor', 'ListSync')}
+                        except Exception:
+                            sub_folder = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'Created', 'lastChange', 'SharedItem', 'folderColor', 'ListSync')}
+                    else:
+                        sub_folder = {key: row[key] for key in (
+                                    'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
+                                    'itemIndex', 'sharedItem', 'ListSync')}
+                    if row['resourceID'] in scopeID:
+                        scopeID.remove(row['resourceID'])
+                        for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):
+                            scope = {key: s[key] for key in s if key in allowed_keys}
+                            scope['MountPoint'] = row['MountPoint']
+                            scope['spoPermissions'] = s['spoPermissions']
+                            scope['shortcutVolumeID'] = s['shortcutVolumeID']
+                            scope['shortcutItemIndex'] = s['shortcutItemIndex']
+                        folder = cache.get(row['resourceID'], {})
+                        temp = {**sub_folder, **folder}
+                        scope.setdefault('Links', []).append(temp)
+                        folder_merge = cache.setdefault(row['parentResourceID'], {})
+                        folder_merge.setdefault('Scope', []).append(scope)
+                    else:
+                        folder = cache.get(row['resourceID'], {})
+                        temp = {**sub_folder, **folder}
+                        folder_merge = cache.setdefault(row['parentResourceID'], {})
+                        folder_merge.setdefault('Folders', []).append(temp)
+
+        if not rbin_df.empty:
+            for row in rbin_df.to_dict('records'):
+                file = {key: row[key] for key in ('parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'size', 'hash', 'deletingProcess')}
+
+                # Nesting of deleted items
+                # dfolder = dcache.setdefault(row['parentResourceId'], {})
+                # dfolder.setdefault('Files', []).append(file)
+
+                is_del.append(file)
+
+            deleted = {'Type': 'Root Deleted',
+                       'Children': ''
+                       }
+
+            deleted['Children'] = is_del
+            final.append(deleted)
+
+        if comment:
+            cache = {"Path": comment['Path'],
+                     "Name": comment['Name'],
+                     "Hash": comment['Hash'],
+                     "Account": comment['Account'],
+                     "Data": '',
+                     "FileUsageSync": ''
+                     }
+        else:
+            cache = {"Path": directory,
+                     "Name": filename,
+                     "Hash": hash,
+                     "Account": account,
+                     "Data": '',
+                     "FileUsageSync": ''
+                     }
+
+        cache['Data'] = final
+
+        return cache
+
+    # Generate scopeID list instead of passing
+    def parse_onedrive(self, od_settings, file_path, reghive=False, recbin=False, od_offline=False, gui=False, pb=False, value_label=False):
+        online_cache = {}
 
         if isinstance(file_path, list):
             directory, f1 = os.path.split(file_path[0])
@@ -113,8 +241,14 @@ class OneDriveParser:
             directory, filename = os.path.split(file_path)
             hash = self.hash_file(file_path)
 
-        if not od_settings.df.empty:
-            allowed_keys = ['scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex']
+        if od_settings and not od_settings.df.empty:
+            rbin_df = od_settings.rbin_df
+            pd.set_option('display.max_columns', None)
+
+            if od_offline:
+                ocr_db = od_offline.ocr_db
+            else:
+                ocr_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
 
             try:
                 od_settings.df_scope['shortcutVolumeID'] = od_settings.df_scope['shortcutVolumeID'].apply(lambda x: '{:08x}'.format(x) if pd.notna(x) else '')
@@ -193,117 +327,48 @@ class OneDriveParser:
             if 'Metadata' in od_settings.df.columns:
                 df = od_settings.df
             else:
-                for df in [od_settings.df, offline_db, od_settings.graphMetadata]:
+                for df in [od_settings.df, ocr_db, od_settings.graphMetadata]:
                     df['resourceID_base'] = df['resourceID'].str.split('+').str[0]
-                df = pd.merge(od_settings.df, offline_db.drop(columns=['resourceID']), on='resourceID_base', how='outer').merge(od_settings.graphMetadata.drop(columns=['resourceID']), on='resourceID_base', how='outer')
+
+                df = (
+                    pd.merge(
+                        od_settings.df,
+                        ocr_db.drop(columns=['resourceID']),
+                        on='resourceID_base',
+                        how='outer'
+                    )
+                    .merge(
+                        od_settings.graphMetadata.drop(columns=['resourceID']),
+                        on='resourceID_base',
+                        how='outer'
+                    )
+                )
+
                 df.drop(columns=['resourceID_base'], inplace=True)
-                df['Metadata'] = ''
 
             df[['Type', 'Metadata', 'ListSync']] = df[['Type', 'Metadata', 'ListSync']].fillna('')
 
-            for row in df.sort_values(
-                by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
-                    ascending=[False, False, False, True, False, False]).to_dict('records'):
+            online_cache = self.create_cache(df, gui, directory, filename, hash, None, [], od_settings)
 
-                if row['Type'] == 'File':
-                    try:
-                        if 'diskCreationTime' in row:
-                            file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'lastKnownPinState','spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'diskCreationTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+        elif od_offline and not od_offline.df_offline.empty:
+            od_offline.df_offline['Level'] = od_offline.df_offline['Path'].str.split('/').str.len()
 
-                        elif 'diskLastAccessTime' in row:
-                            file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+            od_offline.df_offline['FileSort'] = ''
+            od_offline.df_offline['FolderSort'] = ''
+            od_offline.df_offline['MountPoint'] = ''
 
-                        elif 'hydrationCount' in row:
-                            file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+            od_offline.df_offline.loc[od_offline.df_offline.Type == 'Document', ['FileSort']] = od_offline.df_offline['Name'].str.lower()
+            od_offline.df_offline.loc[od_offline.df_offline.Type == 'Folder', ['FolderSort']] = od_offline.df_offline['Name'].str.lower()
 
-                        elif 'HydrationTime' in row:
-                            file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'HydrationTime', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+            od_offline.df_offline['scopeID'] = od_offline.df_offline['scopeID'].astype('str').fillna('')
 
-                        else:
-                            file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'spoPermissions', 'volumeID', 'itemIndex', 'lastChange', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
+            online_cache = self.create_cache(od_offline.df_offline, gui, directory, filename, hash, od_offline.account, od_offline.scopeID, od_settings)
 
-                    except Exception as e:
-                        if gui:
-                            log.error(f'Unable to read dataframe. Something went wrong. {e}')
-                        else:
-                            print(f'Unable to read dataframe. Something went wrong. {e}')
-                        return {}, df, od_settings.rbin_df
-
-                    folder = cache.setdefault(row['parentResourceID'], {})
-                    folder.setdefault('Files', []).append(file)
-                else:
-                    if 'Scope' in row['Type']:
-                        if row['scopeID'] not in od_settings.scopeID:
-                            continue
-                        scope = {key: row[key] for key in row if key in allowed_keys}
-                        folder = cache.get(row['scopeID'], {})
-                        temp = {**scope, **folder}
-                        final.insert(0, temp)
-                    else:
-                        if 'folderColor' in row:
-                            sub_folder = {key: row[key] for key in (
-                                        'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
-                                        'itemIndex', 'sharedItem', 'folderColor', 'ListSync')}
-                        else:
-                            sub_folder = {key: row[key] for key in (
-                                        'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
-                                        'itemIndex', 'sharedItem', 'ListSync')}
-                        if row['resourceID'] in od_settings.scopeID:
-                            od_settings.scopeID.remove(row['resourceID'])
-                            for s in od_settings.df_scope.loc[od_settings.df_scope['scopeID'] == row['resourceID']].to_dict('records'):
-                                scope = {key: s[key] for key in s if key in allowed_keys}
-                                scope['MountPoint'] = row['MountPoint']
-                                scope['spoPermissions'] = s['spoPermissions']
-                                scope['shortcutVolumeID'] = s['shortcutVolumeID']
-                                scope['shortcutItemIndex'] = s['shortcutItemIndex']
-                            folder = cache.get(row['resourceID'], {})
-                            temp = {**sub_folder, **folder}
-                            scope.setdefault('Links', []).append(temp)
-                            folder_merge = cache.setdefault(row['parentResourceID'], {})
-                            folder_merge.setdefault('Scope', []).append(scope)
-                        else:
-                            folder = cache.get(row['resourceID'], {})
-                            temp = {**sub_folder, **folder}
-                            folder_merge = cache.setdefault(row['parentResourceID'], {})
-                            folder_merge.setdefault('Folders', []).append(temp)
+            df = od_offline.df_offline
+            rbin_df = pd.DataFrame()
 
         else:
-            df = od_settings.df
+            df = pd.DataFrame()
+            rbin_df = pd.DataFrame()
 
-        if not od_settings.rbin_df.empty:
-            for row in od_settings.rbin_df.to_dict('records'):
-                file = {key: row[key] for key in ('parentResourceId', 'resourceId', 'eTag', 'Path', 'Name', 'inRecycleBin', 'volumeId', 'fileId', 'DeleteTimeStamp', 'notificationTime', 'size', 'hash', 'deletingProcess')}
-
-                # Nesting of deleted items
-                # dfolder = dcache.setdefault(row['parentResourceId'], {})
-                # dfolder.setdefault('Files', []).append(file)
-
-                is_del.append(file)
-
-            deleted = {'Type': 'Root Deleted',
-                       'Children': ''
-                       }
-
-            deleted['Children'] = is_del
-            final.append(deleted)
-
-        if hasattr(od_settings, "comment"):
-            cache = {"Path": od_settings.comment['Path'],
-                     "Name": od_settings.comment['Name'],
-                     "Hash": od_settings.comment['Hash'],
-                     "Account": od_settings.comment['Account'],
-                     "Data": '',
-                     "FileUsageSync": ''
-                     }
-        else:
-            cache = {"Path": directory,
-                     "Name": filename,
-                     "Hash": hash,
-                     "Account": od_settings.account,
-                     "Data": '',
-                     "FileUsageSync": ''
-                     }
-
-        cache['Data'] = final
-
-        return cache, df, od_settings.rbin_df
+        return online_cache, df, rbin_df

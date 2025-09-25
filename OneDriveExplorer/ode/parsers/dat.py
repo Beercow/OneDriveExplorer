@@ -343,7 +343,9 @@ class DATParser:
                     if not gui:
                         print(f'Unknown dat verison: {version} (Please report issue)')
                     log.error(f'Unknown dat verison: {version} (Please report issue)')
-                    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
+                    return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
+                                       self.graphMetadata, [], self.account,
+                                       self.localHashAlgorithm), 0
 
                 while True:
                     count = f.tell()
@@ -495,7 +497,7 @@ class DATParser:
             log.error(f'Unable to parse {usercid}. {e}')
             return ParseResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
                                self.graphMetadata, [], self.account,
-                               self.localHashAlgorithm)
+                               self.localHashAlgorithm), 1
 
         if not gui:
             print()
@@ -550,4 +552,4 @@ class DATParser:
 
         return ParseResult(self.df, self.rbin_df, self.df_scope,
                            self.graphMetadata, self.scopeID, self.account,
-                           self.localHashAlgorithm)
+                           self.localHashAlgorithm), 0
