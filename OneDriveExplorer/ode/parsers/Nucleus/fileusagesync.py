@@ -36,6 +36,8 @@ class SQLiteTableExporter:
         self.conn = None
         self.json_data = []
         self.df_data = pd.DataFrame()
+        self.tc_data = pd.DataFrame()
+        self.qa_data = pd.DataFrame()
 
     def set_db_path(self, db_path):
         self.db_path = db_path
@@ -89,3 +91,40 @@ class SQLiteTableExporter:
         except sqlite3.OperationalError:
             self.log.info('Microsoft.FileUsageSync.db does not exist')
 
+    def get_top_collaborators(self):
+        if not self.db_path:
+            self.log.error("Database path not set. Use set_db_path() first.")
+            return
+
+        try:
+            self.conn = sqlite3.connect(f'file:/{self.db_path}/Microsoft.FileUsageSync.db?mode=ro', uri=True)
+            query = "SELECT FormattedValue FROM top_collaborators"
+            try:
+                df = pd.read_sql_query(query, self.conn)
+                self.conn.close()
+                parsed_jsons = df["FormattedValue"].apply(self.parse_json).dropna().tolist()
+                self.json_data = parsed_jsons
+                self.tc_data = pd.json_normalize(parsed_jsons)
+            except Exception as e:
+                self.log.warning(f'Unable to parse {self.db_path}/Microsoft.FileUsageSync.db. {e}')
+        except sqlite3.OperationalError:
+            self.log.info('Microsoft.FileUsageSync.db does not exist')
+
+    def get_quick_access_formatted(self):
+        if not self.db_path:
+            self.log.error("Database path not set. Use set_db_path() first.")
+            return
+
+        try:
+            self.conn = sqlite3.connect(f'file:/{self.db_path}/Microsoft.FileUsageSync.db?mode=ro', uri=True)
+            query = "SELECT FormattedValue FROM quick_access_formatted"
+            try:
+                df = pd.read_sql_query(query, self.conn)
+                self.conn.close()
+                parsed_jsons = df["FormattedValue"].apply(self.parse_json).dropna().tolist()
+                self.json_data = parsed_jsons
+                self.qa_data = pd.json_normalize(parsed_jsons)
+            except Exception as e:
+                self.log.warning(f'Unable to parse {self.db_path}/Microsoft.FileUsageSync.db. {e}')
+        except sqlite3.OperationalError:
+            self.log.info('Microsoft.FileUsageSync.db does not exist')

@@ -521,9 +521,10 @@ class SPHeaderFrame(tk.PanedWindow):
 
         self.o_file_treeview.tree.bind("<<TreeviewSelect>>", self.o_file_treeview.disable_selection)
 
-    def build_tree(self, subject, file_name, index):
+    def build_tree(self, subject, file_name=None, index=None):
         self.subject_data.config(text=subject)
-        self.tree.insert("", "end", values=(file_name, index))
+        if file_name:
+            self.tree.insert("", "end", values=(file_name, index))
 
     def clear_sp(self):
         self.tree.delete(*self.tree.get_children())
@@ -555,9 +556,6 @@ class FileUsageFrame(ttk.Frame):
         self.right_pane = ttk.Frame(self, padding=5, relief="flat")
         self.bottom_pane = ttk.Frame(self, padding=5, relief="flat")
 
-        # Create size grip
-        self.sg = ttk.Sizegrip(self.bottom_pane)
-
         # Add frames to the paned window
         self.paned_window.add(self.left_pane, minsize=200, width=400)   # Meeting or Email List
         self.paned_window.add(self.middle_pane)  # Empty Space (for later use)
@@ -566,7 +564,6 @@ class FileUsageFrame(ttk.Frame):
         self.paned_window.grid(row=0, column=0, sticky="nsew")
         self.right_pane.grid(row=0, column=1, sticky="nsew")
         self.bottom_pane.grid(row=1, column=1, columnspan=2, sticky="se")
-        self.sg.grid(row=0, column=0, sticky='se')
 
         # Configure grid expansion
         self.columnconfigure(0, weight=1)
@@ -745,18 +742,32 @@ class FileUsageFrame(ttk.Frame):
                     unique_id = f"{index}_{count}"  # Ensure unique ID
                     has_sender = any(participant['Type'] == 'Sender' for participant in data['Participants'])
                     has_organizer = any(participant['Type'] == 'Organizer' for participant in data['Participants'])
+
+                    subject = data.get("Subject", '')
+                    shared_by = data.get("SharedByDisplayName", '')
+                    shared_time = data.get("SharedByTime", "")[:10] if data.get("SharedByTime") else ''
+
                     if has_organizer:
-                        self.events_tree.insert("", "end", values=(data["Subject"],), iid=unique_id)
+                        self.events_tree.insert("", "end", values=(subject,), iid=unique_id)
+
                     elif data.get('MeetingSubject') is not None:
-                        self.meetings_tree.insert("", "end", values=(data["Subject"],), iid=unique_id)
+                        self.meetings_tree.insert("", "end", values=(subject,), iid=unique_id)
+
                     elif has_sender:
-                        self.emails_tree.insert("", "end", values=(f'{data["SharedByDisplayName"]}\r{data["Subject"]}',f'{data["SharedByTime"][:10]}\r ',), iid=unique_id)
-                    elif isinstance(row.get("file.ItemProperties.Shared.TeamsMessageThreadId"), str) and 'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
-                        if data["Subject"] == '':
-                            text = data["SharedByDisplayName"]
-                        else:
-                            text = data["Subject"]
+                        self.emails_tree.insert(
+                            "",
+                            "end",
+                            values=(f'{shared_by}\r{subject}', f'{shared_time}\r ',),
+                            iid=unique_id
+                        )
+
+                    elif isinstance(row.get("file.ItemProperties.Shared.TeamsMessageThreadId"), str) and \
+                        'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
+
+                        text = shared_by if subject == '' else subject
+
                         self.notes_tree.insert("", "end", values=(text,), iid=unique_id)
+
                     else:
                         chat_subject = self.get_chat_subject(data)
                         self.chats_tree.insert("", "end", values=(chat_subject,), iid=unique_id)
@@ -814,7 +825,7 @@ class FileUsageFrame(ttk.Frame):
             self.details_tree.insert("", "end", values=("", "Participants:"))
             for participant in meeting.get("Participants", []):
                 self.details_tree.insert("", "end", values=(
-                    participant.get("Type", "N/A"), 
+                    participant.get("Type", "N/A"),
                     participant.get("DisplayName", "N/A")
                 ))
 
@@ -828,13 +839,14 @@ class FileUsageFrame(ttk.Frame):
 
         values = self.files_tree.item(selected_item, 'values')
         text = self.files_tree.item(selected_item, 'text')
+
         try:
             indexes = set(map(int, values[0].strip('{}').split(', ')))
             for idx in indexes:
                 file_name = self.data.iloc[idx].get("file.FileName")
                 self.sp_header.build_tree(text, file_name, idx)
-        except Exception:
-            return
+        except Exception as e:
+            self.sp_header.build_tree(text)
 
         self.sp_header.tree.bind("<<TreeviewSelect>>", self.on_teams_file_select)
 

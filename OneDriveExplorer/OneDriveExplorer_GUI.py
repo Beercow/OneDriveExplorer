@@ -113,7 +113,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.09.24"
+__version__ = "2025.10.09"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -4287,7 +4287,11 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             fus.set_db_path(directory)
             logging.info("Stared parsing Microsoft.FileUsageSync.db")
             fus.get_recent_files_formatted_spo()
+            # fus.get_top_collaborators()
             file_usage_frame.set_data(fus.df_data)
+            # fus.tc_data.to_csv('top_collaborators.csv', index=False)
+            # fus.get_quick_access_formatted()
+            # fus.qa_data.to_csv('quick_access.csv', index=False)
             pb.stop()
             value_label['text'] = 'Complete'
             if has_menu_data and missing_all_files:
@@ -5076,11 +5080,13 @@ def switch_view(selected, od=False):
     separator.grid(row=selected.grid_info()['row'], column=0, sticky="ns")
 
     if od:
-        file_usage_frame.grid_forget()
-        main_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        pwv.remove(file_usage_frame)
+        pwv.add(tv_frame, minsize=100)
+        pwv.add(infoNB, minsize=100)
     else:
-        main_frame.grid_forget()
-        file_usage_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        pwv.remove(tv_frame)
+        pwv.remove(infoNB)
+        pwv.add(file_usage_frame)
 
 
 def on_enter(event, label, bg):
@@ -5298,6 +5304,7 @@ reg_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/registry
 trash_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/trashcan.png'))  # recbin
 ode_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/ode.png'))  # about
 meta_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/tools.png'))  # about
+od_info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/information.png'))  # sidebar
 calendar_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/calendar.png'))  # sidebar
 chat_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/chat-bubble.png'))  # sidebar
 onedrive_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/onedrive.png'))  # sidebar
@@ -5439,22 +5446,25 @@ bottom_frame.grid_rowconfigure(0, weight=1)
 bottom_frame.grid_columnconfigure(0, weight=1)
 
 file_usage_frame = FileUsageFrame(outer_frame, padding=5, relief="groove")
+od_info_btn = ttk.Label(selector_frame, text="Info...", image=od_info_img, compound="top")
 od_btn = ttk.Label(selector_frame, text="OneDrive", image=onedrive_img, compound="top")
 email_btn = ttk.Label(selector_frame, text="Email", image=email_img, compound="top")
 t_meeting_btn = ttk.Label(selector_frame, text="Meeting", image=calendar_img, compound="top")
 event_btn = ttk.Label(selector_frame, text="Events", image=calendar_img, compound="top")
 chat_btn = ttk.Label(selector_frame, text="Chat", image=chat_img, compound="top")
 notes_btn = ttk.Label(selector_frame, text="Notes", image=note_img, compound="top")
-sp_btn = ttk.Label(selector_frame, text="SarePoint", image=sharepoint_img, compound="top")
+sp_btn = ttk.Label(selector_frame, text="SharePoint", image=sharepoint_img, compound="top")
 
-od_btn.grid(row=0, column=1, sticky="ew")
-email_btn.grid(row=1, column=1, sticky="ew")
-t_meeting_btn.grid(row=2, column=1, sticky="ew")
-event_btn.grid(row=3, column=1, sticky="ew")
-chat_btn.grid(row=4, column=1, sticky="ew")
-notes_btn.grid(row=5, column=1, sticky="ew")
-sp_btn.grid(row=6, column=1, sticky="ew")
+#od_info_btn.grid(row=0, column=1, sticky="ew")
+od_btn.grid(row=1, column=1, sticky="ew")
+email_btn.grid(row=2, column=1, sticky="ew")
+t_meeting_btn.grid(row=3, column=1, sticky="ew")
+event_btn.grid(row=4, column=1, sticky="ew")
+chat_btn.grid(row=5, column=1, sticky="ew")
+notes_btn.grid(row=6, column=1, sticky="ew")
+sp_btn.grid(row=7, column=1, sticky="ew")
 
+od_info_btn.config(state='disable', style=f'{od_info_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
 od_btn.config(state='disable', style=f'{od_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
 email_btn.config(state='disable', style=f'{email_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
 t_meeting_btn.config(state='disable', style=f'{t_meeting_btn.cget("text")}Hover.TLabel', anchor="center", padding=5)
@@ -5465,8 +5475,6 @@ sp_btn.config(state='disable', style=f'{sp_btn.cget("text")}Hover.TLabel', ancho
 
 separator = tk.Frame(selector_frame, width=3, bg=sel_bg)
 
-switch_view(od_btn, True)
-
 pwv = tk.PanedWindow(main_frame, orient=tk.VERTICAL,
                      background=bg, sashwidth=6)
 
@@ -5476,7 +5484,9 @@ tv_frame = ScrollableNotebookpatch.MyScrollableNotebook(main_frame,
 
 tv_frame.enable_traversal()
 tv_inner_frame = ttk.Frame(tv_frame)
+info_frame = ttk.Frame(tv_frame)
 tv_frame.add(tv_inner_frame, text='OneDrive Folders  ')
+# tv_frame.add(info_frame, text='Info Test  ')
 
 handle = tk.Frame(root, bg="black", cursor="sb_h_double_arrow")
 pwh = tk.PanedWindow(tv_inner_frame, orient=tk.HORIZONTAL,
@@ -5789,5 +5799,6 @@ if getattr(sys, 'frozen', False):
     pyi_splash.close()
 
 ButtonEntry(do_bind=True)
+switch_view(od_btn, True)
 
 root.mainloop()
