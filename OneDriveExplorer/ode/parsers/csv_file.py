@@ -47,15 +47,27 @@ class ParseSettingResult:
 
 
 class ParseOfflineResult:
-    def __init__(self, ocr_db, df_offline, scopeID, account):
+    def __init__(self, ocr_db, df_list_sync, scopeID, account):
         self.ocr_db = ocr_db
-        self.df_offline = df_offline
+        self.df_list_sync = df_list_sync
         self.scopeID = scopeID
         self.account = account
 
     def __repr__(self):
         """Custom string representation for debugging."""
-        return f"ParseOfflineResult(ocr_db={len(self.ocr_db)} rows, df_offline={len(self.df_offline)} rows, scopeID={len(self.scopeID)})"
+        return f"ParseOfflineResult(ocr_db={len(self.ocr_db)} rows, df_list_sync={len(self.df_list_sync)} rows, scopeID={len(self.scopeID)})"
+
+
+class ParseFODResult:
+    def __init__(self, df, df_scope, scopeID, account):
+        self.df = df
+        self.df_scope = df_scope
+        self.scopeID = scopeID
+        self.account = account
+
+    def __repr__(self):
+        """Custom string representation for debugging."""
+        return f"ParseFODResult(df={len(self.df)} rows, scopeID={len(self.scopeID)})"
 
 
 def parse_csv(filename):
@@ -95,7 +107,7 @@ def parse_csv(filename):
     data_dict = json.loads(cleaned_str)
 
     try:
-        df = pd.read_csv(file, low_memory=False, quotechar='"', dtype=dtypes, comment="#")
+        df = pd.read_csv(file, low_memory=False, quotechar='"', dtype=dtypes)
         df = df.fillna(value=fill_values)
 
         try:
@@ -103,6 +115,15 @@ def parse_csv(filename):
                 df_scope = df.loc[df['Type'] == 'Scope',
                                                 ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID',
                                                  'webURL', 'libraryType']]
+                df.drop(
+                    df[(df['Type'] == 'Scope') & (df['scopeID'].isna() | (df['scopeID'] == ''))].index,
+                    inplace=True
+                )
+
+            elif data_dict["Name"] == "Microsoft.FilesOnDemand.db":
+                df_scope = df.loc[df['Type'] == 'Scope',
+                                                ['Type', 'mountId', 'siteID', 'webID', 'listID', 'webURL',
+                                                 'MountPoint', 'libraryType']]
             else:
                 df_scope = df.loc[df['Type'] == 'Scope',
                                                 ['Type', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID',
@@ -112,9 +133,11 @@ def parse_csv(filename):
                 df_scope[columns_to_fill] = df_scope[columns_to_fill].fillna('')
                 df_scope['remotePath'] = df_scope['remotePath'].fillna('')
 
-            scopeID = df_scope['scopeID'].tolist()
+            scope_col = 'scopeID' if 'scopeID' in df_scope.columns else 'mountId'
+
+            scopeID = df_scope[scope_col].tolist()
         except Exception as e:
-            log.error(f'Comething went wrong while reading csv: {csv_name} - Error: {e}')
+            log.error(f'Something went wrong while reading csv: {csv_name} - Error: {e}')
             df_scope = pd.DataFrame()
             scopeID = []
 
@@ -131,7 +154,8 @@ def parse_csv(filename):
             rbin_df = pd.DataFrame()
 
         try:
-            df.drop(columns=columns_to_drop_2, inplace=True)
+            if data_dict["Name"] != "Microsoft.FilesOnDemand.db":
+                df.drop(columns=columns_to_drop_2, inplace=True)
         except Exception:
             pass
         df['Path'] = df['Path'].astype(str).fillna('')
@@ -156,7 +180,7 @@ def parse_csv(filename):
         print(e)
         log.error(f'Not a valid csv: {csv_name} - Error: {e}')
         return ParseSettingResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
-                                  pd.DataFrame(), [], '', 0, pd.DataFrame(), data_dict)
+                                  pd.DataFrame(), [], '', 0, pd.DataFrame(), data_dict), False, False
 
     if data_dict["Name"] == "Microsoft.ListSync.db":
         ocr_db = df[['resourceID', 'ListSync']]
@@ -169,7 +193,15 @@ def parse_csv(filename):
                                          df,
                                          scopeID,
                                          data_dict["Account"]
-                                     )
+                                     ), False
+
+    if data_dict["Name"] == "Microsoft.FilesOnDemand.db":
+        return False, False, ParseFODResult(
+                                            df,
+                                            df_scope,
+                                            scopeID,
+                                            data_dict["Account"]
+                                         )
 
     return ParseSettingResult(df, rbin_df, df_scope, pd.DataFrame(columns=['resourceID', 'Metadata']),
-                              scopeID, '', 0, pd.DataFrame(columns=['resourceID', 'ListSync']), data_dict), False
+                              scopeID, '', 0, pd.DataFrame(columns=['resourceID', 'ListSync']), data_dict), False, False

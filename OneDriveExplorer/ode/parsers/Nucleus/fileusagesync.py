@@ -27,6 +27,7 @@ import logging
 import sqlite3
 import pandas as pd
 import json
+import re
 
 
 class SQLiteTableExporter:
@@ -38,19 +39,23 @@ class SQLiteTableExporter:
         self.df_data = pd.DataFrame()
         self.tc_data = pd.DataFrame()
         self.qa_data = pd.DataFrame()
+        self.rf_data = pd.DataFrame()
 
     def set_db_path(self, db_path):
         self.db_path = db_path
 
     def parse_json(self, value):
+        # needs work
         try:
             # First, decode the double-escaped string
             value = value.encode().decode('unicode_escape')
+            #if isinstance(value, str) and re.search(r'\\\\[ntr"\\]', value):
+            #    value = value.encode().decode('unicode_escape')
 
             # Now, parse the cleaned JSON
             return json.loads(value)
         except Exception as e:
-            print("JSON Parse Error:", e)
+            self.log.error("JSON Parse Error:", e)
             return None
 
     def nest_dict(self, flat_dict):
@@ -87,7 +92,7 @@ class SQLiteTableExporter:
                 self.json_data = parsed_jsons
                 self.df_data = pd.json_normalize(parsed_jsons)
             except Exception as e:
-                self.log.warning(f'Unable to parse {self.db_path}/Microsoft.FileUsageSync.db. {e}')
+                self.log.warning(f'Unable to parse recent_files_formatted_spo in {self.db_path}/Microsoft.FileUsageSync.db. {e}')
         except sqlite3.OperationalError:
             self.log.info('Microsoft.FileUsageSync.db does not exist')
 
@@ -106,7 +111,7 @@ class SQLiteTableExporter:
                 self.json_data = parsed_jsons
                 self.tc_data = pd.json_normalize(parsed_jsons)
             except Exception as e:
-                self.log.warning(f'Unable to parse {self.db_path}/Microsoft.FileUsageSync.db. {e}')
+                self.log.warning(f'Unable to parse top_collaborators in {self.db_path}/Microsoft.FileUsageSync.db. {e}')
         except sqlite3.OperationalError:
             self.log.info('Microsoft.FileUsageSync.db does not exist')
 
@@ -125,6 +130,25 @@ class SQLiteTableExporter:
                 self.json_data = parsed_jsons
                 self.qa_data = pd.json_normalize(parsed_jsons)
             except Exception as e:
-                self.log.warning(f'Unable to parse {self.db_path}/Microsoft.FileUsageSync.db. {e}')
+                self.log.warning(f'Unable to parse quick_access_formatted in {self.db_path}/Microsoft.FileUsageSync.db. {e}')
+        except sqlite3.OperationalError:
+            self.log.info('Microsoft.FileUsageSync.db does not exist')
+
+    def get_recommended_files(self):
+        if not self.db_path:
+            self.log.error("Database path not set. Use set_db_path() first.")
+            return
+
+        try:
+            self.conn = sqlite3.connect(f'file:/{self.db_path}/Microsoft.FileUsageSync.db?mode=ro', uri=True)
+            query = "SELECT file FROM recommended_files"
+            try:
+                df = pd.read_sql_query(query, self.conn)
+                self.conn.close()
+                parsed_jsons = df["file"].apply(self.parse_json).dropna().tolist()
+                self.json_data = parsed_jsons
+                self.rf_data = pd.json_normalize(parsed_jsons)
+            except Exception as e:
+                self.log.warning(f'Unable to parse recommended_files in {self.db_path}/Microsoft.FileUsageSync.db. {e}')
         except sqlite3.OperationalError:
             self.log.info('Microsoft.FileUsageSync.db does not exist')

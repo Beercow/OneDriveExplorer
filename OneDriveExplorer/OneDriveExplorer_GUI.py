@@ -65,8 +65,9 @@ from ode.renderers.project import load_images
 import ode.parsers.dat as dat_parser
 import ode.parsers.dat_legacy as dat_parser_legacy
 from ode.parsers.csv_file import parse_csv
-import ode.parsers.Nucleus.offline as SQLiteTableExporter
+import ode.parsers.Nucleus.listsync as SQLiteTableExporter
 import ode.parsers.Nucleus.fileusagesync as fileusagesync
+import ode.parsers.Nucleus.filesondemand as filesondemand
 import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
 import ode.parsers.sqlite_db as sqlite_parser
@@ -113,7 +114,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.10.09"
+__version__ = "2025.11.07"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -1482,6 +1483,16 @@ class Result:
                 ),
                 ''
             )
+
+            PermMask = next(
+                (
+                    item.split('PermMask: ', 1)[1]
+                    for item in self.args[0]
+                    if item.startswith('PermMask: ')
+                ),
+                ''
+            )
+
             if '+' in self.args[0][2]:
                 self.type.append(building_big_img)
             else:
@@ -1489,7 +1500,8 @@ class Result:
                     self.type.append(cloud_p_big_img)
                 else:
                     self.type.append(cloud_big_img)
-            if not set(self.lock_list).intersection(spoPermissions) and '!' not in self.args[0][2]:
+
+            if (not set(self.lock_list).intersection(spoPermissions) or PermMask == 'Read') and '!' not in self.args[0][2]:
                 self.status.append(locked_big_img)
             scope_item = next((value for value in self.args[0] if 'scopeid:' in value.lower()), None)
             remote_path_item = next((value for value in self.args[0] if 'remotepath:' in value.lower()), None)
@@ -1507,13 +1519,33 @@ class Result:
 
     def process_folder_status(self, values_list):
         if self.folder:
-            folderColor = next((item.split(' ')[1] for item in self.args[0] if 'foldercolor:' in item.lower() and len(item.split(' ')) > 1), 0)
+            folderColor = next(
+                (
+                    item.split(' ')[1]
+                    for item in self.args[0]
+                    if 'foldercolor:' in item.lower() and len(item.split(' ')) > 1
+                ),
+                0
+            )
+
+            fPinState = next(
+                (
+                    item.split(' ')[1]
+                    for item in self.args[0]
+                    if item.lower().startswith('pinstate:') and len(item.split(' ')) > 1
+                ),
+                None
+            )
+
             if int(folderColor) in range(1, 16):
                 self.type.append(self.get_folder_color(folderColor))
             else:
                 self.type.append(directory_big_img)
 
-            for num in ['5', '7', '9', '10', '11', '12']:
+            if fPinState:
+                self.status.append(self.get_pin_state(fPinState))
+
+            for num in ['5', '7', '9', '10', '11', '12', '']:
                 if any('folderstatus:' in item.lower() and num in item for item in self.args[0]):
                     self.handle_folder_status(num, values_list)
 
@@ -1529,8 +1561,20 @@ class Result:
                 ),
                 ''
             )
+
+        PermMask = next(
+            (
+                item.split('PermMask: ', 1)[1]
+                for item in self.args[0]
+                if item.startswith('PermMask: ')
+            ),
+            ''
+        )
+
+        if num == '':
+            pass
         # Might need to look into this.
-        if num == '7' and len(values_list) > 13:
+        elif num == '7' and len(values_list) > 13:
             shortcut_item = next((item for item in self.args[0] if 'shortcutitemindex:' in item.lower()), None)
             if shortcut_item and int(shortcut_item.split(' ')[1]) > 0:
                 self.type.clear()
@@ -1545,21 +1589,22 @@ class Result:
             self.type.append(self.get_type_image(num))
 
         sharedItem = next(
-                (item.split(' ')[1] for item in self.args[0] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1), 
+                (item.split(' ')[1] for item in self.args[0] if 'shareditem:' in item.lower() and len(item.split(' ')) > 1),
                 ''
             )
 
         if sharedItem == '1':
             self.status.append(shared_big_img)
 
-        if not set(self.lock_list).intersection(spoPermissions):
-            if len(spoPermissions) > 0:
+        if not set(self.lock_list).intersection(spoPermissions) or PermMask == 'Read':
+            if len(spoPermissions) > 0 or PermMask == 'Read':
                 self.status.append(locked_big_img)
 
     def process_non_folder_status(self, values_list):
         if len(values_list) != 3:
             self.type.append(file_del_big_img) if self.tags == 'red' else self.type.append(file_yellow_big_img)
             values_list[0] = f'  Date modified: {self.args[0][0]}\n  Size: {self.args[0][1]}'
+
             spoPermissions = next(
                 (
                     ast.literal_eval(item.split('spoPermissions: ', 1)[1])
@@ -1568,6 +1613,16 @@ class Result:
                 ),
                 ''
             )
+
+            PermMask = next(
+                (
+                    item.split('PermMask: ', 1)[1]
+                    for item in self.args[0]
+                    if item.startswith('PermMask: ')
+                ),
+                ''
+            )
+
             sharedItem = next(
                 (
                     item.split(' ')[1]
@@ -1595,10 +1650,19 @@ class Result:
                 ''
             )
 
+            pinState = next(
+                (
+                    item.split(' ')[1]
+                    for item in self.args[0]
+                    if item.lower().startswith('pinstate:') and len(item.split(' ', 1)) > 1
+                ),
+                None
+            )
+
             for num in ['2', '5', '6', '7', '8']:
                 if any((item.lower().startswith('filestatus:') or item.lower().startswith('inrecyclebin:')) and num in item for item in self.args[0]):
                     if lastKnownPinState in ['0', '1'] and num == '2':
-                        self.status.append(self.get_pin_state(lastKnownPinState))
+                        self.status.append(self.get_ln_pin_state(lastKnownPinState))
                     elif hydrationType.lower() == 'passive' and num == '2':
                         self.status.append(always_available_big_img)
                     elif num == '6' or num == '7':
@@ -1607,11 +1671,14 @@ class Result:
                     else:
                         self.status.append(self.get_status_image(num))
 
+            if pinState:
+                self.status.append(self.get_pin_state(pinState))
+
             if sharedItem == '1' or self.folderShared == '1':
                 self.status.append(shared_big_img)
 
-            if not set(self.lock_list).intersection(spoPermissions) and not any('inrecyclebin:' in item.lower() for item in self.args[0]):
-                if len(spoPermissions) > 0:
+            if (not set(self.lock_list).intersection(spoPermissions) and not any(item.lower().startswith('inrecyclebin:')) or (PermMask == 'Read') for item in self.args[0]):
+                if len(spoPermissions) > 0 or PermMask == 'Read':
                     self.status.append(locked_big_img)
 
     def get_folder_color(self, num):
@@ -1658,10 +1725,18 @@ class Result:
         }
         return status_dict[num]
 
-    def get_pin_state(self, num):
-        pin_state = {
+    def get_ln_pin_state(self, num):
+        ln_pin_state = {
             '0': available_big_img,
             '1': always_available_big_img
+        }
+        return ln_pin_state[num]
+
+    def get_pin_state(self, num):
+        pin_state = {
+            '0': online_big_img,
+            '1': available_offline_big_img,
+            '2': online_big_img
         }
         return pin_state[num]
 
@@ -2105,12 +2180,20 @@ class FileManager:
     def handle_double_click(self, event):
         cur_item = event.widget.selection()
         values = list(event.widget.item(cur_item, 'values'))
+
+        def handle_folder():
+            parent = self.tv.parent(cur_item[0])
+            self.tv.selection_set(cur_item[0])
+            item_id = cur_item[0]
+
+            return parent, item_id
+
         if not any(('folderStatus:' in item or 'webURL:' in item) for item in values):
-            # This is were I need to look for file selection
             try:
                 if values[2] == '':
-                    pass
-                elif len(pwh.panes()) == 3:
+                    parent, item_id = handle_folder()   # ← jump here directly
+                    return
+                if len(pwh.panes()) == 3:
                     for key, val in file_items.items():
                         if cur_item[0] in val:
                             self.file = cur_item[0]
@@ -2122,9 +2205,8 @@ class FileManager:
             except Exception:
                 return
         else:
-            parent = self.tv.parent(cur_item[0])
-            self.tv.selection_set(cur_item[0])
-            item_id = cur_item[0]
+            parent, item_id = handle_folder()
+
         while True:
             if item_id:
                 parent = self.tv.parent(item_id)
@@ -2523,9 +2605,15 @@ class FileManager:
             '11': online_not_link_img  # folderStatus
         }
 
-        pin_state = {
+        ln_pin_state = {
             '0': available_img,
             '1': always_available_img
+        }
+
+        pin_state = {
+            '0': online_img,
+            '1': available_offline_img,
+            '2': online_img
         }
 
         cur_item = self.tv.selection()
@@ -2552,7 +2640,23 @@ class FileManager:
 
             self.tv2.insert("", "end", iid=child, image=image_key, text=text, values=values, tags=tags)
 
-            folderStatus = next((item.split(' ')[1] for item in values if 'folderstatus:' in item.lower() and len(item.split(' ')) > 1), '')
+            folderStatus = next(
+                (
+                    item.split(' ')[1]
+                    for item in values
+                    if item.lower().startswith('folderstatus:') and len(item.split(' ')) > 1
+                ),
+                ''
+            )
+
+            fPinState = next(
+                (
+                    item.split(' ')[1]
+                    for item in values
+                    if item.lower().startswith('pinstate:') and len(item.split(' ', 1)) > 1
+                ),
+                ''
+            )
 
             spoPermissions = next(
                 (
@@ -2562,7 +2666,19 @@ class FileManager:
                 ),
                 ''
             )
-            if folderStatus == '7':
+
+            PermMask = next(
+                (
+                    item.split('PermMask: ', 1)[1]
+                    for item in values
+                    if item.startswith('PermMask: ')
+                ),
+                ''
+            )
+
+            if fPinState == '1':
+                self.status.append(pin_state.get(fPinState, online_img))
+            elif folderStatus == '7':
                 if image_key == str(link_directory_img):
                     self.status.append(online_link_img)
                 else:
@@ -2578,8 +2694,8 @@ class FileManager:
             if sharedItemF == '1':
                 self.status.append(shared_img)
 
-            if not set(lock_list).intersection(spoPermissions) and str(tags) != 'red':
-                if len(spoPermissions) > 0:
+            if (not set(lock_list).intersection(spoPermissions)) and (str(tags) != 'red') or (PermMask == 'Read'):
+                if len(spoPermissions) > 0 or PermMask == 'Read':
                     self.status.append(locked_img)
 
             image_creator = CreateImage(self.status)
@@ -2619,11 +2735,41 @@ class FileManager:
 
                     self.tv2.insert("", "end", iid=i, image=image_key_i, text=text_i, values=values_i, tags=tags_i)
 
-                    fileStatus = next((item.split(' ')[1] for item in values_i if ('filestatus:' in item.lower() or 'inrecyclebin' in item.lower()) and len(item.split(' ')) > 1), '')
+                    fileStatus = next(
+                        (
+                            item.split(' ')[1]
+                            for item in values_i
+                            if (item.lower().startswith('filestatus:') or item.lower().startswith('inrecyclebin')) and len(item.split(' ')) > 1
+                        ),
+                        ''
+                    )
 
-                    hydrationType = next((item.split(' ')[1] for item in values_i if 'lasthydrationtype:' in item.lower() and len(item.split(' ')) > 1), '')
+                    hydrationType = next(
+                        (
+                            item.split(' ')[1]
+                            for item in values_i
+                            if item.lower().startswith('lasthydrationtype:') and len(item.split(' ')) > 1
+                        ),
+                        ''
+                    )
 
-                    lastKnownPinState = next((item.split(' ')[1] for item in values_i if 'lastknownpinstate:' in item.lower() and len(item.split(' ')) > 1), '')
+                    lastKnownPinState = next(
+                        (
+                            item.split(' ')[1]
+                            for item in values_i
+                            if item.lower().startswith('lastknownpinstate:') and len(item.split(' ')) > 1
+                        ),
+                        ''
+                    )
+
+                    pinState = next(
+                        (
+                            item.split(' ')[1]
+                            for item in values_i
+                            if item.lower().startswith('pinstate:') and len(item.split(' ', 1)) > 1
+                        ),
+                        ''
+                    )
 
                     spoPermissions_i = next(
                         (
@@ -2634,23 +2780,38 @@ class FileManager:
                         ''
                     )
 
+                    PermMask_i = next(
+                        (
+                            item.split('PermMask: ', 1)[1]
+                            for item in values_i
+                            if item.startswith('PermMask: ')
+                        ),
+                        ''
+                    )
+
                     sharedItem = next(
-                        (item.split(' ')[1] for item in values_i if 'shareditem:' in item.lower() and len(item.split(' ')) > 1), 
+                        (
+                            item.split(' ')[1]
+                            for item in values_i
+                            if item.lower().startswith('shareditem:') and len(item.split(' ')) > 1
+                        ),
                         ''
                     )
 
                     if lastKnownPinState in ['0', '1'] and fileStatus == '2':
-                        self.status.append(pin_state.get(lastKnownPinState, online_img))
+                        self.status.append(ln_pin_state.get(lastKnownPinState, online_img))
                     elif hydrationType.lower() == 'passive' and fileStatus == '2':
                         self.status.append(always_available_img)
+                    elif pinState == '1':
+                        self.status.append(pin_state.get(pinState, online_img))
                     else:
                         self.status.append(image_mapping.get(fileStatus, online_img))
 
                     if sharedItem == '1' or folderShared == '1':
                         self.status.append(shared_img)
 
-                    if not set(lock_list).intersection(spoPermissions_i) and str(tags_i) != 'red':
-                        if len(spoPermissions_i) > 0:
+                    if (not set(lock_list).intersection(spoPermissions_i) and str(tags_i) != 'red') or (PermMask_i == 'Read'):
+                        if len(spoPermissions_i) > 0 or PermMask_i == 'Read':
                             self.status.append(locked_img)
 
                     image_creator = CreateImage(self.status)
@@ -3781,6 +3942,7 @@ def parent_child(d, parent_id=None, account=False):
                 x = ('', '', '')
                 y = [f'{k}: {v}' if v is not None else f'{k}: ' for k, v in c.items() if 'Files' not in k and 'Folders' not in k and 'Scope' not in k]
                 z = w + tuple(y) + x
+                c['scopeID'] = c.get('scopeID', c.get('mountId', ''))
                 if '+' in c['scopeID']:
                     image = tenant_sync_img
                 else:
@@ -4026,7 +4188,9 @@ def import_json(menu):
 def import_csv(menu):
     fields = [
         ("OneDrive csv file", "_OneDrive.csv"),
-        ("FileUsageSync csv file", "_FileUsageSync.csv")
+        ("FileUsageSync csv file", "_FileUsageSync.csv"),
+        ("ListSync csv file", "_OneDrive_list_sync.csv"),
+        ("FilesOnDemand csv file", "_OneDrive_fod.csv")
     ]
 
     icon_path = application_path + '/Images/titles/table.ico'
@@ -4041,6 +4205,7 @@ def load_ind():
         ("Load SyncEngineDatabase.db", "SyncEngineDatabase.db"),
         ("Load SafeDelete.db", "SafeDelete.db"),
         ("Load Microsoft.ListSync.db", "Microsoft.ListSync.db"),
+        ("Load Microsoft.FilesOnDemand.db", "Microsoft.FilesOnDemand.db"),
         ("Load Microsoft.FileUsageSync.db", "Microsoft.FileUsageSync.db"),
         ("Load NTUSER.DAT", "NTUSER.DAT"),
         ("Load $Recycle.Bin", "$Recycle.Bin")
@@ -4059,12 +4224,11 @@ def threaded_on_files_selected(file_paths):
 
 def on_files_selected(file_paths):
     if '_OneDrive.csv' in file_paths:
-        if file_paths['_OneDrive.csv'] != '':
-            x = 'Import CSV'
-            message.unbind('<Double-Button-1>', bind_id)
-            threading.Thread(target=start_parsing,
-                             args=(x, file_paths,),
-                             daemon=True).start()
+        x = 'Import CSV'
+        message.unbind('<Double-Button-1>', bind_id)
+        threading.Thread(target=start_parsing,
+                         args=(x, file_paths,),
+                         daemon=True).start()
 
         if file_paths['_FileUsageSync.csv'] != '':
             widgets_disable()
@@ -4259,7 +4423,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         widgets_disable()
     start = time.time()
 
-    od_offline = False
+    od_list_sync = False
 
     if x == 'loose':
         if filename['Microsoft.ListSync.db'] != '':
@@ -4268,9 +4432,21 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             pb.start()
             logging.info("Stared parsing Microsoft.ListSync.db")
             exporter = SQLiteTableExporter.SQLiteTableExporter(filename['Microsoft.ListSync.db'])
-            od_offline = exporter.get_offline_data()
-            if not od_offline.df_offline.empty:
-                parse_results(False, filename['Microsoft.ListSync.db'], od_offline.account, start, x, False, False, od_offline, gui=True, pb=pb, value_label=value_label)
+            od_list_sync = exporter.get_list_sync_data()
+            if not od_list_sync.df_list_sync.empty:
+                parse_results(False, filename['Microsoft.ListSync.db'], od_list_sync.account, start, x, False, False, od_list_sync, False, gui=True, pb=pb, value_label=value_label)
+            pb.stop()
+            value_label['text'] = 'Complete'
+
+        if filename['Microsoft.FilesOnDemand.db'] != '':
+            pb.configure(mode='indeterminate')
+            value_label['text'] = 'Gathering files on demand data. Please wait....'
+            pb.start()
+            logging.info("Stared parsing Microsoft.FilesOnDemand.db")
+            exporter = filesondemand.SQLiteTableExporter(filename['Microsoft.FilesOnDemand.db'])
+            od_fod = exporter.get_files_on_denamd_rows()
+            if not od_fod.df.empty:
+                parse_results(False, filename['Microsoft.FilesOnDemand.db'], od_fod.account, start, x, False, False, False, od_fod, gui=True, pb=pb, value_label=value_label)
             pb.stop()
             value_label['text'] = 'Complete'
 
@@ -4287,11 +4463,13 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             fus.set_db_path(directory)
             logging.info("Stared parsing Microsoft.FileUsageSync.db")
             fus.get_recent_files_formatted_spo()
-            # fus.get_top_collaborators()
             file_usage_frame.set_data(fus.df_data)
-            # fus.tc_data.to_csv('top_collaborators.csv', index=False)
-            # fus.get_quick_access_formatted()
-            # fus.qa_data.to_csv('quick_access.csv', index=False)
+            #fus.get_top_collaborators()
+            #fus.tc_data.to_csv('top_collaborators.csv', index=False)
+            #fus.get_quick_access_formatted()
+            #fus.qa_data.to_csv('quick_access.csv', index=False)
+            #fus.get_recommended_files()
+            #fus.rf_data.to_csv('recommended_files.csv', index=False)
             pb.stop()
             value_label['text'] = 'Complete'
             if has_menu_data and missing_all_files:
@@ -4316,7 +4494,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
 
             if od_settings:
                 if not od_settings.df.empty:
-                    parse_results(od_settings, filename['*.dat *.dat.previous'], name, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
+                    parse_results(od_settings, filename['*.dat *.dat.previous'], name, start, x, reghive, recbin, od_list_sync, False, gui=True, pb=pb, value_label=value_label)
 
         if filename['SyncEngineDatabase.db'] != '' or filename['SafeDelete.db'] != '':
             sedb = filename['SyncEngineDatabase.db'].replace('/', '\\')
@@ -4332,7 +4510,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 filename = [sedb, sddb]
 
             if od_settings:
-                parse_results(od_settings, filename, od_settings.account, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
+                parse_results(od_settings, filename, od_settings.account, start, x, reghive, recbin, od_list_sync, False, gui=True, pb=pb, value_label=value_label)
 
     elif x == 'Profile':
         if live:
@@ -4422,9 +4600,15 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 pb.start()
                 logging.info("Stared parsing Microsoft.ListSync.db")
                 exporter = SQLiteTableExporter.SQLiteTableExporter(f'{v}\\Microsoft.ListSync.db')
-                od_offline = exporter.get_offline_data()
-                if not od_offline.df_offline.empty:
-                    parse_results(False, f'{v}\\Microsoft.ListSync.db', key, start, x, False, False, od_offline, gui=True, pb=pb, value_label=value_label)
+                od_list_sync = exporter.get_list_sync_data()
+                if not od_list_sync.df_list_sync.empty:
+                    parse_results(False, f'{v}\\Microsoft.ListSync.db', key, start, x, False, False, od_list_sync, False, gui=True, pb=pb, value_label=value_label)
+                value_label['text'] = 'Gathering files on demand data. Please wait....'
+                logging.info("Stared parsing Microsoft.FilesOnDemand.db")
+                exporter = filesondemand.SQLiteTableExporter(f'{v}\\Microsoft.FilesOnDemand.db')
+                od_fod = exporter.get_files_on_denamd_rows()
+                if not od_fod.df.empty:
+                    parse_results(False, f'{v}\\Microsoft.FilesOnDemand.db', key, start, x, False, False, False, od_fod, gui=True, pb=pb, value_label=value_label)
                 value_label['text'] = 'Gathering file usage data. Please wait....'
                 fus.set_db_path(f'{v}')
                 logging.info("Stared parsing Microsoft.FileUsageSync.db")
@@ -4459,7 +4643,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                                         pname = f'{user}_{od_settings.account}_{name}'
                                     else:
                                         pname = f'{od_settings.account}_{name}'
-                                    parse_results(od_settings, f'{v}\\{name}', pname, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
+                                    parse_results(od_settings, f'{v}\\{name}', pname, start, x, reghive, recbin, od_list_sync, False, gui=True, pb=pb, value_label=value_label)
                 pb.configure(mode='indeterminate')
                 value_label['text'] = 'Building folder list. Please wait....'
                 pb.start()
@@ -4470,7 +4654,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                             pname = f'{user}_{key}'
                         else:
                             pname = key
-                        parse_results(od_settings, v, pname, start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label)
+                        parse_results(od_settings, v, pname, start, x, reghive, recbin, od_list_sync, False, gui=True, pb=pb, value_label=value_label)
                 pb.stop()
 
         pb.stop()
@@ -4492,14 +4676,16 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         od_counts(filename.name, df, rbin_df, start, x)
 
     elif x == 'Import CSV':
-        pb.configure(mode='indeterminate')
-        value_label['text'] = 'Building folder list. Please wait....'
-        pb.start()
-        account = ''
-        od_settings, od_offline = parse_csv(filename['_OneDrive.csv'])
+        for k, v in filename.items():
+            if k != '_FileUsageSync.csv' and v != '':
+                pb.configure(mode='indeterminate')
+                value_label['text'] = 'Building folder list. Please wait....'
+                pb.start()
+                account = ''
+                od_settings, od_list_sync, od_fod = parse_csv(v)
 
-        if od_settings or od_offline:
-            parse_results(od_settings, filename['_OneDrive.csv'], '', start, x, reghive, recbin, od_offline, gui=True, pb=pb, value_label=value_label, save=False)
+                if od_settings or od_list_sync or od_fod:
+                    parse_results(od_settings, v, '', start, x, reghive, recbin, od_list_sync, od_fod, gui=True, pb=pb, value_label=value_label, save=False)
 
     elif x == 'Project':
         name = filename
@@ -4538,7 +4724,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         widgets_normal()
 
 
-def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_offline, gui, pb, value_label, save=True):
+def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_list_sync, od_fod, gui, pb, value_label, save=True):
     pb.configure(mode='indeterminate')
     value_label['text'] = 'Building folder list. Please wait....'
     pb.start()
@@ -4546,17 +4732,22 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_offl
                                                        filename,
                                                        reghive,
                                                        recbin,
-                                                       od_offline,
+                                                       od_list_sync,
+                                                       od_fod,
                                                        gui=True,
                                                        pb=pb,
                                                        value_label=value_label)
 
     pb.stop()
+
+    if save:
+        save_output(cache, df, rbin_df, key)
+
     pb.configure(mode='indeterminate')
     value_label['text'] = "Building tree. Please wait..."
     pb.start()
     if cache:
-        acount = get_account(od_settings, od_offline)
+        acount = get_account(od_settings, od_list_sync)
         parent_child(
             cache,
             None,
@@ -4566,22 +4757,20 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_offl
     pb.stop()
 
     od_counts(key, df, rbin_df, start, x)
-    if save:
-        save_output(cache, df, rbin_df, key)
 
 
-def get_account(od_settings, od_offline):
+def get_account(od_settings, od_list_sync):
     """
-    Return the 'Account' from either od_settings or od_offline.
+    Return the 'Account' from either od_settings or od_list_sync.
 
     Priority:
-    - First non-boolean object in (od_settings, od_offline)
+    - First non-boolean object in (od_settings, od_list_sync)
     - If it has a 'comment' attribute, return comment['Account'] if present
     - Else return .account attribute if present
     - Else return None
     """
     # pick the first usable object
-    obj = next((x for x in (od_settings, od_offline)
+    obj = next((x for x in (od_settings, od_list_sync)
                 if x is not None and not isinstance(x, bool)), None)
 
     if obj is None:
@@ -5371,6 +5560,7 @@ online_sync_img = Image.open(application_path + '/Images/status/online_sync.png'
 online_not_sync_img = Image.open(application_path + '/Images/status/online_not_sync.png')
 excluded_img = Image.open(application_path + '/Images/status/excluded.png')
 available_img = Image.open(application_path + '/Images/status/available.png')
+available_offline_img = Image.open(application_path + '/Images/status/available_offline.png')
 always_available_img = Image.open(application_path + '/Images/status/always_available.png')
 shared_img = Image.open(application_path + '/Images/status/shared.png')
 locked_img = Image.open(application_path + '/Images/status/locked.png')
@@ -5393,6 +5583,7 @@ online_big_img = Image.open(application_path + '/Images/search/online_big.png')
 online_not_sync_big_img = Image.open(application_path + '/Images/search/online_not_sync_big.png')
 online_not_link_big_img = Image.open(application_path + '/Images/search/online_not_link_big.png')
 available_big_img = Image.open(application_path + '/Images/search/available_big.png')
+available_offline_big_img = Image.open(application_path + '/Images/search/available_offline_big.png')
 always_available_big_img = Image.open(application_path + '/Images/search/always_available_big.png')
 excluded_big_img = Image.open(application_path + '/Images/search/excluded_big.png')
 shared_big_img = Image.open(application_path + '/Images/search/shared_big.png')

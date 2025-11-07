@@ -34,12 +34,12 @@ def print_csv(df, rbin_df, name, csv_path, comment, fus):
     log.info('Started writing CSV file')
     data_dict = json.loads(comment)
 
-    print(f'saving {data_dict["Name"]}')
     if not os.path.exists(csv_path):
         os.makedirs(csv_path)
 
     if not df.empty:
-        df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+        parent_col = 'parentResourceID' if 'parentResourceID' in df.columns else 'ParentFileSystemId'
+        df = df.sort_values(by=['Level', parent_col, 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                             ascending=[False, False, False, True, False, False])
 
         df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
@@ -51,7 +51,10 @@ def print_csv(df, rbin_df, name, csv_path, comment, fus):
     fus_file = os.path.basename(name).split('.')[0]+"_FileUsageSync.csv"
 
     if data_dict["Name"] == 'Microsoft.ListSync.db':
-        csv_file = os.path.basename(name).split('.')[0]+"_OneDrive_offline.csv"
+        csv_file = os.path.basename(name).split('.')[0]+"_OneDrive_list_sync.csv"
+
+    if data_dict["Name"] == 'Microsoft.FilesOnDemand.db':
+        csv_file = os.path.basename(name).split('.')[0]+"_OneDrive_fod.csv"
 
     file_extension = os.path.splitext(name)[1][1:]
 

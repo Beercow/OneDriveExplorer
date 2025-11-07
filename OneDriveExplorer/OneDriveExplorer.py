@@ -51,7 +51,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.10.09"
+__version__ = "2025.11.07"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 DATParser = dat_parser.DATParser()
@@ -138,7 +138,7 @@ def thread_parser(Parser):
 
 
 def main():
-    fields_to_check = ['SETTINGS_DAT', 'SYNC_ENGINE', 'SAFE_DEL', 'LIST_SYNC', 'FILE_USAGE_SYNC', 'LOGS']
+    fields_to_check = ['SETTINGS_DAT', 'SYNC_ENGINE', 'SAFE_DEL', 'LIST_SYNC', 'FILES_ON_DEMAND', 'FILE_USAGE_SYNC', 'LOGS']
 
     def has_settings(data):
         if isinstance(data, dict):
@@ -167,6 +167,7 @@ def main():
     parser.add_argument("--SYNC_ENGINE", help="SyncEngineDatabase.db file to load.", default='')
     parser.add_argument("--SAFE_DEL", help="SafeDelete.db file to load.", default='')
     parser.add_argument("--LIST_SYNC", help="Microsoft.ListSync.db file to load.", default='')
+    parser.add_argument("--FILES_ON_DEMAND", help="Microsoft.FilesOnDemand.db file to load.", default='')
     parser.add_argument("--FILE_USAGE_SYNC", help="Microsoft.FileUsageSync.db file to load.", default='')
     parser.add_argument("--REG_HIVE", help="If a registry hive is provided then the mount points of the SyncEngines will be resolved.")
     parser.add_argument("--RECYCLE_BIN", help="$Recycle.Bin folder to load.")

@@ -23,9 +23,11 @@
 #
 
 import os
+import re
 import hashlib
 import logging
 import pandas as pd
+import numpy as np
 from Registry import Registry
 import ode.parsers.recbin
 
@@ -96,7 +98,7 @@ class OneDriveParser:
         rbin_df = pd.DataFrame()
         comment = None
         account = account
-        allowed_keys = ['scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex']
+        allowed_keys = ['mountId', 'scopeID', 'siteID', 'webID', 'listID', 'tenantID', 'webURL', 'remotePath', 'MountPoint', 'spoPermissions', 'shortcutVolumeID', 'shortcutItemIndex']
 
         if od_settings:
             scopeID = od_settings.scopeID
@@ -106,12 +108,18 @@ class OneDriveParser:
             if hasattr(od_settings, "comment"):
                 comment = od_settings.comment
 
+        parent_col = 'parentResourceID' if 'parentResourceID' in df_data.columns else 'ParentFileSystemId'
+        child_col = 'resourceID' if 'resourceID' in df_data.columns else 'FileSystemId'
+        scope_col = 'scopeID' if 'scopeID' in df_data.columns else 'mountId'
+
         for row in df_data.sort_values(
-            by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+            by=['Level', parent_col, 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                 ascending=[False, False, False, True, False, False]).to_dict('records'):
             if row['Type'] == 'File':
                 try:
-                    if 'diskCreationTime' in row:
+                    if 'ParentFileSystemId' in row:
+                        file = {key: row[key] for key in ('ParentFileSystemId', 'FileSystemId', 'UniqueId', 'Path', 'Name', 'lastChange', 'size', 'PinState', 'fileStatus')}
+                    elif 'diskCreationTime' in row:
                         file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'lastHydrationType', 'lastKnownPinState','spoPermissions', 'volumeID', 'itemIndex', 'diskLastAccessTime', 'diskCreationTime', 'lastChange', 'firstHydrationTime', 'lastHydrationTime', 'hydrationCount', 'size', 'localHashDigest', 'sharedItem', 'Media', 'Metadata', 'ListSync')}
 
                     elif 'diskLastAccessTime' in row:
@@ -133,20 +141,20 @@ class OneDriveParser:
                         print(f'Unable to read dataframe. Something went wrong. {e}')
                     return {}
 
-                folder = cache.setdefault(row['parentResourceID'], {})
+                folder = cache.setdefault(row[parent_col], {})
                 folder.setdefault('Files', []).append(file)
 
             elif row['Type'] == 'Document' and row['resourceID'] not in scopeID:
-                file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'Created', 'lastChange', 'SharedItem', 'size', 'localHashDigest', 'ListSync')}
+                file = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'fileStatus', 'PermMask', 'Created', 'lastChange', 'SharedItem', 'size', 'localHashDigest', 'ListSync')}
                 folder = cache.setdefault(row['parentResourceID'], {})
                 folder.setdefault('Files', []).append(file)
 
             else:
                 if 'Scope' in row['Type']:
-                    if row['scopeID'] not in scopeID:
+                    if row[scope_col] not in scopeID:
                         continue
                     scope = {key: row[key] for key in row if key in allowed_keys}
-                    folder = cache.get(row['scopeID'], {})
+                    folder = cache.get(row[scope_col], {})
                     temp = {**scope, **folder}
                     final.insert(0, temp)
                 else:
@@ -156,14 +164,18 @@ class OneDriveParser:
                                         'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
                                         'itemIndex', 'sharedItem', 'folderColor', 'ListSync')}
                         except Exception:
-                            sub_folder = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'Created', 'lastChange', 'SharedItem', 'folderColor', 'ListSync')}
+                            sub_folder = {key: row[key] for key in ('parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'Created', 'lastChange', 'SharedItem', 'folderColor', 'PermMask', 'ListSync')}
+
+                    elif 'ParentFileSystemId' in row:
+                        sub_folder = {key: row[key] for key in (
+                                     'ParentFileSystemId', 'FileSystemId', 'UniqueId', 'Path', 'Name', 'lastChange', 'size', 'PinState', 'folderStatus')}
                     else:
                         sub_folder = {key: row[key] for key in (
                                     'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
                                     'itemIndex', 'sharedItem', 'ListSync')}
-                    if row['resourceID'] in scopeID:
+                    if row[child_col] in scopeID:
                         scopeID.remove(row['resourceID'])
-                        for s in df_scope.loc[df_scope['scopeID'] == row['resourceID']].to_dict('records'):
+                        for s in df_scope.loc[df_scope[scope_col] == row['resourceID']].to_dict('records'):
                             scope = {key: s[key] for key in s if key in allowed_keys}
                             scope['MountPoint'] = row['MountPoint']
                             scope['spoPermissions'] = s['spoPermissions']
@@ -175,9 +187,9 @@ class OneDriveParser:
                         folder_merge = cache.setdefault(row['parentResourceID'], {})
                         folder_merge.setdefault('Scope', []).append(scope)
                     else:
-                        folder = cache.get(row['resourceID'], {})
+                        folder = cache.get(row[child_col], {})
                         temp = {**sub_folder, **folder}
-                        folder_merge = cache.setdefault(row['parentResourceID'], {})
+                        folder_merge = cache.setdefault(row[parent_col], {})
                         folder_merge.setdefault('Folders', []).append(temp)
 
         if not rbin_df.empty:
@@ -219,7 +231,7 @@ class OneDriveParser:
         return cache
 
     # Generate scopeID list instead of passing
-    def parse_onedrive(self, od_settings, file_path, reghive=False, recbin=False, od_offline=False, gui=False, pb=False, value_label=False):
+    def parse_onedrive(self, od_settings, file_path, reghive=False, recbin=False, od_list_sync=False, od_fod=False, gui=False, pb=False, value_label=False):
         online_cache = {}
 
         if isinstance(file_path, list):
@@ -245,8 +257,8 @@ class OneDriveParser:
             rbin_df = od_settings.rbin_df
             pd.set_option('display.max_columns', None)
 
-            if od_offline:
-                ocr_db = od_offline.ocr_db
+            if od_list_sync:
+                ocr_db = od_list_sync.ocr_db
             else:
                 ocr_db = pd.DataFrame(columns=['resourceID', 'ListSync'])
 
@@ -350,21 +362,50 @@ class OneDriveParser:
 
             online_cache = self.create_cache(df, gui, directory, filename, hash, None, [], od_settings)
 
-        elif od_offline and not od_offline.df_offline.empty:
-            od_offline.df_offline['Level'] = od_offline.df_offline['Path'].str.split('/').str.len()
+        elif od_list_sync and not od_list_sync.df_list_sync.empty:
+            od_list_sync.df_list_sync['Level'] = od_list_sync.df_list_sync['Path'].str.split('/').str.len()
 
-            od_offline.df_offline['FileSort'] = ''
-            od_offline.df_offline['FolderSort'] = ''
-            od_offline.df_offline['MountPoint'] = ''
+            od_list_sync.df_list_sync['FileSort'] = ''
+            od_list_sync.df_list_sync['FolderSort'] = ''
+            od_list_sync.df_list_sync['MountPoint'] = ''
 
-            od_offline.df_offline.loc[od_offline.df_offline.Type == 'Document', ['FileSort']] = od_offline.df_offline['Name'].str.lower()
-            od_offline.df_offline.loc[od_offline.df_offline.Type == 'Folder', ['FolderSort']] = od_offline.df_offline['Name'].str.lower()
+            od_list_sync.df_list_sync.loc[od_list_sync.df_list_sync.Type == 'Document', ['FileSort']] = od_list_sync.df_list_sync['Name'].str.lower()
+            od_list_sync.df_list_sync.loc[od_list_sync.df_list_sync.Type == 'Folder', ['FolderSort']] = od_list_sync.df_list_sync['Name'].str.lower()
 
-            od_offline.df_offline['scopeID'] = od_offline.df_offline['scopeID'].astype('str').fillna('')
+            od_list_sync.df_list_sync['scopeID'] = od_list_sync.df_list_sync['scopeID'].astype('str').fillna('')
 
-            online_cache = self.create_cache(od_offline.df_offline, gui, directory, filename, hash, od_offline.account, od_offline.scopeID, od_settings)
+            online_cache = self.create_cache(od_list_sync.df_list_sync, gui, directory, filename, hash, od_list_sync.account, od_list_sync.scopeID, od_settings)
 
-            df = od_offline.df_offline
+            df = od_list_sync.df_list_sync
+            rbin_df = pd.DataFrame()
+
+        elif od_fod and not od_fod.df.empty:
+            id_name_dict = {
+                FileSystemId if FileSystemId is not None else od_fod.df.at[index, 'mountId']:
+                    od_fod.df.at[index, 'MountPoint'] if name is None else name if name is not None else ''
+                for FileSystemId, name, index in zip(od_fod.df['FileSystemId'], od_fod.df['Name'], od_fod.df.index)
+            }
+
+            parent_dict = {FileSystemId if FileSystemId is not None else od_fod.df.at[index, 'mountId']: '' if ParentFileSystemId is None else ParentFileSystemId
+                           for FileSystemId, ParentFileSystemId, index in zip(od_fod.df['FileSystemId'], od_fod.df['ParentFileSystemId'], od_fod.df.index)}
+
+            if 'Path' in od_fod.df.columns:
+                od_fod.df['Level'] = od_fod.df['Path'].str.split('\\\\').str.len()
+
+            else:
+                od_fod.df['Path'] = od_fod.df.FileSystemId.apply(lambda x: self.find_parent(x, id_name_dict, parent_dict).lstrip('\\\\').split('\\\\'))
+                od_fod.df['Level'] = od_fod.df['Path'].str.len()
+                od_fod.df['Path'] = od_fod.df['Path'].str.join('\\')
+
+            od_fod.df['FileSort'] = ''
+            od_fod.df['FolderSort'] = ''
+
+            od_fod.df.loc[od_fod.df.Type == 'File', ['FileSort']] = od_fod.df['Name'].str.lower()
+            od_fod.df.loc[od_fod.df.Type == 'Folder', ['FolderSort']] = od_fod.df['Name'].str.lower()
+
+            online_cache = self.create_cache(od_fod.df, gui, directory, filename, hash, od_fod.account, od_fod.scopeID, od_settings)
+
+            df = od_fod.df
             rbin_df = pd.DataFrame()
 
         else:

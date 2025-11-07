@@ -845,7 +845,7 @@ class FileUsageFrame(ttk.Frame):
             for idx in indexes:
                 file_name = self.data.iloc[idx].get("file.FileName")
                 self.sp_header.build_tree(text, file_name, idx)
-        except Exception as e:
+        except Exception:
             self.sp_header.build_tree(text)
 
         self.sp_header.tree.bind("<<TreeviewSelect>>", self.on_teams_file_select)

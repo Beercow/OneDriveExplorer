@@ -99,16 +99,34 @@ class FileSelectDialog:
 
     def check_field_states(self):
         try:
+            sed_filled = bool(self.file_vars["SyncEngineDatabase.db"].get().strip())
             ntuser_filled = bool(self.file_vars["NTUSER.DAT"].get().strip())
-            enable_recycle = ntuser_filled
 
-            if enable_recycle:
-                for widget in self.row_widgets["$Recycle.Bin"]:
-                    widget.configure(state="normal" if enable_recycle else "disabled")
+            # --- SyncEngineDatabase.db control ---
+            if sed_filled:
+                # Enable SafeDelete.db and NTUSER.DAT
+                for key in ["SafeDelete.db", "NTUSER.DAT"]:
+                    for widget in self.row_widgets[key]:
+                        widget.configure(state="normal")
             else:
-                self.file_vars["$Recycle.Bin"].set("")  # Clear it
+                # Clear and disable SafeDelete.db, NTUSER.DAT, $Recycle.Bin
+                for key in ["SafeDelete.db", "NTUSER.DAT", "$Recycle.Bin"]:
+                    self.file_vars[key].set("")
+                    for widget in self.row_widgets[key]:
+                        widget.configure(state="disabled")
+                return  # Nothing else to check if SED is empty
+
+            # --- NTUSER.DAT control ---
+            if ntuser_filled:
+                # Enable $Recycle.Bin
+                for widget in self.row_widgets["$Recycle.Bin"]:
+                    widget.configure(state="normal")
+            else:
+                # Clear and disable $Recycle.Bin
+                self.file_vars["$Recycle.Bin"].set("")
                 for widget in self.row_widgets["$Recycle.Bin"]:
                     widget.configure(state="disabled")
+
         except Exception:
             pass
 

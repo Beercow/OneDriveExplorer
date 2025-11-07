@@ -25,6 +25,7 @@
 import ast
 import csv
 import os
+import re
 import zipfile
 from io import StringIO
 from PIL import ImageTk, Image
@@ -41,7 +42,7 @@ def load_images(zip_name):
         with zipfile.ZipFile(zip_name, 'r') as archive:
             filenames = archive.namelist()
             filtered_list = [item for item in filenames if item.startswith('Images/')]
-            sorted_list = sorted(filtered_list)
+            sorted_list = sorted(filtered_list, key=lambda x: int(re.search(r'/(\d+)_', x).group(1)))
 
             for img in sorted_list:
                 with archive.open(img) as data:

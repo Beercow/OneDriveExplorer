@@ -36,7 +36,8 @@ def print_html(df, rbin_df, name, html_path, db_name, fus):
         os.makedirs(html_path)
 
     if not df.empty:
-        df = df.sort_values(by=['Level', 'parentResourceID', 'Type', 'FileSort', 'FolderSort', 'libraryType'],
+        parent_col = 'parentResourceID' if 'parentResourceID' in df.columns else 'ParentFileSystemId'
+        df = df.sort_values(by=['Level', parent_col, 'Type', 'FileSort', 'FolderSort', 'libraryType'],
                             ascending=[False, False, False, True, False, False])
 
         df = df.drop(['Level', 'FileSort', 'FolderSort'], axis=1)
@@ -52,7 +53,10 @@ def print_html(df, rbin_df, name, html_path, db_name, fus):
     file_extension = os.path.splitext(name)[1][1:]
 
     if db_name == 'Microsoft.ListSync.db':
-        html_file = os.path.basename(name).split('.')[0]+"_OneDrive_offline.html"
+        html_file = os.path.basename(name).split('.')[0]+"_OneDrive_list_sync.html"
+
+    if db_name == 'Microsoft.FilesOnDemand.db':
+        html_file = os.path.basename(name).split('.')[0]+"_OneDrive_fod.html"
 
     if file_extension == 'previous':
         html_file = os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.html"
