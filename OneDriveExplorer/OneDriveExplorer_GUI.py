@@ -78,6 +78,8 @@ from ode.utils import schema
 from ode.helpers.AnimatedGif import AnimatedGif
 from ode.views.fileusage import FileUsageFrame
 from ode.views.multiselect import FileSelectDialog
+from ode.views.activity_timeline import ActivityTimelineFrame
+from ode.views.data_summary import DataSummaryFrame
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -4753,6 +4755,53 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_list
             None,
             acount
         )
+
+        # Add Activity Timeline and Data Summary tabs
+        try:
+            pb.configure(mode='indeterminate')
+            value_label['text'] = "Creating Activity Timeline..."
+
+            # Determine what data sources were loaded
+            data_sources = {
+                'sync_engine': od_settings and hasattr(od_settings, 'df') and not od_settings.df.empty if od_settings else False,
+                'safe_delete': rbin_df is not None and not rbin_df.empty,
+                'dat_file': od_settings is not False,
+                'file_usage': od_settings and hasattr(od_settings, 'df') if od_settings else False,
+                'odl_logs': False,  # Would need to check if ODL logs were loaded
+                'registry': reghive != '' and reghive is not False,
+            }
+
+            # Get df_scope from od_settings if available
+            df_scope = od_settings.df_scope if (od_settings and hasattr(od_settings, 'df_scope')) else pd.DataFrame()
+
+            # Create Data Summary tab
+            value_label['text'] = "Creating Data Summary..."
+            summary_frame = ttk.Frame(tv_frame)
+            summary_view = DataSummaryFrame(
+                summary_frame,
+                cache_data=cache,
+                rbin_df=rbin_df if rbin_df is not None else pd.DataFrame(),
+                df_scope=df_scope,
+                account=key,
+                data_sources=data_sources
+            )
+            summary_view.pack(fill=tk.BOTH, expand=True)
+            tv_frame.add(summary_frame, text='Data Summary  ')
+
+            # Create Activity Timeline tab
+            value_label['text'] = "Creating Activity Timeline..."
+            timeline_frame = ttk.Frame(tv_frame)
+            timeline_view = ActivityTimelineFrame(
+                timeline_frame,
+                cache_data=cache,
+                rbin_df=rbin_df if rbin_df is not None else pd.DataFrame()
+            )
+            timeline_view.pack(fill=tk.BOTH, expand=True)
+            tv_frame.add(timeline_frame, text='Activity Timeline  ')
+
+            logging.info("Added Activity Timeline and Data Summary tabs")
+        except Exception as e:
+            logging.error(f"Error creating enhanced views: {e}")
 
     pb.stop()
 
