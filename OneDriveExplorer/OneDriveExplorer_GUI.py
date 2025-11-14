@@ -80,6 +80,9 @@ from ode.views.fileusage import FileUsageFrame
 from ode.views.multiselect import FileSelectDialog
 from ode.views.activity_timeline import ActivityTimelineFrame
 from ode.views.data_summary import DataSummaryFrame
+from ode.views.collaboration_report import CollaborationReportFrame
+from ode.views.sync_status_dashboard import SyncStatusDashboard
+from ode.views.file_analytics import FileAnalyticsFrame
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -4756,10 +4759,10 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_list
             acount
         )
 
-        # Add Activity Timeline and Data Summary tabs
+        # Add Enhanced Reporting Tabs
         try:
             pb.configure(mode='indeterminate')
-            value_label['text'] = "Creating Activity Timeline..."
+            value_label['text'] = "Creating enhanced reports..."
 
             # Determine what data sources were loaded
             data_sources = {
@@ -4771,10 +4774,11 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_list
                 'registry': reghive != '' and reghive is not False,
             }
 
-            # Get df_scope from od_settings if available
+            # Get df_scope and graphMetadata from od_settings if available
             df_scope = od_settings.df_scope if (od_settings and hasattr(od_settings, 'df_scope')) else pd.DataFrame()
+            graphMetadata = od_settings.graphMetadata if (od_settings and hasattr(od_settings, 'graphMetadata')) else pd.DataFrame()
 
-            # Create Data Summary tab
+            # Create Data Summary tab (first - provides overview)
             value_label['text'] = "Creating Data Summary..."
             summary_frame = ttk.Frame(tv_frame)
             summary_view = DataSummaryFrame(
@@ -4786,7 +4790,7 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_list
                 data_sources=data_sources
             )
             summary_view.pack(fill=tk.BOTH, expand=True)
-            tv_frame.add(summary_frame, text='Data Summary  ')
+            tv_frame.add(summary_frame, text='📊 Data Summary  ')
 
             # Create Activity Timeline tab
             value_label['text'] = "Creating Activity Timeline..."
@@ -4797,11 +4801,46 @@ def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_list
                 rbin_df=rbin_df if rbin_df is not None else pd.DataFrame()
             )
             timeline_view.pack(fill=tk.BOTH, expand=True)
-            tv_frame.add(timeline_frame, text='Activity Timeline  ')
+            tv_frame.add(timeline_frame, text='🕒 Activity Timeline  ')
 
-            logging.info("Added Activity Timeline and Data Summary tabs")
+            # Create Sync Status Dashboard tab
+            value_label['text'] = "Creating Sync Status Dashboard..."
+            sync_frame = ttk.Frame(tv_frame)
+            sync_view = SyncStatusDashboard(
+                sync_frame,
+                cache_data=cache
+            )
+            sync_view.pack(fill=tk.BOTH, expand=True)
+            tv_frame.add(sync_frame, text='🔄 Sync Status  ')
+
+            # Create File Analytics tab
+            value_label['text'] = "Creating File Analytics..."
+            analytics_frame = ttk.Frame(tv_frame)
+            analytics_view = FileAnalyticsFrame(
+                analytics_frame,
+                cache_data=cache,
+                fileusage_data=fus if fus else None
+            )
+            analytics_view.pack(fill=tk.BOTH, expand=True)
+            tv_frame.add(analytics_frame, text='📁 File Analytics  ')
+
+            # Create Collaboration Report tab
+            value_label['text'] = "Creating Collaboration Report..."
+            collab_frame = ttk.Frame(tv_frame)
+            collab_view = CollaborationReportFrame(
+                collab_frame,
+                cache_data=cache,
+                graphMetadata=graphMetadata,
+                fileusage_data=fus if fus else None
+            )
+            collab_view.pack(fill=tk.BOTH, expand=True)
+            tv_frame.add(collab_frame, text='👥 Collaboration  ')
+
+            logging.info("Added all enhanced reporting tabs: Data Summary, Activity Timeline, Sync Status, File Analytics, Collaboration")
         except Exception as e:
             logging.error(f"Error creating enhanced views: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
 
     pb.stop()
 
