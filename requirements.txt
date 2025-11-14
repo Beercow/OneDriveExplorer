@@ -1,0 +1,51 @@
+# OneDriveExplorer Requirements
+# Python dependencies for building and running OneDriveExplorer GUI
+
+# Core Dependencies
+pandas>=1.5.0
+numpy>=1.23.0
+
+# GUI Framework
+ttkthemes>=3.2.0
+
+# Image Processing
+Pillow>=9.0.0
+
+# Windows Registry
+python-registry>=1.3.1
+
+# Binary Structure Parsing
+dissect.cstruct>=3.0
+
+# Cryptography (for ODL logs)
+pycryptodome>=3.15.0
+
+# YAML Processing
+ruamel.yaml>=0.17.0
+
+# Data Validation
+cerberus>=1.3.0
+
+# Table Display
+pandastable>=0.13.0
+
+# Keyboard Hooks
+keyboard>=0.13.5
+
+# System Utilities
+psutil>=5.9.0
+
+# File System Analysis
+pytsk3>=20211111
+
+# Hash Calculation
+quickxorhash>=1.0.0
+
+# Excel Export
+openpyxl>=3.0.0
+
+# PyInstaller for Building
+pyinstaller>=5.0.0
+
+# Optional but Recommended
+pywin32>=305  # For Windows API access
