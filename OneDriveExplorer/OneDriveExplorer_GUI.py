@@ -114,7 +114,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.11.07"
+__version__ = "2026.01.06"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -177,7 +177,7 @@ def report_callback_exception(exc, val, tb):
 
     try:
         log_date = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-        with open(f'{application_path}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
+        with open(f'{os.path.dirname(sys.executable)}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
             f.write('The following error has occured and ODE is shutting down.\n')
             f.write(f'For further assistance: {__email__}\n')
             f.write(f'OneDriveExplorer v{__version__}\n')
@@ -185,7 +185,7 @@ def report_callback_exception(exc, val, tb):
     except Exception as file_err:
         print("Failed to write error to file:", file_err)
 
-    messagebox.showerror("Unhandled Exception", f"See {application_path}\ODE_error_{log_date}.log for further assistance.\nAn error occurred:\n{error_msg}")
+    messagebox.showerror("Unhandled Exception", f"See {os.path.dirname(sys.executable)}\ODE_error_{log_date}.log for further assistance.\nAn error occurred:\n{error_msg}")
     root.quit()
     sys.exit(1)
 
@@ -195,7 +195,7 @@ def thread_exception_handler(args):
 
     try:
         log_date = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-        with open(f'{application_path}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
+        with open(f'{os.path.dirname(sys.executable)}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
             f.write('The following error has occured and ODE is shutting down.\n')
             f.write(f'For further assistance: {__email__}\n')
             f.write(f'OneDriveExplorer v{__version__}\n')
@@ -203,7 +203,7 @@ def thread_exception_handler(args):
     except Exception as file_err:
         print("Failed to write error to file:", file_err)
 
-    messagebox.showerror("Thread Exception", f"See {application_path}\ODE_error_{log_date}.log for further assistance.\nA thread error occurred:\n{error_msg}")
+    messagebox.showerror("Thread Exception", f"See {os.path.dirname(sys.executable)}\ODE_error_{log_date}.log for further assistance.\nA thread error occurred:\n{error_msg}")
     root.quit()
     sys.exit(1)
 

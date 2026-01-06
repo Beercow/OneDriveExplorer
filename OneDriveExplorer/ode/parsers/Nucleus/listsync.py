@@ -117,6 +117,10 @@ class SQLiteTableExporter:
         self.cursor.execute("SELECT DISTINCT key FROM list_collection_item_attributes;")
         keys = [row[0] for row in self.cursor.fetchall()]
 
+        if len(keys) == 0:
+            self.df_scope = pd.DataFrame()
+            return
+
         # Build dynamic pivot expressions
         pivot_expressions = [
             f"MAX(CASE WHEN key = '{k}' THEN value END) AS '{k}'" for k in keys

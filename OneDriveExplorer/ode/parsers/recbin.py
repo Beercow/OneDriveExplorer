@@ -106,7 +106,7 @@ class DeleteProcessor:
             name_length = "<" + str(file_name_length * 2) + "s"
             file_name = struct.unpack_from(name_length, file_record[28:])[0].decode('utf-16').rstrip('\u0000')
         else:
-            file_name = str(struct.unpack_from('<520s', file_record[24:])[0]).decode('utf-16').rstrip('\u0000')
+            file_name = struct.unpack_from('<520s', file_record[24:])[0].decode('utf-16').rstrip('\u0000')
 
         name = file_name.split('\\')[-1]
         path = file_name.rsplit('\\', 1)[0]

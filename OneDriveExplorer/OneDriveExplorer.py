@@ -51,19 +51,24 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2025.11.07"
+__version__ = "2026.01.06"
 __email__ = "bmmaloney97@gmail.com"
+
 rbin = []
 DATParser = dat_parser.DATParser()
 OneDriveParser = onedrive_parser.OneDriveParser()
 SQLiteParser = sqlite_parser.SQLiteParser()
+
 parsing_complete = threading.Event()
 q = queue.Queue()
 stop = threading.Event()
 running_threads = []
 
+fatal_error_event = threading.Event()
+fatal_error_message = None
+
 if getattr(sys, 'frozen', False):
-    application_path = sys._MEIPASS
+    application_path = os.path.dirname(sys.executable)
 else:
     application_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -85,11 +90,18 @@ def log_error_and_exit(error_msg: str, title="Unhandled Exception"):
 
     # Stop all tracked threads gracefully
     stop.set()
+
+    current = threading.current_thread()
     for t in running_threads:
+        if t is current:
+            continue
         if t.is_alive():
             t.join(timeout=5)
 
-    sys.exit(1)
+    if threading.current_thread() is threading.main_thread():
+        sys.exit(1)
+    else:
+        return
 
 
 def report_callback_exception(exc, val, tb):
@@ -98,8 +110,12 @@ def report_callback_exception(exc, val, tb):
 
 
 def thread_exception_handler(args):
-    error_msg = ''.join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
-    log_error_and_exit(error_msg, title="Thread Exception")
+    global fatal_error_message
+    fatal_error_message = ''.join(traceback.format_exception(
+        args.exc_type, args.exc_value, args.exc_traceback
+    ))
+    fatal_error_event.set()
+    parsing_complete.set()  # unblock main loop
 
 
 def global_exception_handler(exc_type, exc_value, exc_traceback):
@@ -264,6 +280,9 @@ def main():
                 sys.stdout.flush()
 
             time.sleep(0.2)
+
+        if fatal_error_event.is_set():
+            log_error_and_exit(fatal_error_message, title="Thread Exception")
 
     sys.exit()
 
