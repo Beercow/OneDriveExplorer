@@ -99,24 +99,41 @@ class FileSelectDialog:
 
     def check_field_states(self):
         try:
+            ucd_filled = bool(self.file_vars["*.dat *.dat.previous"].get().strip())
             sed_filled = bool(self.file_vars["SyncEngineDatabase.db"].get().strip())
             ntuser_filled = bool(self.file_vars["NTUSER.DAT"].get().strip())
 
-            # --- SyncEngineDatabase.db control ---
+            # ================================
+            # SyncEngineDatabase.db control
+            # ================================
+
             if sed_filled:
                 # Enable SafeDelete.db and NTUSER.DAT
                 for key in ["SafeDelete.db", "NTUSER.DAT"]:
                     for widget in self.row_widgets[key]:
                         widget.configure(state="normal")
             else:
-                # Clear and disable SafeDelete.db, NTUSER.DAT, $Recycle.Bin
-                for key in ["SafeDelete.db", "NTUSER.DAT", "$Recycle.Bin"]:
-                    self.file_vars[key].set("")
-                    for widget in self.row_widgets[key]:
-                        widget.configure(state="disabled")
-                return  # Nothing else to check if SED is empty
+                # Always disable SafeDelete.db if SED is empty
+                self.file_vars["SafeDelete.db"].set("")
+                for widget in self.row_widgets["SafeDelete.db"]:
+                    widget.configure(state="disabled")
 
-            # --- NTUSER.DAT control ---
+                if ucd_filled:
+                    # Enable NTUSER.DAT only
+                    for widget in self.row_widgets["NTUSER.DAT"]:
+                        widget.configure(state="normal")
+                else:
+                    # Disable NTUSER.DAT and $Recycle.Bin
+                    for key in ["NTUSER.DAT", "$Recycle.Bin"]:
+                        self.file_vars[key].set("")
+                        for widget in self.row_widgets[key]:
+                            widget.configure(state="disabled")
+                    return  # Nothing else to check
+
+            # ================================
+            # NTUSER.DAT control
+            # ================================
+
             if ntuser_filled:
                 # Enable $Recycle.Bin
                 for widget in self.row_widgets["$Recycle.Bin"]:

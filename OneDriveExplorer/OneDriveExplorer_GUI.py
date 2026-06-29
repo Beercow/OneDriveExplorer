@@ -114,7 +114,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2026.01.06"
+__version__ = "2026.06.29"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
