@@ -131,6 +131,7 @@ class ParsingManager:
                     self.parse_results(od_settings, self.args.SETTINGS_DAT, name, self.start, False, self.args.REG_HIVE, self.args.RECYCLE_BIN, od_list_sync)
 
             if self.args.SYNC_ENGINE != '' or self.args.SAFE_DEL != '':
+                log.info('Parsing settings SQLite. Please wait....')
                 self.q.put('Parsing settings SQLite. Please wait....')
                 sedb = self.args.SYNC_ENGINE
                 sddb = self.args.SAFE_DEL

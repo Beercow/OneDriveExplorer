@@ -114,7 +114,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2026.06.29"
+__version__ = "2026.07.31"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -4501,6 +4501,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             sddb = filename['SafeDelete.db'].replace('/', '\\')
             filename = False
 
+            logging.info('Parsing settings SQLite. Please wait....')
             pb.configure(mode='indeterminate')
             value_label['text'] = 'Building folder list. Please wait....'
             pb.start()
@@ -4647,6 +4648,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 pb.configure(mode='indeterminate')
                 value_label['text'] = 'Building folder list. Please wait....'
                 pb.start()
+                logging.info('Parsing settings SQLite. Please wait....')
                 od_settings = SQLiteParser.parse_sql(v)
                 if od_settings:
                     if not od_settings.df.empty:

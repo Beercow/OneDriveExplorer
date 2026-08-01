@@ -177,6 +177,7 @@ class SQLiteTableExporter:
         FROM pivoted AS p
         LEFT JOIN lists l
             ON l.listID = p.listId
+            AND l.siteID = p.siteId
         LEFT JOIN list_sync_details s
             ON s.listID = p.listId
         LEFT JOIN list_collection_items AS lci
@@ -222,45 +223,49 @@ class SQLiteTableExporter:
                 smerged_data = []
 
                 for table in tables:
-                    table_name = table[0]
+                    try:
+                        table_name = table[0]
 
-                    self.cursor.execute(f'SELECT name FROM PRAGMA_TABLE_INFO("{table_name}") WHERE name LIKE "A2OD%" OR name = "UniqueId"')
-                    columns = self.cursor.fetchall()
-                    col_names = [r[0] for r in columns]
+                        self.cursor.execute(f'SELECT name FROM PRAGMA_TABLE_INFO("{table_name}") WHERE name LIKE "A2OD%" OR name = "UniqueId"')
+                        columns = self.cursor.fetchall()
+                        col_names = [r[0] for r in columns]
 
-                    if 'A2ODRemoteItemUniqueId' in col_names:
-                        cols = ", ".join(col_names)
-                        cols += ", COALESCE(json_extract(A2ODExtendedMetadata, '$.riwu'), '') AS webURL"
-                        cols += ", COALESCE(json_extract(A2ODExtendedMetadata, '$.riti'), '') AS tenantID"
-                        cols += ", ProgID"
-                        df_smerge = pd.read_sql_query(f'SELECT {cols} FROM "{table_name}" WHERE ProgID = "AddToOneDrive.MountPoint" AND A2ODRemoteItemUniqueId IS NOT NULL AND A2ODRemoteItemUniqueId <> ""', self.conn)
-                        df_smerge.rename(columns={"A2ODRemoteItemSiteId": "siteID"}, inplace=True)
-                        df_smerge.rename(columns={"A2ODRemoteItemWebId": "webID"}, inplace=True)
-                        df_smerge.rename(columns={"A2ODRemoteItemListId": "listID"}, inplace=True)
-                        #df_smerge.rename(columns={"UniqueId": "scopeID"}, inplace=True)
-                        df_smerge['siteID'] = df_smerge['siteID'].replace(self.replacements, regex=True).str.lower()
-                        df_smerge['webID'] = df_smerge['webID'].replace(self.replacements, regex=True).str.lower()
-                        df_smerge['listID'] = df_smerge['listID'].replace(self.replacements, regex=True).str.lower()
-                        #df_smerge['scopeID'] = df_smerge['scopeID'].replace(self.replacements, regex=True).str.lower()
-                        df_smerge.drop(columns=["A2ODMountCount", "A2ODIsMountPoint", "A2ODExtendedMetadata", "A2ODRemoteItemUniqueId"], inplace=True)
-                        smerged_data.append(df_smerge)
+                        if 'A2ODRemoteItemUniqueId' in col_names:
+                            cols = ", ".join(col_names)
+                            cols += ", COALESCE(json_extract(A2ODExtendedMetadata, '$.riwu'), '') AS webURL"
+                            cols += ", COALESCE(json_extract(A2ODExtendedMetadata, '$.riti'), '') AS tenantID"
+                            cols += ", ProgID"
+                            df_smerge = pd.read_sql_query(f'SELECT {cols} FROM "{table_name}" WHERE ProgID = "AddToOneDrive.MountPoint" AND A2ODRemoteItemUniqueId IS NOT NULL AND A2ODRemoteItemUniqueId <> ""', self.conn)
+                            df_smerge.rename(columns={"A2ODRemoteItemSiteId": "siteID"}, inplace=True)
+                            df_smerge.rename(columns={"A2ODRemoteItemWebId": "webID"}, inplace=True)
+                            df_smerge.rename(columns={"A2ODRemoteItemListId": "listID"}, inplace=True)
+                            df_smerge['siteID'] = df_smerge['siteID'].replace(self.replacements, regex=True).str.lower()
+                            df_smerge['webID'] = df_smerge['webID'].replace(self.replacements, regex=True).str.lower()
+                            df_smerge['listID'] = df_smerge['listID'].replace(self.replacements, regex=True).str.lower()
+                            df_smerge.drop(columns=["A2ODMountCount", "A2ODIsMountPoint", "A2ODExtendedMetadata", "A2ODRemoteItemUniqueId"], inplace=True)
+                            smerged_data.append(df_smerge)
 
-                    df = pd.read_sql_query(
-                        f'SELECT ContentType, ParentUniqueId, DocConcurrencyNumber, UniqueID, FileLeafRef, EncodedAbsUrl, Created, Modified, SMTotalFileStreamSize, StreamHash, SharedWithDetails, _ColorHex, MediaServiceMetadata, PermMask, ProgId FROM "{table_name}"',
-                        self.conn
-                    )
-                    df.rename(columns={"ContentType": "Type"}, inplace=True)
-                    df.rename(columns={"ParentUniqueId": "parentResourceID"}, inplace=True)
-                    df.rename(columns={"UniqueId": "resourceID"}, inplace=True)
-                    df.rename(columns={"FileLeafRef": "Name"}, inplace=True)
-                    df.rename(columns={"EncodedAbsUrl": "Path"}, inplace=True)
-                    df.rename(columns={"SMTotalFileStreamSize": "size"}, inplace=True)
-                    df.rename(columns={"StreamHash": "localHashDigest"}, inplace=True)
-                    df.rename(columns={"_ColorHex": "folderColor"}, inplace=True)
-                    df.rename(columns={"Modified": "lastChange"}, inplace=True)
-                    df.loc[df['ProgId'] == "AddToOneDrive.MountPoint", 'Type'] = "Folder"
-                    df.drop(columns=["ProgId"], inplace=True)
-                    merged_data.append(df)
+                        df = pd.read_sql_query(
+                            f'SELECT ContentType, ParentUniqueId, DocConcurrencyNumber, UniqueID, FileLeafRef, EncodedAbsUrl, Created, Modified, SMTotalFileStreamSize, StreamHash, SharedWithDetails, _ColorHex, MediaServiceMetadata, PermMask, ProgId FROM "{table_name}"',
+                            self.conn
+                        )
+
+                        df.rename(columns={"ContentType": "Type"}, inplace=True)
+                        df.rename(columns={"ParentUniqueId": "parentResourceID"}, inplace=True)
+                        df.rename(columns={"UniqueId": "resourceID"}, inplace=True)
+                        df.rename(columns={"FileLeafRef": "Name"}, inplace=True)
+                        df.rename(columns={"EncodedAbsUrl": "Path"}, inplace=True)
+                        df.rename(columns={"SMTotalFileStreamSize": "size"}, inplace=True)
+                        df.rename(columns={"StreamHash": "localHashDigest"}, inplace=True)
+                        df.rename(columns={"_ColorHex": "folderColor"}, inplace=True)
+                        df.rename(columns={"Modified": "lastChange"}, inplace=True)
+                        df.loc[df['ProgId'] == "AddToOneDrive.MountPoint", 'Type'] = "Folder"
+                        df.drop(columns=["ProgId"], inplace=True)
+                        merged_data.append(df)
+
+                    except Exception as e:
+                        self.log.warning(f'Unable to parse {table_name}. {e}')
+                        continue
 
                 # Merge all collected data into a single DataFrame
                 if smerged_data:
