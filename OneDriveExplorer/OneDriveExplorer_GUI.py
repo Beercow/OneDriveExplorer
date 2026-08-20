@@ -4072,7 +4072,7 @@ def live_system(menu):
     rec_folder = os.path.expandvars("%SystemDrive%\\$Recycle.Bin\\")
     user_names = [folder for folder in os.listdir(users_folder) if os.path.isdir(os.path.join(users_folder, folder))]
     settings_dir = re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$')
-    listsync_settings_dir = re.compile(r'\\ListSync\\(?P<account>Business[0-9])\\settings$')
+    listsync_settings_dir = re.compile(r'\\ListSync\\(.*?)\\settings$')
     logs_dir = re.compile(r'\\(?P<logs>logs)$')
 
     if os.path.exists(rec_folder):

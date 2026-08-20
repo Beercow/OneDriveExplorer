@@ -299,7 +299,7 @@ class ParsingManager:
 
         patterns = {
             'settings': re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$'),
-            'listsync': re.compile(r'\\ListSync\\(?P<account>Business[0-9])\\settings$'),
+            'listsync': re.compile(r'\\ListSync\\(.*?)\\settings$'),
             'logs': re.compile(r'\\(?P<logs>logs)$')
         }
 
