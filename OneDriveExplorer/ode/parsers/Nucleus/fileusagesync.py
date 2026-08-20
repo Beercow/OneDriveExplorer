@@ -27,7 +27,6 @@ import logging
 import sqlite3
 import pandas as pd
 import json
-import re
 
 
 class SQLiteTableExporter:
@@ -49,8 +48,6 @@ class SQLiteTableExporter:
         try:
             # First, decode the double-escaped string
             value = value.encode().decode('unicode_escape')
-            #if isinstance(value, str) and re.search(r'\\\\[ntr"\\]', value):
-            #    value = value.encode().decode('unicode_escape')
 
             # Now, parse the cleaned JSON
             return json.loads(value)
@@ -74,7 +71,14 @@ class SQLiteTableExporter:
 
     def load_csv(self, saved_data):
         self.df_data = pd.read_csv(saved_data)
-        self.df_data['file.AllExtensions.SharingHistory.Instances'] = self.df_data['file.AllExtensions.SharingHistory.Instances'].apply(lambda x: ast.literal_eval(x) if pd.notna(x) else x)
+
+        column = 'file.AllExtensions.SharingHistory.Instances'
+
+        if column in self.df_data.columns:
+            self.df_data[column] = self.df_data[column].apply(
+                lambda x: ast.literal_eval(x) if pd.notna(x) else x
+            )
+
         self.json_data = [self.nest_dict(row.dropna().to_dict()) for _, row in self.df_data.iterrows()]
 
     def get_recent_files_formatted_spo(self):

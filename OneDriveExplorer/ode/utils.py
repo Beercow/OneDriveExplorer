@@ -203,8 +203,8 @@ def change_dtype(df, df_name=None, schema_version=0):
             'fill_values': {'Type': '', 'parentResourceId': '', 'resourceId': '', 'eTag': '', 'Path': '', 'Name': '', 'inRecycleBin': 0, 'volumeId': 0, 'fileId': '', 'DeleteTimeStamp': 0, 'notificationTime': 0, 'size': 0, 'hash': '', 'deletingProcess': ''}
         },
         'offline': {
-            'dtype_changes': {'resourceID': 'str', 'SharedWithDetails': 'str', 'MediaServiceMetadata': 'str'},
-            'fill_values': {'resourceID': '', 'SharedWithDetails': '', 'MediaServiceMetadata': ''}
+            'dtype_changes': {'resourceID': 'str', 'SharedWithDetails': 'str', 'MediaServiceOCR': 'str'},
+            'fill_values': {'resourceID': '', 'SharedWithDetails': '', 'MediaServiceOCR': ''}
         }
     }
 

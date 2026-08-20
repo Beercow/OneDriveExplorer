@@ -114,7 +114,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2026.07.31"
+__version__ = "2026.08.19"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -2346,7 +2346,7 @@ class FileManager:
             if key == 'filePolicies':
                 self.get_filePolicies(value)
                 continue
-            if key == 'MediaServiceMetadata':
+            if key == 'MediaServiceOCR':
                 self.get_ocr(value)
                 continue
             if key == 'SharedWithDetails':
@@ -4520,7 +4520,7 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             profile = {}
             filename = filename.replace('/', '\\')
             settings_dir = re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$')
-            listsync_settings_dir = re.compile(r'\\ListSync\\(?P<account>Business[0-9])\\settings$')
+            listsync_settings_dir = re.compile(r'\\ListSync\\(.*?)\\settings$')
             logs_dir = re.compile(r'\\(?P<logs>logs)$')
 
             if reghive:

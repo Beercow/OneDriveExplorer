@@ -25,6 +25,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import font
+import numpy as np
 import pandas as pd
 import textwrap
 
@@ -719,11 +720,20 @@ class FileUsageFrame(ttk.Frame):
 
     def set_data(self, data: pd.DataFrame):
         """Set and filter the meetings dataframe, then populate the meetings list."""
-        self.data = data
+        if self.data is None:
+            self.data = data
+        else:
+            self.data = pd.concat(
+                [self.data, data],
+                ignore_index=True
+            )
+
         self.populate_list()
 
     def populate_list(self):
         """Populate the meetings treeview."""
+
+        # Clear existing treeview contents
         self.meetings_tree.delete(*self.meetings_tree.get_children())
         self.events_tree.delete(*self.events_tree.get_children())
         self.emails_tree.delete(*self.emails_tree.get_children())
@@ -731,7 +741,7 @@ class FileUsageFrame(ttk.Frame):
         self.notes_tree.delete(*self.notes_tree.get_children())
         self.files_tree.delete(*self.files_tree.get_children())
 
-        if self.data is None:
+        if self.data is None or self.data.empty:
             return
 
         for index, row in self.data.iterrows():
@@ -772,14 +782,23 @@ class FileUsageFrame(ttk.Frame):
                         chat_subject = self.get_chat_subject(data)
                         self.chats_tree.insert("", "end", values=(chat_subject,), iid=unique_id)
             else:
-                parts = str(row.get("file.ItemProperties.SemanticProperties.ContainerName", "N/A")).split(" - ", 1)
-                team = parts[0].strip()
-                sub = parts[1].strip() if len(parts) > 1 else None
+                container_name = row.get(
+                    "file.ItemProperties.SemanticProperties.ContainerName",
+                    np.nan
+                )
+
+                if pd.isna(container_name):
+                    parts = [np.nan]
+                else:
+                    parts = str(container_name).split(" - ", 1)
+
+                team = parts[0]
+                sub = parts[1].strip() if len(parts) > 1 else np.nan
 
                 if team not in self.tree_data:
                     self.tree_data[team] = {"indexes": set(), "children": {}}  # Store team index & children
 
-                if sub:
+                if pd.notna(sub) and str(sub).strip():
                     if sub not in self.tree_data[team]["children"]:
                         self.tree_data[team]["children"][sub] = set()
                     self.tree_data[team]["children"][sub].add(index)
@@ -816,7 +835,12 @@ class FileUsageFrame(ttk.Frame):
         row = self.data.iloc[row_index]
         instances = row.get("file.AllExtensions.SharingHistory.Instances", [])
 
-        self.file_treeview.set_data(row.drop("file.AllExtensions.SharingHistory.Instances"))
+        self.file_treeview.set_data(
+            row.drop(
+                "file.AllExtensions.SharingHistory.Instances",
+                errors="ignore"
+            )
+        )
 
         if instances and 0 <= instance_index < len(instances):
             meeting = instances[instance_index]
@@ -857,7 +881,12 @@ class FileUsageFrame(ttk.Frame):
 
         row_index = int(self.sp_header.tree.item(selected_item, 'values')[1])
 
-        self.sp_header.o_file_treeview.set_data(self.data.iloc[row_index].drop("file.AllExtensions.SharingHistory.Instances"))
+        self.sp_header.o_file_treeview.set_data(
+            self.data.iloc[row_index].drop(
+                "file.AllExtensions.SharingHistory.Instances",
+                errors="ignore"
+            )
+        )
 
     def display_email_header(self, event):
         """Update email header frame when a meeting is selected."""
@@ -870,7 +899,12 @@ class FileUsageFrame(ttk.Frame):
         # Retrieve instances for the correct row
         instances = self.data.iloc[row_index].get("file.AllExtensions.SharingHistory.Instances", [])
 
-        self.file_treeview.set_data(self.data.iloc[row_index].drop("file.AllExtensions.SharingHistory.Instances"))
+        self.file_treeview.set_data(
+            self.data.iloc[row_index].drop(
+                "file.AllExtensions.SharingHistory.Instances",
+                errors="ignore"
+            )
+        )
 
         if instances and 0 <= instance_index < len(instances):
             email = instances[instance_index]  # Get the correct instance
@@ -886,7 +920,12 @@ class FileUsageFrame(ttk.Frame):
         # Retrieve instances for the correct row
         instances = self.data.iloc[row_index].get("file.AllExtensions.SharingHistory.Instances", [])
 
-        self.file_treeview.set_data(self.data.iloc[row_index].drop("file.AllExtensions.SharingHistory.Instances"))
+        self.file_treeview.set_data(
+            self.data.iloc[row_index].drop(
+                "file.AllExtensions.SharingHistory.Instances",
+                errors="ignore"
+            )
+        )
 
         if instances and 0 <= instance_index < len(instances):
             meeting = instances[instance_index]  # Get the correct instance
@@ -902,7 +941,12 @@ class FileUsageFrame(ttk.Frame):
         # Retrieve instances for the correct row
         instances = self.data.iloc[row_index].get("file.AllExtensions.SharingHistory.Instances", [])
 
-        self.file_treeview.set_data(self.data.iloc[row_index].drop("file.AllExtensions.SharingHistory.Instances"))
+        self.file_treeview.set_data(
+            self.data.iloc[row_index].drop(
+                "file.AllExtensions.SharingHistory.Instances",
+                errors="ignore"
+            )
+        )
 
         if instances and 0 <= instance_index < len(instances):
             meeting = instances[instance_index]  # Get the correct instance

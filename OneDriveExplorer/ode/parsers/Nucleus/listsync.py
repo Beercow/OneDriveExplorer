@@ -121,11 +121,28 @@ class SQLiteTableExporter:
             self.df_scope = pd.DataFrame()
             return
 
+        # Keys that must always exist in the pivot
+        required_keys = ["siteTitle", "listTitle", "title"]
+
+        # Add missing keys
+        for key in required_keys:
+            if key not in keys:
+                keys.append(key)
+
         # Build dynamic pivot expressions
         pivot_expressions = [
             f"MAX(CASE WHEN key = '{k}' THEN value END) AS '{k}'" for k in keys
         ]
         pivot_sql = ",\n    ".join(pivot_expressions)
+
+        # Build the list of pivot columns for the final SELECT.
+        # Exclude "title" because we will create our own calculated title below.
+        select_columns = [
+            f'p."{k}"'
+            for k in keys
+            if k != "title"
+        ]
+        select_sql = ",\n    ".join(select_columns)
 
         # Build full query
         query = f"""
@@ -137,8 +154,27 @@ class SQLiteTableExporter:
             GROUP BY listCollectionItemID
         )
         SELECT
-            p.*,
-            l.title,
+            p.listCollectionItemID,
+            {select_sql},
+
+            COALESCE(
+                NULLIF(
+                    TRIM(
+                        COALESCE(p.siteTitle, '') ||
+                        CASE
+                            WHEN p.siteTitle IS NOT NULL
+                            AND p.listTitle IS NOT NULL
+                            THEN '/'
+                            ELSE ''
+                        END ||
+                        COALESCE(p.listTitle, '')
+                    ),
+                    ''
+                ),
+                p.title,
+                l.title
+            ) AS title,
+
             l.hidden,
             l.lastChangeToken,
             l.vroomSyncToken,
@@ -197,8 +233,47 @@ class SQLiteTableExporter:
             self.df_scope['Type'] = 'Scope'
             self.df_scope.rename(columns={"listCollectionItemID": "libraryType"}, inplace=True)
         except Exception as e:
-            print("Error running query:", e)
+            self.log.error(f'Error running query:, {e}')
             self.df_scope = pd.DataFrame()
+
+    def combine_duplicate_columns(self, df):
+        if df.columns.is_unique:
+            return df
+
+        result = pd.DataFrame(index=df.index)
+
+        # Keep track of columns we've already processed
+        processed = set()
+
+        for column in df.columns:
+            if column in processed:
+                continue
+
+            # Get every occurrence of this column
+            duplicate_columns = df.loc[:, df.columns == column]
+
+            # If there's only one, just copy it
+            if duplicate_columns.shape[1] > 1:
+                self.log.warning(
+                    f"Combining {duplicate_columns.shape[1]} "
+                    f"duplicate columns: {column}"
+                )
+
+                result[column] = (
+                    duplicate_columns
+                    .bfill(axis=1)
+                    .iloc[:, 0]
+                )
+            else:
+                # Take the first non-null value from left to right
+                result[column] = duplicate_columns.bfill(axis=1).iloc[:, 0]
+
+            processed.add(column)
+
+        return result
+
+    def normalize_list_key(self, value):
+        return str(value).replace("-", "").lower()
 
     def get_list_sync_data(self):
         self.directory = self.db_path.rsplit('\\', 1)[0]
@@ -218,6 +293,31 @@ class SQLiteTableExporter:
                 self.cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%rows'")
                 tables = self.cursor.fetchall()
 
+                # Build lookup from listId + siteId -> templateType
+                template_lookup = {}
+
+                for _, row in self.df_scope.iterrows():
+                    list_id = row.get("listID")
+                    site_id = row.get("siteID")
+                    template_type = row.get("templateType")
+
+                    if pd.notna(list_id) and pd.notna(site_id):
+                        key = f"list_{list_id}_{site_id}"
+                        template_lookup[key] = template_type
+
+                # Add templateType to each table tuple
+                tables = [
+                    (
+                        table_name,
+                        template_lookup.get(
+                            self.normalize_list_key(
+                                table_name.removesuffix("_rows")
+                            )
+                        )
+                    )
+                    for (table_name,) in tables
+                ]
+
                 # Perform a query on each matching table
                 merged_data = []
                 smerged_data = []
@@ -226,12 +326,34 @@ class SQLiteTableExporter:
                     try:
                         table_name = table[0]
 
-                        self.cursor.execute(f'SELECT name FROM PRAGMA_TABLE_INFO("{table_name}") WHERE name LIKE "A2OD%" OR name = "UniqueId"')
-                        columns = self.cursor.fetchall()
-                        col_names = [r[0] for r in columns]
+                        if table[1] not in ("101", "700"):
+                            continue
 
-                        if 'A2ODRemoteItemUniqueId' in col_names:
-                            cols = ", ".join(col_names)
+                        self.cursor.execute(
+                            f'PRAGMA table_info("{table_name}")'
+                        )
+
+                        table_info = self.cursor.fetchall()
+                        all_col_names = [row[1] for row in table_info]
+
+                        a2od_columns = [
+                            column
+                            for column in all_col_names
+                            if column.startswith("A2OD") or column == "UniqueId"
+                        ]
+
+                        ocr_columns = [
+                            column
+                            for column in all_col_names
+                            if column.startswith("MediaServiceOCR")
+                        ]
+
+                        if 'A2ODRemoteItemUniqueId' in all_col_names:
+                            cols = ", ".join(
+                                f'"{column}"'
+                                for column in a2od_columns
+                            )
+
                             cols += ", COALESCE(json_extract(A2ODExtendedMetadata, '$.riwu'), '') AS webURL"
                             cols += ", COALESCE(json_extract(A2ODExtendedMetadata, '$.riti'), '') AS tenantID"
                             cols += ", ProgID"
@@ -245,8 +367,53 @@ class SQLiteTableExporter:
                             df_smerge.drop(columns=["A2ODMountCount", "A2ODIsMountPoint", "A2ODExtendedMetadata", "A2ODRemoteItemUniqueId"], inplace=True)
                             smerged_data.append(df_smerge)
 
+                        if len(ocr_columns) == 1:
+                            ocr_expression = f'"{ocr_columns[0]}" AS "MediaServiceOCR"'
+                        elif len(ocr_columns) > 1:
+                            quoted_ocr_columns = [
+                                f'"{column}"'
+                                for column in ocr_columns
+                            ]
+                            ocr_expression = (
+                                f'COALESCE({", ".join(quoted_ocr_columns)}) '
+                                f'AS "MediaServiceOCR"'
+                            )
+                        else:
+                            ocr_expression = f'NULL AS "MediaServiceOCR"'
+
+                        wanted_columns = [
+                            "ContentType",
+                            "ParentUniqueId",
+                            "DocConcurrencyNumber",
+                            "UniqueId",
+                            "FileLeafRef",
+                            "EncodedAbsUrl",
+                            "Created",
+                            "Modified",
+                            "SMTotalFileStreamSize",
+                            "StreamHash",
+                            "SharedWithDetails",
+                            "_ColorHex",
+                            "MediaServiceMetadata",
+                            "PermMask",
+                            "ProgId",
+                        ]
+
+                        select_columns = [
+                            f'"{column}"' if column in all_col_names
+                            else f'NULL AS "{column}"'
+                            for column in wanted_columns
+                        ]
+
+                        cols = ", ".join(select_columns)
+
                         df = pd.read_sql_query(
-                            f'SELECT ContentType, ParentUniqueId, DocConcurrencyNumber, UniqueID, FileLeafRef, EncodedAbsUrl, Created, Modified, SMTotalFileStreamSize, StreamHash, SharedWithDetails, _ColorHex, MediaServiceMetadata, PermMask, ProgId FROM "{table_name}"',
+                            f'''
+                            SELECT
+                                {ocr_expression},
+                                {cols}
+                            FROM "{table_name}"
+                            ''',
                             self.conn
                         )
 
@@ -270,6 +437,8 @@ class SQLiteTableExporter:
                 # Merge all collected data into a single DataFrame
                 if smerged_data:
                     smerged_df = pd.concat(smerged_data, ignore_index=True)
+
+                    self.df_scope = self.combine_duplicate_columns(self.df_scope)
 
                     # Decide which keys to join on – likely siteID/webID/listID
                     self.df_scope = pd.merge(
@@ -295,20 +464,20 @@ class SQLiteTableExporter:
                     df_list_sync['localHashDigest'] = df_list_sync.apply(self.compute_hash, axis=1)
                     df_list_sync['SharedItem'] = df_list_sync['SharedWithDetails'].fillna("").str.strip().ne("").astype("Int64")
                     df_list_sync = change_dtype(df_list_sync, df_name='offline')
-                    json_columns = ['SharedWithDetails', 'MediaServiceMetadata']
+                    json_columns = ['SharedWithDetails']
                     df_list_sync[json_columns] = df_list_sync[json_columns].map(lambda x: json.loads(x) if pd.notna(x) and x.strip() else '')
-                    df_list_sync['MediaServiceMetadata'] = df_list_sync.apply(self.populate_media_service_metadata, axis=1)
-                    df_list_sync['ListSync'] = df_list_sync[['SharedWithDetails', 'MediaServiceMetadata']].apply(
+                    #df_list_sync['MediaServiceMetadata'] = df_list_sync.apply(self.populate_media_service_metadata, axis=1)
+                    df_list_sync['ListSync'] = df_list_sync[['SharedWithDetails', 'MediaServiceOCR']].apply(
                         lambda x: (
-                            {'SharedWithDetails': x['SharedWithDetails'], 'MediaServiceMetadata': x['MediaServiceMetadata']}
+                            {'SharedWithDetails': x['SharedWithDetails'], 'MediaServiceOCR': x['MediaServiceOCR']}
                             if pd.notna(x['SharedWithDetails']) and str(x['SharedWithDetails']).strip() != ""
-                            or pd.notna(x['MediaServiceMetadata']) and str(x['MediaServiceMetadata']).strip() != ""
+                            or pd.notna(x['MediaServiceOCR']) and str(x['MediaServiceOCR']).strip() != ""
                             else ''
                         ),
                         axis=1
                     )
                     df_list_sync['PermMask'] = df_list_sync['PermMask'].apply(lambda x: self.get_permissions(x))
-                    df_list_sync.drop(columns=['SharedWithDetails', 'MediaServiceMetadata'], inplace=True)
+                    df_list_sync.drop(columns=['SharedWithDetails', 'MediaServiceOCR'], inplace=True)
 
                     missing_ids = set(df_list_sync["parentResourceID"].dropna()) - set(df_list_sync["resourceID"].dropna())
 
