@@ -1,35 +1,3 @@
-
-<div align="right">
-  <details>
-    <summary >🌐 Language</summary>
-    <div>
-      <div align="center">
-        <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=en">English</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=zh-CN">简体中文</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=zh-TW">繁體中文</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=ja">日本語</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=ko">한국어</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=hi">हिन्दी</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=th">ไทย</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=fr">Français</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=de">Deutsch</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=es">Español</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=it">Italiano</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=ru">Русский</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=pt">Português</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=nl">Nederlands</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=pl">Polski</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=ar">العربية</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=fa">فارسی</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=tr">Türkçe</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=vi">Tiếng Việt</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=id">Bahasa Indonesia</a>
-        | <a href="https://openaitx.github.io/view.html?user=Beercow&project=OneDriveExplorer&lang=as">অসমীয়া</
-      </div>
-    </div>
-  </details>
-</div>
-
 # OneDriveExplorer Summary
 
 OneDriveExplorer is a command line and GUI based application for reconstructing the folder structure of OneDrive from `<UserCid>.dat`, `<UserCid>.dat.previous` and/or SQLite databases. Also supports parsing OneDrive logs with extensions `.odl`, `.odlgz`, `.odlsent` and `.aold`. Log parsing is heavily based on the work of Yogesh Khatri [odl.py](https://github.com/ydkhatri/OneDrive).
