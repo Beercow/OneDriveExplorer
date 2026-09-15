@@ -36,6 +36,7 @@ import ode.parsers.sqlite_db as sqlite_parser
 import ode.parsers.Nucleus.listsync as SQLiteTableExporter
 import ode.parsers.Nucleus.fileusagesync as fileusagesync
 import ode.parsers.Nucleus.filesondemand as filesondemand
+import ode.parsers.Nucleus.thumbnails as thumbnails
 from ode.parsers.odl import parse_odl, load_cparser
 from ode.renderers.json import print_json
 from ode.renderers.csv_file import print_csv
@@ -45,6 +46,7 @@ import json
 
 log = logging.getLogger(__name__)
 fus = fileusagesync.SQLiteTableExporter()
+od_thumbnails = thumbnails.SQLiteTableExporter()
 
 
 def is_user_admin():
@@ -59,7 +61,16 @@ class ParsingManager:
         self.args = args
         self.q = q
         self.profile = {}
-        self.fields_to_check = ['SETTINGS_DAT', 'SYNC_ENGINE', 'SAFE_DEL', 'LIST_SYNC', 'FILES_ON_DEMAND', 'FILE_USAGE_SYNC', 'LOGS']
+        self.fields_to_check = [
+            'SETTINGS_DAT',
+            'SYNC_ENGINE',
+            'SAFE_DEL',
+            'LIST_SYNC',
+            'FILES_ON_DEMAND',
+            'FILE_USAGE_SYNC',
+            'LIST_SYNC_THUMBNAILS',
+            'LOGS'
+        ]
         self.DATParser = dat_parser.DATParser()
         self.DATParserLegacy = dat_parser_legacy.DATParser()
         self.OneDriveParser = onedrive_parser.OneDriveParser()
@@ -84,6 +95,16 @@ class ParsingManager:
                 print('\r\n')
 
         if any(getattr(self.args, field) for field in self.fields_to_check):
+            if self.args.LIST_SYNC_THUMBNAILS != '':
+                cache = {"Path": '', "Name": '', "Hash": '', "Account": ''}
+                directory, file = os.path.split(self.args.LIST_SYNC_THUMBNAILS)
+                log.info("Stared parsing Microsoft.ListSync.Thumbnails.db")
+                self.q.put('Stared parsing Microsoft.ListSync.Thumbnails.db. Please wait....')
+                od_thumbnails.set_db_path(directory)
+                od_thumbnails.get_thumbnails()
+                if not od_thumbnails.df.empty:
+                    self.save_output(cache, pd.DataFrame(), pd.DataFrame(), '')
+                od_thumbnails.df = pd.DataFrame()
             if self.args.LIST_SYNC != '':
                 log.info("Stared parsing Microsoft.ListSync.db")
                 self.q.put('Stared parsing Microsoft.ListSync.db. Please wait....')
@@ -113,6 +134,7 @@ class ParsingManager:
                 fus.get_recent_files_formatted_spo()
                 if not any([self.args.SETTINGS_DAT, self.args.SYNC_ENGINE, self.args.SAFE_DEL]):
                     self.save_output(cache, pd.DataFrame(), pd.DataFrame(), '')
+                fus.df_data = pd.DataFrame()
                 self.q.put('')
                 print('\r\n')
 
@@ -194,6 +216,7 @@ class ParsingManager:
     def parse_profile(self, profile, user=False):
         od_list_sync = False
         for key, value in profile.items():
+            cache = {}
             if key == 'logs':
                 load_cparser(self.args.cstructs)
                 if self.args.LOGS:
@@ -237,6 +260,16 @@ class ParsingManager:
                 fus.get_recent_files_formatted_spo()
                 self.q.put('')
                 print('\r\n')
+                log.info('Gathering thumbnail data. Please wait....')
+                self.q.put('Gathering thumbnail data. Please wait....')
+                od_thumbnails.set_db_path(f'{v}')
+                od_thumbnails.get_thumbnails()
+                self.q.put('')
+                print('\r\n')
+                self.save_output(cache, pd.DataFrame(), pd.DataFrame(), key)
+                od_thumbnails.df = pd.DataFrame()
+                fus.df_data = pd.DataFrame()
+                fus.json_data = None
 
             # Then process "settings" if it exists
             if "settings" in value:
@@ -296,34 +329,35 @@ class ParsingManager:
 
     def build_profile(self, profile_path, user=False):
         profile_path = profile_path.replace('/', '\\')
-
-        patterns = {
-            'settings': re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$'),
-            'listsync': re.compile(r'\\ListSync\\(.*?)\\settings$'),
-            'logs': re.compile(r'\\(?P<logs>logs)$')
-        }
+        settings_dir = re.compile(r'\\settings\\(?P<account>Personal|Business[0-9])$')
+        listsync_settings_dir = re.compile(r'\\ListSync\\(.*?)\\settings$')
+        logs_dir = re.compile(r'\\(?P<logs>logs)$')
 
         for path, subdirs, files in os.walk(profile_path):
-            for key, pattern in patterns.items():
-                match = pattern.search(path)
-                if not match:
-                    continue
+            settings_find = re.findall(settings_dir, path)
+            listsync_find = re.findall(listsync_settings_dir, path)
+            logs_find = re.findall(logs_dir, path)
 
-                identifier = match.group('account' if key != 'logs' else 'logs')
+            if settings_find:
+                self.profile.setdefault(settings_find[0], {})
+                self.profile[settings_find[0]].setdefault('settings', '')
+                self.profile[settings_find[0]]['settings'] = path
 
-                target = self.profile[user] if user else self.profile
-                if key == 'logs':
-                    target.setdefault(identifier, []).append(path)
-                else:
-                    target.setdefault(identifier, {}).setdefault(key, '')
-                    target[identifier][key] = path
+            if listsync_find:
+                self.profile.setdefault(listsync_find[0], {})
+                self.profile[listsync_find[0]].setdefault('listsync', '')
+                self.profile[listsync_find[0]]['listsync'] = path
+
+            if logs_find:
+                self.profile.setdefault(logs_find[0], [])
+                self.profile[logs_find[0]].append(path)
 
     def save_output(self, cache, df, rbin_df, name):
         comment_json = json.dumps({
-            "Path": cache["Path"],
-            "Name": cache["Name"],
-            "Hash": cache["Hash"],
-            "Account": cache["Account"]
+            "Path": cache.get("Path"),
+            "Name": cache.get("Name"),
+            "Hash": cache.get("Hash"),
+            "Account": cache.get("Account")
         })
 
         # Save outputs based on args
@@ -331,7 +365,7 @@ class ParsingManager:
             print('\r\n')
             self.q.put('Saving csv. Please wait....')
             try:
-                print_csv(df, rbin_df, name, self.args.output_dir, comment_json, fus.df_data)
+                print_csv(df, rbin_df, name, self.args.output_dir, comment_json, fus.df_data, od_thumbnails.df)
             except Exception as e:
                 log.warning(f'Unable to save CSV: {e}')
             self.q.put('')
@@ -340,7 +374,7 @@ class ParsingManager:
             print('\r\n')
             self.q.put('Saving html. Please wait....')
             try:
-                print_html(df, rbin_df, name, self.args.output_dir, cache["Name"], fus.df_data)
+                print_html(df, rbin_df, name, self.args.output_dir, cache.get("Name"), fus.df_data, od_thumbnails.df)
             except Exception as e:
                 log.warning(f'Unable to save HTML: {e}')
 
@@ -348,7 +382,7 @@ class ParsingManager:
             print('\r\n')
             self.q.put('Saving json. Please wait....')
             try:
-                print_json(cache, name, fus.json_data, self.args.pretty, self.args.output_dir)
+                print_json(cache, name, fus.json_data, od_thumbnails.df, self.args.pretty, self.args.output_dir)
             except Exception as e:
                 log.warning(f'Unable to save JSON: {e}')
 

@@ -22,44 +22,86 @@
 # SOFTWARE.
 #
 
+import base64
 import os
 import json
 import logging
+import pandas as pd
 
 log = logging.getLogger(__name__)
 
 
-def print_json(cache, name, fus, pretty, json_path):
+def print_json(cache, name, fus, odt, pretty, json_path):
     log.info('Started writing JSON file')
-
-    if fus:
-        cache["FileUsageSync"] = fus
 
     if not os.path.exists(json_path):
         os.makedirs(json_path)
 
-    if pretty:
-        json_object = json.dumps(cache,
-                                 sort_keys=False,
-                                 indent=4,
-                                 separators=(',', ': ')
-                                 )
-    else:
-        json_object = json.dumps(cache)
+    if fus:
+        cache["FileUsageSync"] = fus
 
+    # Determine output filename before changing cache
     file_extension = os.path.splitext(name)[1][1:]
 
     if file_extension == 'previous':
-        output = open(json_path + '\\' + os.path.basename(name).split('.')[0]+"_"+file_extension+"_OneDrive.json", 'w')
+        output_name = (
+            os.path.basename(name).split('.')[0]
+            + "_"
+            + file_extension
+            + "_OneDrive.json"
+        )
 
-    elif cache['Name'] == 'Microsoft.ListSync.db':
-        output = open(json_path + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive_list_sync.json", 'w')
+    elif cache.get('Name') == 'Microsoft.ListSync.db':
+        output_name = (
+            os.path.basename(name).split('.')[0]
+            + "_OneDrive_list_sync.json"
+        )
 
-    elif cache['Name'] == 'Microsoft.FilesOnDemand.db':
-        output = open(json_path + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive_fod.json", 'w')
+    elif cache.get('Name') == 'Microsoft.FilesOnDemand.db':
+        output_name = (
+            os.path.basename(name).split('.')[0]
+            + "_OneDrive_fod.json"
+        )
+
+    elif not odt.empty:
+        output_name = (
+            os.path.basename(name).split('.')[0]
+            + "_thumbnails.json"
+        )
 
     else:
-        output = open(json_path + '\\' + os.path.basename(name).split('.')[0]+"_OneDrive.json", 'w')
+        output_name = (
+            os.path.basename(name).split('.')[0]
+            + "_OneDrive.json"
+        )
 
-    output.write(json_object)
-    output.close()
+    # Convert thumbnails DataFrame to JSON-compatible Python object
+    if not odt.empty:
+        odt = odt.copy()
+
+        odt["thumbnail"] = odt["thumbnail"].apply(
+            lambda x: base64.b64encode(x).decode("ascii")
+            if isinstance(x, bytes)
+            else x
+        )
+
+        cache = odt.to_dict(orient="records")
+
+    # Serialize everything once
+    if pretty:
+        json_object = json.dumps(
+            cache,
+            sort_keys=False,
+            indent=4,
+            separators=(',', ': ')
+        )
+    else:
+        json_object = json.dumps(cache)
+
+    if json_object == '{}':
+        return
+
+    output_path = os.path.join(json_path, output_name)
+
+    with open(output_path, 'w', encoding='utf-8') as output:
+        output.write(json_object)

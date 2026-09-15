@@ -23,9 +23,11 @@
 #
 
 import ast
+import base64
 import csv
 import os
 import re
+import tempfile
 import zipfile
 from io import StringIO
 from PIL import ImageTk, Image
@@ -38,25 +40,54 @@ log = logging.getLogger(__name__)
 
 def load_images(zip_name):
     s_image = {}
+
     try:
-        with zipfile.ZipFile(zip_name, 'r') as archive:
+        with zipfile.ZipFile(zip_name, "r") as archive:
             filenames = archive.namelist()
-            filtered_list = [item for item in filenames if item.startswith('Images/')]
-            sorted_list = sorted(filtered_list, key=lambda x: int(re.search(r'/(\d+)_', x).group(1)))
+
+            filtered_list = [
+                item
+                for item in filenames
+                if item.startswith("Images/")
+                and not item.endswith("/")
+                and os.path.basename(item).startswith("pyimage")
+                and item.lower().endswith(".png")
+            ]
+
+            # Sort by the number in pyimage#
+            sorted_list = sorted(
+                filtered_list,
+                key=lambda x: int(
+                    os.path.splitext(
+                        os.path.basename(x)
+                    )[0][7:]
+                )
+            )
 
             for img in sorted_list:
                 with archive.open(img) as data:
-                    digest = str(img).split('_')[1].split('.png')[0]
-                    image = ImageTk.PhotoImage(Image.open(data))
-                    s_image[digest] = image
+                    image = Image.open(data)
+                    image.load()
+
+                    photo = ImageTk.PhotoImage(image)
+
+                    # pyimage68, pyimage69, etc.
+                    image_name = os.path.splitext(
+                        os.path.basename(img)
+                    )[0]
+
+                    s_image[image_name] = photo
 
             return s_image
 
     except Exception as e:
-        log.error(f'Error loading images from {zip_name.split("/")[-1]}. {e}')
+        log.error(
+            f"Error loading images from "
+            f"{zip_name.split('/')[-1]}. {e}"
+        )
 
 
-def load_project(zip_name, q, stop_event, tv, file_items, fus, pb, value_label):
+def load_project(zip_name, q, stop_event, tv, file_items, fus, file_usage_frame, pb, value_label):
     try:
         with zipfile.ZipFile(zip_name, 'r') as archive:
             filenames = archive.namelist()
@@ -97,7 +128,12 @@ def load_project(zip_name, q, stop_event, tv, file_items, fus, pb, value_label):
                                 progress_gui(total, count, pb, value_label, status=f'Importing {filename} from {arc_name} project.')
 
                     if '_FileUsageSync.csv' in filename:
+                        value_label['text'] = f'Importing {filename} from {arc_name} project.'
+                        pb.configure(mode='indeterminate')
+                        pb.start()
                         fus.load_csv(data)
+                        file_usage_frame.set_data(fus.df_data, filename.removesuffix("_FileUsageSync.csv"))
+                        fus.df_data = pd.DataFrame()
 
                     if '_logs.csv' in filename:
                         value_label['text'] = f'Importing {filename} from {arc_name} project.'
@@ -109,13 +145,23 @@ def load_project(zip_name, q, stop_event, tv, file_items, fus, pb, value_label):
                         send_data.append(df)
                         q.put(send_data)
 
+                    if '_thumbnails.csv' in filename:
+                        value_label['text'] = f'Importing {filename} from {arc_name} project.'
+                        pb.configure(mode='indeterminate')
+                        pb.start()
+                        send_data = []
+                        send_data.append(filename)
+                        send_data.append(data.read())
+                        q.put(send_data)
+                        
+
     except Exception as e:
         log.error(f'Error importing {zip_name.split("/")[-1]}. {e}')
 
     q.put(['done'])
 
 
-def save_project(tv, file_items, zip_name, user_logs, s_image, fus, pb, value_label):
+def save_project(tv, file_items, zip_name, user_logs, root, fus, odt, pb, value_label):
     def find_children(count, item=''):
         children = tv.get_children(item)
 
@@ -164,12 +210,50 @@ def save_project(tv, file_items, zip_name, user_logs, s_image, fus, pb, value_la
             string_buffer = StringIO()
             d = tv.get_children()
 
-            for index, (k, v) in enumerate(s_image.items()):
-                tmp_file = 'tmp.png'
-                v._PhotoImage__photo.write(tmp_file)
-                with open(tmp_file, 'rb') as image_file:
-                    archive.writestr(f'Images/{index}_{k}.png', image_file.read())
-                os.remove(tmp_file)
+            py_images = root.tk.call("image", "names")
+
+            for py_image in py_images:
+                # Only save pyimage numbers > 67
+                if not py_image.startswith("pyimage"):
+                    continue
+        
+                try:
+                    image_number = int(py_image[7:])
+        
+                    if image_number <= 67:
+                        continue
+        
+                except ValueError:
+                    continue
+            
+                try:
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        png_path = os.path.join(
+                            temp_dir,
+                            f"{py_image}.png"
+                        )
+        
+                        # Tkinter writes the PhotoImage to a file
+                        root.tk.call(
+                            py_image,
+                            "write",
+                            png_path,
+                            "-format",
+                            "png"
+                        )
+        
+                        # Read the PNG bytes
+                        with open(png_path, "rb") as f:
+                            png_data = f.read()
+        
+                        # Add directly to the ZIP
+                        archive.writestr(
+                            f"Images/{py_image}.png",
+                            png_data
+                        )
+        
+                except Exception as e:
+                    log.warning(f"Unable to save {py_image}: {e}")
 
             for i in d:
                 filename = f"{tv.item(i)['text'].split('.')[0][1:]}_OneDrive.csv"
@@ -192,9 +276,39 @@ def save_project(tv, file_items, zip_name, user_logs, s_image, fus, pb, value_la
             pb.configure(mode='indeterminate')
             pb.start()
 
-            if not fus.empty:
-                fus.to_csv(string_buffer, index=False, encoding='utf-8')
-                filename = '_FileUsageSync.csv'
+            if fus:
+                for filename, records in fus.items():
+                    csv_filename = f'{filename}_FileUsageSync.csv'
+
+                    if records.empty:
+                        continue
+
+                    log.info(f'Saving {csv_filename} to {zip_name}.')
+
+                    records.to_csv(
+                        string_buffer,
+                        index=False,
+                        encoding="utf-8"
+                    )
+                
+                    archive.writestr(
+                        csv_filename,
+                        string_buffer.getvalue()
+                    )
+                    
+                    string_buffer.truncate(0)
+                    string_buffer.seek(0)
+
+            if not odt.empty:
+                filename = '_thumbnails.csv'
+                log.info(f'Saving {filename} to {zip_name}.')
+                odt["thumbnail"] = odt["thumbnail"].apply(
+                        lambda x: base64.b64encode(x).decode("ascii")
+                        if isinstance(x, bytes)
+                        else x
+                    )
+                
+                odt.to_csv(string_buffer, index=False, encoding='utf-8')
                 archive.writestr(filename, string_buffer.getvalue())
                 string_buffer.truncate(0)
                 string_buffer.seek(0)

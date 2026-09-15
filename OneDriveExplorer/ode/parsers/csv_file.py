@@ -177,7 +177,6 @@ def parse_csv(filename):
             df.remotePath.fillna('', inplace=True)
 
     except Exception as e:
-        print(e)
         log.error(f'Not a valid csv: {csv_name} - Error: {e}')
         return ParseSettingResult(pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
                                   pd.DataFrame(), [], '', 0, pd.DataFrame(), data_dict), False, False

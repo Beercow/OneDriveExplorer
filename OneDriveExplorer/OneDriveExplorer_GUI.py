@@ -23,6 +23,7 @@
 #
 
 import ast
+import io
 import os
 import sys
 import colorsys
@@ -68,6 +69,7 @@ from ode.parsers.csv_file import parse_csv
 import ode.parsers.Nucleus.listsync as SQLiteTableExporter
 import ode.parsers.Nucleus.fileusagesync as fileusagesync
 import ode.parsers.Nucleus.filesondemand as filesondemand
+import ode.parsers.Nucleus.thumbnails as thumbnails
 import ode.parsers.onedrive as onedrive_parser
 from ode.parsers.odl import parse_odl, load_cparser
 import ode.parsers.sqlite_db as sqlite_parser
@@ -78,6 +80,7 @@ from ode.utils import schema
 from ode.helpers.AnimatedGif import AnimatedGif
 from ode.views.fileusage import FileUsageFrame
 from ode.views.multiselect import FileSelectDialog
+from ode.views.thumbs import ThumbnailDataWindow
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -88,6 +91,7 @@ DATParserLegacy = dat_parser_legacy.DATParser()
 OneDriveParser = onedrive_parser.OneDriveParser()
 SQLiteParser = sqlite_parser.SQLiteParser()
 fus = fileusagesync.SQLiteTableExporter()
+od_thumbnails = thumbnails.SQLiteTableExporter()
 
 # Per monitor DPI aware. This app checks for the DPI when it is
 # created and adjusts the scale factor whenever the DPI changes.
@@ -106,6 +110,18 @@ GWL_STYLE = -16
 WS_MINIMIZEBOX = 131072
 WS_MAXIMIZEBOX = 65536
 
+INVESTIGATE = 25
+
+logging.addLevelName(INVESTIGATE, "INVESTIGATE")
+
+
+def investigate(self, message, *args, **kwargs):
+    if self.isEnabledFor(INVESTIGATE):
+        self._log(INVESTIGATE, message, args, **kwargs)
+
+
+logging.Logger.investigate = investigate
+
 log_capture_string = StringIO()
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s, %(levelname)s, %(message)s',
@@ -114,7 +130,7 @@ logging.basicConfig(level=logging.INFO,
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2026.08.19"
+__version__ = "2026.09.15"
 __email__ = "bmmaloney97@gmail.com"
 rbin = []
 user_logs = {}
@@ -160,8 +176,10 @@ if getattr(sys, 'frozen', False):
             time.sleep(0.05)
     threading.Thread(target=splash_loop, daemon=True).start()
     application_path = sys._MEIPASS
+    error_log_path = os.path.dirname(sys.executable)
 else:
     application_path = os.path.dirname(os.path.abspath(__file__))
+    error_log_path = application_path
 
 if os.path.isfile('ode.settings'):
     with open("ode.settings", "r") as jsonfile:
@@ -177,7 +195,7 @@ def report_callback_exception(exc, val, tb):
 
     try:
         log_date = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-        with open(f'{os.path.dirname(sys.executable)}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
+        with open(f'{error_log_path}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
             f.write('The following error has occured and ODE is shutting down.\n')
             f.write(f'For further assistance: {__email__}\n')
             f.write(f'OneDriveExplorer v{__version__}\n')
@@ -185,7 +203,7 @@ def report_callback_exception(exc, val, tb):
     except Exception as file_err:
         print("Failed to write error to file:", file_err)
 
-    messagebox.showerror("Unhandled Exception", f"See {os.path.dirname(sys.executable)}\ODE_error_{log_date}.log for further assistance.\nAn error occurred:\n{error_msg}")
+    messagebox.showerror("Unhandled Exception", f"See {error_log_path}\ODE_error_{log_date}.log for further assistance.\nAn error occurred:\n{error_msg}")
     root.quit()
     sys.exit(1)
 
@@ -195,7 +213,7 @@ def thread_exception_handler(args):
 
     try:
         log_date = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-        with open(f'{os.path.dirname(sys.executable)}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
+        with open(f'{error_log_path}\ODE_error_{log_date}.log', 'a', encoding='utf-8') as f:
             f.write('The following error has occured and ODE is shutting down.\n')
             f.write(f'For further assistance: {__email__}\n')
             f.write(f'OneDriveExplorer v{__version__}\n')
@@ -203,7 +221,7 @@ def thread_exception_handler(args):
     except Exception as file_err:
         print("Failed to write error to file:", file_err)
 
-    messagebox.showerror("Thread Exception", f"See {os.path.dirname(sys.executable)}\ODE_error_{log_date}.log for further assistance.\nA thread error occurred:\n{error_msg}")
+    messagebox.showerror("Thread Exception", f"See {error_log_path}\ODE_error_{log_date}.log for further assistance.\nA thread error occurred:\n{error_msg}")
     root.quit()
     sys.exit(1)
 
@@ -819,6 +837,8 @@ class Messages:
             try:
                 if m[1] == 'INFO':
                     image = minfo_img
+                if m[1] == 'INVESTIGATE':
+                    image = inv_img
                 if m[1] == 'WARNING':
                     image = warning_img
                 if m[1] == 'ERROR':
@@ -2822,7 +2842,7 @@ class FileManager:
                     self.insert_into_treeview(i, image_sha1, values_i, tags_i)
 
         except Exception as e:
-            print(e)
+            #print(e)
             pass
 
         if self.file:
@@ -3905,7 +3925,7 @@ def json_count(item='', file_count=0, del_count=0, folder_count=0):
 
 
 def parent_child(d, parent_id=None, account=False):
-    if parent_id is None:
+    if parent_id is None and 'Name' in d:
         # This line is only for the first call of the function
         parent_id = tv.insert("",
                               "end",
@@ -4188,9 +4208,10 @@ def import_json(menu):
 def import_csv(menu):
     fields = [
         ("OneDrive csv file", "_OneDrive.csv"),
-        ("FileUsageSync csv file", "_FileUsageSync.csv"),
         ("ListSync csv file", "_OneDrive_list_sync.csv"),
-        ("FilesOnDemand csv file", "_OneDrive_fod.csv")
+        ("FilesOnDemand csv file", "_OneDrive_fod.csv"),
+        ("FileUsageSync csv file", "_FileUsageSync.csv"),
+        ("Thumbnails csv file", "_thumbnails.csv")
     ]
 
     icon_path = application_path + '/Images/titles/table.ico'
@@ -4204,11 +4225,12 @@ def load_ind():
         ("Load <UserCid>.dat", "*.dat *.dat.previous"),
         ("Load SyncEngineDatabase.db", "SyncEngineDatabase.db"),
         ("Load SafeDelete.db", "SafeDelete.db"),
+        ("Load NTUSER.DAT", "NTUSER.DAT"),
+        ("Load $Recycle.Bin", "$Recycle.Bin"),
         ("Load Microsoft.ListSync.db", "Microsoft.ListSync.db"),
         ("Load Microsoft.FilesOnDemand.db", "Microsoft.FilesOnDemand.db"),
         ("Load Microsoft.FileUsageSync.db", "Microsoft.FileUsageSync.db"),
-        ("Load NTUSER.DAT", "NTUSER.DAT"),
-        ("Load $Recycle.Bin", "$Recycle.Bin")
+        ("Load Microsoft.ListSync.Thumbnails.db", "Microsoft.ListSync.Thumbnails.db")
     ]
 
     icon_path = application_path + '/Images/titles/files_yellow_combine.ico'
@@ -4234,6 +4256,24 @@ def on_files_selected(file_paths):
             widgets_disable()
             fus.load_csv(file_paths['_FileUsageSync.csv'])
             file_usage_frame.set_data(fus.df_data)
+            widgets_normal()
+
+        if file_paths['_thumbnails.csv'] != '':
+            widgets_disable()
+            od_thumbnails.load_csv(file_paths['_thumbnails.csv'])
+            if not od_thumbnails.df.empty:
+                tb = ThumbnailDataWindow(tv_frame, od_thumbnails.df, (application_path + '/Images/titles/OneDrive.ico'))
+                tv_frame.add(tb, text=f'Thumbnails  ')
+                for item in tb.thumbnail_images:
+                    image = ImageTk.getimage(item)
+
+                    fp = io.BytesIO()
+                    image.save(fp, "PNG")
+
+                    digest = hashlib.sha1(fp.getvalue()).hexdigest()
+
+                    if digest not in s_image:
+                        s_image[digest] = item
             widgets_normal()
 
     if '*.dat *.dat.previous' in file_paths:
@@ -4426,6 +4466,39 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
     od_list_sync = False
 
     if x == 'loose':
+        if filename['Microsoft.ListSync.Thumbnails.db'] != '':
+            cache = {"Path": '', "Name": '', "Hash": '', "Account": ''}
+            has_menu_data = any(menu_data[key] for key in ['json', 'csv', 'html'])
+            directory, file = os.path.split(filename['Microsoft.ListSync.Thumbnails.db'])
+            pb.configure(mode='indeterminate')
+            value_label['text'] = 'Gathering thumbnail data. Please wait....'
+            pb.start()
+            logging.info("Stared parsing Microsoft.ListSync.Thumbnails.db")
+            od_thumbnails.set_db_path(directory)
+            od_thumbnails.get_thumbnails()
+            if not od_thumbnails.df.empty:
+                tb = ThumbnailDataWindow(tv_frame, od_thumbnails.df, (application_path + '/Images/titles/OneDrive.ico'))
+                tv_frame.add(tb, text=f'Thumbnails  ')
+
+                for item in tb.thumbnail_images:
+                    image = ImageTk.getimage(item)
+
+                    fp = io.BytesIO()
+                    image.save(fp, "PNG")
+
+                    digest = hashlib.sha1(fp.getvalue()).hexdigest()
+
+                    if digest not in s_image:
+                        s_image[digest] = item
+
+            pb.stop()
+            value_label['text'] = 'Complete'
+
+            if has_menu_data:
+                save_output(cache, pd.DataFrame(), pd.DataFrame(), '')
+
+            od_thumbnails.df = pd.DataFrame()
+
         if filename['Microsoft.ListSync.db'] != '':
             pb.configure(mode='indeterminate')
             value_label['text'] = 'Gathering offline data. Please wait....'
@@ -4472,8 +4545,11 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
             #fus.rf_data.to_csv('recommended_files.csv', index=False)
             pb.stop()
             value_label['text'] = 'Complete'
+
             if has_menu_data and missing_all_files:
                 save_output(cache, pd.DataFrame(), pd.DataFrame(), '')
+
+            fus.df_data = pd.DataFrame()
 
         if filename['*.dat *.dat.previous'] != '':
             account = os.path.dirname(filename['*.dat *.dat.previous'].replace('/', '\\')).rsplit('\\', 1)[-1]
@@ -4558,6 +4634,8 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                     profile[logs_find[0]].append(path)
 
         for key, value in profile.items():
+            cache = {}
+            logging.info(f'Profile={key}')
             if key == 'logs':
                 if menu_data['odl'] is True:
                     for folder_name in value:
@@ -4613,8 +4691,35 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
                 value_label['text'] = 'Gathering file usage data. Please wait....'
                 fus.set_db_path(f'{v}')
                 logging.info("Stared parsing Microsoft.FileUsageSync.db")
+                has_menu_data = any(menu_data[key] for key in ['json', 'csv', 'html'])
                 fus.get_recent_files_formatted_spo()
-                file_usage_frame.set_data(fus.df_data)
+                file_usage_frame.set_data(fus.df_data, key)
+                value_label['text'] = 'Gathering thumbnail data. Please wait....'
+                logging.info("Stared parsing Microsoft.ListSync.Thumbnails.db")
+                od_thumbnails.set_db_path(f'{v}')
+                od_thumbnails.get_thumbnails()
+                if not od_thumbnails.df.empty:
+                    tb = ThumbnailDataWindow(tv_frame, od_thumbnails.df, (application_path + '/Images/titles/OneDrive.ico'))
+                    tv_frame.add(tb, text=f'Thumbnails  ')
+
+                    for item in tb.thumbnail_images:
+                        image = ImageTk.getimage(item)
+
+                        fp = io.BytesIO()
+                        image.save(fp, "PNG")
+
+                        digest = hashlib.sha1(fp.getvalue()).hexdigest()
+
+                        if digest not in s_image:
+                            s_image[digest] = item
+
+                if has_menu_data:
+                    save_output(cache, pd.DataFrame(), pd.DataFrame(), key)
+
+                od_thumbnails.df = pd.DataFrame()
+                fus.df_data = pd.DataFrame()
+                fus.json_data = None
+
                 pb.stop()
 
             # Then process "settings" if it exists
@@ -4664,22 +4769,56 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
         value_label['text'] = 'Profile complete'
 
     elif x == 'Import JSON':
-        cache = json.load(filename)
-        df = pd.DataFrame()
-        rbin_df = pd.DataFrame()
 
-        pb.stop()
-        pb.configure(mode='indeterminate')
-        value_label['text'] = "Building tree. Please wait..."
-        pb.start()
-        parent_child(cache, account=cache['Account'])
-        pb.stop()
+        if filename.name.lower().endswith('_thumbnails.json'):
+            # Load thumbnail JSON into DataFrame
+            odt = pd.read_json(filename)
 
-        od_counts(filename.name, df, rbin_df, start, x)
+            odt["thumbnail"] = odt["thumbnail"].apply(
+                lambda x: base64.b64decode(x)
+                if pd.notna(x)
+                else None
+            )
+
+            # Create thumbnail tab
+            tb = ThumbnailDataWindow(
+                tv_frame,
+                odt,
+                application_path + '/Images/titles/OneDrive.ico'
+            )
+
+            tv_frame.add(tb, text='Thumbnails  ')
+
+            for item in tb.thumbnail_images:
+                image = ImageTk.getimage(item)
+
+                fp = io.BytesIO()
+                image.save(fp, "PNG")
+
+                digest = hashlib.sha1(fp.getvalue()).hexdigest()
+
+                if digest not in s_image:
+                    s_image[digest] = item
+        else:
+            # Normal OneDrive JSON import
+            cache = json.load(filename)
+            df = pd.DataFrame()
+            rbin_df = pd.DataFrame()
+
+            pb.stop()
+            pb.configure(mode='indeterminate')
+            value_label['text'] = "Building tree. Please wait..."
+            pb.start()
+
+            parent_child(cache, account=cache.get('Account'))
+
+            pb.stop()
+
+            od_counts(filename.name, df, rbin_df, start, x)
 
     elif x == 'Import CSV':
         for k, v in filename.items():
-            if k != '_FileUsageSync.csv' and v != '':
+            if k not in ('_FileUsageSync.csv', '_thumbnails.csv') and v != '':
                 pb.configure(mode='indeterminate')
                 value_label['text'] = 'Building folder list. Please wait....'
                 pb.start()
@@ -4724,6 +4863,12 @@ def start_parsing(x, filename=False, reghive=False, recbin=False, live=False, li
 
     if not live:
         widgets_normal()
+
+    if len(tv_frame.tabs()) > 1:
+        odlmenu.entryconfig("Unload all ODL logs", state='normal')
+        projmenu.entryconfig("Save", state='normal')
+        root.bind('<Alt-s>', lambda event=None: save_proj())
+        projmenu.entryconfig("SaveAs", state='normal')
 
 
 def parse_results(od_settings, filename, key, start, x, reghive, recbin, od_list_sync, od_fod, gui, pb, value_label, save=True):
@@ -4792,12 +4937,22 @@ def get_account(od_settings, od_list_sync):
 
 
 def od_counts(filename, df, rbin_df, start, x):
+    file_count = 0
+    folder_count = 0
+    del_count = 0
+
     if x == 'Import JSON':
-        curItem = tv.get_children()[-1]
-        file_count, del_count, folder_count = json_count(item=curItem)
-    else:
+        children = tv.get_children()
+
+        if children:
+            curItem = children[-1]
+            file_count, del_count, folder_count = json_count(item=curItem)
+        else:
+            pass
+
+    if x != 'Import JSON':
         file_count = df['Type'].isin(['File', 'Document']).sum() if not df.empty else 0
-        folder_count = df.Type.value_counts().get('Folder', 0) if not df.empty else 0
+        folder_count = df['Type'].value_counts().get('Folder', 0) if not df.empty else 0
         del_count = len(rbin_df) if not rbin_df.empty else 0
 
     pb['value'] = 0
@@ -4812,7 +4967,7 @@ def save_output(cache, df, rbin_df, name):
         pb.configure(mode='indeterminate')
         pb.start()
         try:
-            print_json(cache, name, fus.json_data, menu_data['pretty'], menu_data['path'])
+            print_json(cache, name, fus.json_data, od_thumbnails.df, menu_data['pretty'], menu_data['path'])
         except Exception as e:
             logging.warning(f'Unable to save json. {e}')
         pb.stop()
@@ -4823,16 +4978,16 @@ def save_output(cache, df, rbin_df, name):
         pb.start()
 
         comment = {
-            "Path": cache["Path"],
-            "Name": cache["Name"],
-            "Hash": cache["Hash"],
-            "Account": cache["Account"]
+            "Path": cache.get("Path"),
+            "Name": cache.get("Name"),
+            "Hash": cache.get("Hash"),
+            "Account": cache.get("Account")
         }
 
         comment_json = json.dumps(comment)
 
         try:
-            print_csv(df, rbin_df, name, menu_data['path'], comment_json, fus.df_data)
+            print_csv(df, rbin_df, name, menu_data['path'], comment_json, fus.df_data, od_thumbnails.df)
         except Exception as e:
             logging.warning(f'Unable to save csv. {e}')
         pb.stop()
@@ -4842,7 +4997,7 @@ def save_output(cache, df, rbin_df, name):
         pb.configure(mode='indeterminate')
         pb.start()
         try:
-            print_html(df, rbin_df, name, menu_data['path'], cache["Name"], fus.df_data)
+            print_html(df, rbin_df, name, menu_data['path'], cache.get('Name'), fus.df_data, od_thumbnails.df)
         except Exception as e:
             logging.warning(f'Unable to save html. {e}')
         pb.stop()
@@ -4854,13 +5009,17 @@ def save_output(cache, df, rbin_df, name):
 
 def del_logs():
     global proj_name
-    for item in tv_frame.winfo_children():
-        for i in item.winfo_children():
-            if '.!frame.!frame.!myscrollablenotebook.!notebook2.' in str(i):
-                if str(i) == '.!frame.!frame.!myscrollablenotebook.!notebook2.!frame':
-                    continue
-                i.destroy()
 
+    # Remove log tabs
+    for tab_id in tv_frame.tabs():
+        tab_text = tv_frame.tab(tab_id)["text"].strip()
+
+        if tab_text in {"OneDrive Folders", "Thumbnails"}:
+            continue
+
+        tv_frame.forget(tab_id)
+
+    # Remove other frames
     for item in root.winfo_children():
         if '.!frame' in str(item):
             if str(item) == '.!frame':
@@ -4872,7 +5031,9 @@ def del_logs():
             item.destroy()
 
     user_logs.clear()
+
     odlmenu.entryconfig("Unload all ODL logs", state='disable')
+
     if len(tv.get_children()) == 0 and len(tv_frame.tabs()) == 1:
         projmenu.entryconfig("Save", state='disable')
         root.unbind('<Alt-s>')
@@ -4912,7 +5073,7 @@ def load_proj():
         q = Queue()
         stop_event = threading.Event()
         threading.Thread(target=load_project,
-                         args=(filename, q, stop_event, tv, file_items, fus, pb, value_label,),
+                         args=(filename, q, stop_event, tv, file_items, fus, file_usage_frame, pb, value_label,),
                          daemon=True,).start()
         threading.Thread(target=proj_parse,
                          args=(q, proj_name,),
@@ -4960,6 +5121,13 @@ def proj_parse(q, proj_name):
             pt.show()
             user_logs.setdefault(f'{key}_logs.csv', pt)
             q.task_done()
+
+        if '_thumbnails.csv' in data[0]:
+            od_thumbnails.load_csv(data[1])
+            if not od_thumbnails.df.empty:
+                tb = ThumbnailDataWindow(tv_frame, od_thumbnails.df, (application_path + '/Images/titles/OneDrive.ico'))
+                tv_frame.add(tb, text=f'Thumbnails  ')
+                q.task_done()
 
         if data[0] == 'done':
             pb.stop()
@@ -5012,6 +5180,7 @@ def saveAs_proj(filename=None):
 
 
 def thread_save(filename):
+    odt = pd.DataFrame()
     widgets_disable()
     file_manager.tv2.delete(*file_manager.tv2.get_children())
     file_manager.tv3.delete(*file_manager.tv3.get_children())
@@ -5025,7 +5194,13 @@ def thread_save(filename):
     breadcrumb.unbind_up()
     breadcrumb.disable_crumbs()
 
-    save_project(tv, file_items, filename, user_logs, s_image, fus.df_data, pb, value_label)
+    for tab_id in tv_frame.tabs():
+        tab = tv_frame.get_frame(tab_id)
+
+        if isinstance(tab, ThumbnailDataWindow):
+            odt = tab.df
+
+    save_project(tv, file_items, filename, user_logs, root, file_usage_frame.profiles, odt, pb, value_label)
 
     widgets_normal()
     breadcrumb.bindings()
@@ -5224,23 +5399,77 @@ def widgets_normal():
     tv.grid(row=1, column=0, sticky="nsew")
     bind_events(od_btn, on_enter, on_leave, lambda event: switch_view(od_btn, True))
     od_btn.config(state='normal')
-    if len(file_usage_frame.emails_tree.get_children()) > 0:
-        bind_events(email_btn, on_enter, on_leave, lambda event: [switch_view(email_btn), file_usage_frame.show_emails_list()])
+
+    if file_usage_frame.has_content("email"):
+        bind_events(
+            email_btn,
+            on_enter,
+            on_leave,
+            lambda event: [
+                switch_view(email_btn),
+                file_usage_frame.show_emails_list()
+            ]
+        )
         email_btn.config(state='normal')
-    if len(file_usage_frame.meetings_tree.get_children()) > 0:
-        bind_events(t_meeting_btn, on_enter, on_leave, lambda event: [switch_view(t_meeting_btn), file_usage_frame.show_meetings_list()])
+
+    if file_usage_frame.has_content("meeting"):
+        bind_events(
+            t_meeting_btn,
+            on_enter,
+            on_leave,
+            lambda event: [
+                switch_view(t_meeting_btn),
+                file_usage_frame.show_meetings_list()
+            ]
+        )
         t_meeting_btn.config(state='normal')
-    if len(file_usage_frame.events_tree.get_children()) > 0:
-        bind_events(event_btn, on_enter, on_leave, lambda event: [switch_view(event_btn), file_usage_frame.show_events_list()])
+
+    if file_usage_frame.has_content("event"):
+        bind_events(
+            event_btn,
+            on_enter,
+            on_leave,
+            lambda event: [
+                switch_view(event_btn),
+                file_usage_frame.show_events_list()
+            ]
+        )
         event_btn.config(state='normal')
-    if len(file_usage_frame.chats_tree.get_children()) > 0:
-        bind_events(chat_btn, on_enter, on_leave, lambda event: [switch_view(chat_btn), file_usage_frame.show_chats_list()])
+
+    if file_usage_frame.has_content("chat"):
+        bind_events(
+            chat_btn,
+            on_enter,
+            on_leave,
+            lambda event: [
+                switch_view(chat_btn),
+                file_usage_frame.show_chats_list()
+            ]
+        )
         chat_btn.config(state='normal')
-    if len(file_usage_frame.notes_tree.get_children()) > 0:
-        bind_events(notes_btn, on_enter, on_leave, lambda event: [switch_view(notes_btn), file_usage_frame.show_notes_list()])
+
+    if file_usage_frame.has_content("notes"):
+        bind_events(
+            notes_btn,
+            on_enter,
+            on_leave,
+            lambda event: [
+                switch_view(notes_btn),
+                file_usage_frame.show_notes_list()
+            ]
+        )
         notes_btn.config(state='normal')
-    if len(file_usage_frame.files_tree.get_children()) > 0:
-        bind_events(sp_btn, on_enter, on_leave, lambda event: [switch_view(sp_btn), file_usage_frame.show_sp_list()])
+
+    if file_usage_frame.has_content("sharepoint"):
+        bind_events(
+            sp_btn,
+            on_enter,
+            on_leave,
+            lambda event: [
+                switch_view(sp_btn),
+                file_usage_frame.show_sp_list()
+            ]
+        )
         sp_btn.config(state='normal')
 
 
@@ -5486,6 +5715,7 @@ od_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/
 od_p_folder_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/popup/Icon282.ico'))  # treeview 1
 merror_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error_small.png'))  # messages
 minfo_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info_small.png'))  # messages
+inv_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/lightbulb_lit.png'))  # messages
 warning_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/warning.png'))  # messages
 info_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/info.png'))  # ExportResult
 error_img = ImageTk.PhotoImage(Image.open(application_path + '/Images/gui/error.png'))  # ExportResult

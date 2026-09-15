@@ -23,11 +23,9 @@
 #
 
 import os
-import re
 import hashlib
 import logging
 import pandas as pd
-import numpy as np
 from Registry import Registry
 import ode.parsers.recbin
 
@@ -173,6 +171,7 @@ class OneDriveParser:
                         sub_folder = {key: row[key] for key in (
                                     'parentResourceID', 'resourceID', 'eTag', 'Path', 'Name', 'folderStatus', 'spoPermissions', 'volumeID',
                                     'itemIndex', 'sharedItem', 'ListSync')}
+
                     if row[child_col] in scopeID:
                         scopeID.remove(row['resourceID'])
                         for s in df_scope.loc[df_scope[scope_col] == row['resourceID']].to_dict('records'):

@@ -32,6 +32,85 @@ from urllib.parse import unquote
 from ode.utils import change_dtype
 
 
+template_types = {
+    "100": "Custom List",
+    "101": "Document Library",
+    "102": "Survey List",
+    "103": "Links List",
+    "104": "Announcements List",
+    "105": "Contacts List",
+    "106": "Events List",
+    "107": "Tasks List",
+    "108": "Discussion Board",
+    "109": "Picture Library",
+    "110": "DataSources List",
+    "111": "WebTemplate Catalog",
+    "112": "UserInformationList",
+    "113": "WebPart Catalog",
+    "114": "ListTemplate Catalog",
+    "115": "XmlForm Library",
+    "116": "MasterPage Catalog",
+    "117": "NoCode Workflows",
+    "118": "Workflow Process",
+    "119": "WikiPage Library",
+    "120": "Grid List",
+    "121": "SolutionCatalog",
+    "122": "NoCode Workflows Public",
+    "123": "Theme Catalog",
+    "124": "Design Catalog",
+    "130": "DataConnection Library",
+    "140": "Workflow History",
+    "150": "Gantt Tasks",
+    "151": "Help Library",
+    "170": "Promoted links",
+    "171": "Tasks",
+    "200": "Meetings List",
+    "201": "MeetingAgenda List",
+    "202": "MeetingAttendees List",
+    "204": "MeetingDecision List",
+    "207": "MeetingObjectives List",
+    "210": "MeetingTextBox",
+    "211": "MeetingThingsToBring List",
+    "212": "MeetingHomePage Library",
+    "300": "Portal Sites List",
+    "301": "BlogPosts List",
+    "302": "BlogComments List",
+    "303": "BlogCategories List",
+    "400": "ScheduleAndReservations",
+    "401": "ManageResources List",
+    "402": "Resources List",
+    "403": "Whereabouts List",
+    "404": "CallTrackingPhoneMemo",
+    "405": "Circulation",
+    "420": "Timecard",
+    "421": "Holidays",
+    "432": "KPIStatus List",
+    "433": "Report Library",
+    "450": "PerformancePointContent List",
+    "460": "PerformancePointDataSource Library",
+    "470": "PerformancePointDataConnections Library",
+    "480": "PerformancePointDashboards Library",
+    "499": "MicrosoftIMEDictionary List",
+    "505": "VisioProcessDiagram Library (Metric)",
+    "506": "VisioProcessDiagram Library (US Units)",
+    "600": "External List",
+    "700": "MySiteDocumentLibrary",
+    "850": "Pages Library",
+    "851": "Asset Library",
+    "1100": "IssueTracking List",
+    "1200": "AdministratorTasks List",
+    "1220": "Health Rules",
+    "1221": "Health Reports",
+    "1230": "DeveloperSiteDraftApps",
+    "1300": "TranslationManagement Library",
+    "1301": "LanguagesAndTranslators List",
+    "1302": "Record Library",
+    "2002": "PersonalDocument Library",
+    "2003": "PrivateDocument Library",
+    "2100": "Slide Library",
+}
+
+
 class ParseResult:
     def __init__(self, ocr_db, df_list_sync, scopeID, account):
         self.ocr_db = ocr_db
@@ -236,6 +315,52 @@ class SQLiteTableExporter:
             self.log.error(f'Error running query:, {e}')
             self.df_scope = pd.DataFrame()
 
+    def get_a2od_mountpoints(self):
+        try:
+            self.cursor.execute("""
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table'
+                AND name = 'a2od_mountpoints'
+            """)
+
+            if self.cursor.fetchone() is None:
+                return
+
+            df_a2od = pd.read_sql_query("SELECT * FROM a2od_mountpoints", self.conn)
+            df_a2od.rename(columns={"siteId": "siteID", "listId": "listID", "listTemplateType": "templateType", "uniqueId": "UniqueId"}, inplace=True)
+            df_a2od["siteID"] = df_a2od["siteID"].str.replace("-", "", regex=False)
+            df_a2od["listID"] = df_a2od["listID"].str.replace("-", "", regex=False)
+            df_a2od['Type'] = 'Scope'
+
+            self.df_scope["templateType"] = (
+                self.df_scope["templateType"].astype("string")
+            )
+
+            df_a2od["templateType"] = (
+                df_a2od["templateType"].astype("string")
+            )
+
+            self.df_scope = pd.merge(
+                self.df_scope,
+                df_a2od,
+                on=["siteID", "listID", "Type", "templateType"],
+                how="outer",
+                suffixes=("", "_a2od")
+            )
+
+            # Combine duplicate columns, keeping whichever contains data
+            self.df_scope["lastChangeToken"] = (
+                self.df_scope["lastChangeToken"]
+                .combine_first(self.df_scope["lastChangeToken_a2od"])
+            )
+
+            # Remove the duplicate
+            self.df_scope.drop(columns=["lastChangeToken_a2od"], inplace=True)
+
+        except Exception as e:
+            self.log.warning(e)
+
     def combine_duplicate_columns(self, df):
         if df.columns.is_unique:
             return df
@@ -287,6 +412,7 @@ class SQLiteTableExporter:
             self.cursor = self.conn.cursor()
 
             self.get_df_scope()
+            self.get_a2od_mountpoints()
 
             try:
                 # Find tables matching a pattern
@@ -327,6 +453,9 @@ class SQLiteTableExporter:
                         table_name = table[0]
 
                         if table[1] not in ("101", "700"):
+                            template_type = template_types.get(table[1], "Unknown")
+
+                            self.log.investigate(f'{table_name} - templateID: {table[1]} - templateType: {template_type} is not parsable.')
                             continue
 
                         self.cursor.execute(
@@ -379,7 +508,7 @@ class SQLiteTableExporter:
                                 f'AS "MediaServiceOCR"'
                             )
                         else:
-                            ocr_expression = f'NULL AS "MediaServiceOCR"'
+                            ocr_expression = 'NULL AS "MediaServiceOCR"'
 
                         wanted_columns = [
                             "ContentType",
@@ -444,9 +573,19 @@ class SQLiteTableExporter:
                     self.df_scope = pd.merge(
                         self.df_scope,
                         smerged_df,
-                        on=["siteID", "webID", "listID"],
-                        how="outer"
+                        on=["siteID", "listID", "UniqueId"],
+                        how="outer",
+                        suffixes=("", "_smerge")
                     )
+
+                    # Combine duplicate columns, keeping whichever contains data
+                    self.df_scope["webID"] = (
+                        self.df_scope["webID"]
+                        .combine_first(self.df_scope["webID_smerge"])
+                    )
+
+                    # Remove the duplicate
+                    self.df_scope.drop(columns=["webID_smerge"], inplace=True)
 
                 if merged_data:
                     df_list_sync = pd.concat(merged_data, ignore_index=True)
@@ -499,6 +638,7 @@ class SQLiteTableExporter:
                         how='left'
                     )
                     self.df_scope['MountPoint'] = ''
+                    self.df_scope['Type'] = 'Scope'
                     self.df_scope.fillna('', inplace=True)
 
                     df_list_sync = pd.concat([df_list_sync, self.df_scope], ignore_index=True)

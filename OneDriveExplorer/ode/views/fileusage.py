@@ -123,6 +123,13 @@ class EmailHeaderFrame(ttk.Frame):
             yscrollcommand=self.to_scrollbar.set
         )
 
+        self.to_text.configure(
+            background=bg,
+            foreground=fg,
+            selectbackground=bg,
+            selectforeground=fg
+        )
+
         # Configure the scrollbar to scroll the "To" Text widget
         self.to_scrollbar.config(command=self.to_text.yview)
 
@@ -196,6 +203,13 @@ class EmailHeaderFrame(ttk.Frame):
                     yscrollcommand=self.cc_scrollbar.set
                 )
 
+                self.cc_text.configure(
+                    background=bg,
+                    foreground=fg,
+                    selectbackground=bg,
+                    selectforeground=fg
+                )
+
                 # Configure the scrollbar to scroll the "Cc" Text widget
                 self.cc_scrollbar.config(command=self.cc_text.yview)
 
@@ -242,9 +256,19 @@ class EmailHeaderFrame(ttk.Frame):
 
     def update_textbox_theme(self, bg, fg):
         """Updates the background color of all stored text boxes and frames."""
-        self.to_text.configure(background=bg, foreground=fg)
+        self.to_text.configure(
+            background=bg,
+            foreground=fg,
+            selectbackground=bg,
+            selectforeground=fg
+        )
         try:
-            self.cc_text.configure(background=bg, foreground=fg)
+            self.cc_text.configure(
+                background=bg,
+                foreground=fg,
+                selectbackground=bg,
+                selectforeground=fg
+            )
         except Exception:
             pass
 
@@ -541,9 +565,50 @@ class FileUsageFrame(ttk.Frame):
         if not self.fg:
             self.fg = 'black'
 
-        self.data = None  # Placeholder for meetings data
-        self.email_data = None  # Placeholder for emails data
+        self.data = None
+        self.email_data = None
         self.tree_data = {}
+
+        # Profile management
+        self.profiles = {}
+        self.profile_counter = 0
+        self.current_profile = None
+
+        self.available_content = {
+            "email": False,
+            "meeting": False,
+            "event": False,
+            "chat": False,
+            "notes": False,
+            "sharepoint": False,
+        }
+
+        # Profile selector
+        self.profile_frame = ttk.Frame(self)
+
+        self.profile_label = ttk.Label(
+            self.profile_frame,
+            text="Profile:"
+        )
+
+        self.profile_combo = ttk.Combobox(
+            self.profile_frame,
+            state="readonly",
+            width=30
+        )
+
+        self.profile_label.pack(side="left", padx=(5, 5), pady=5)
+        self.profile_combo.pack(side="left", padx=(0, 5), pady=5)
+
+        self.profile_combo.bind(
+            "<<ComboboxSelected>>",
+            self.on_profile_selected
+        )
+
+        self.profile_separator = ttk.Separator(
+            self,
+            orient="horizontal"
+        )
 
         # Create a paned window
         self.paned_window = tk.PanedWindow(self, orient="horizontal")
@@ -562,13 +627,47 @@ class FileUsageFrame(ttk.Frame):
         self.paned_window.add(self.middle_pane)  # Empty Space (for later use)
 
         # Grid placement
-        self.paned_window.grid(row=0, column=0, sticky="nsew")
-        self.right_pane.grid(row=0, column=1, sticky="nsew")
-        self.bottom_pane.grid(row=1, column=1, columnspan=2, sticky="se")
+        self.profile_frame.grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            sticky="ew"
+        )
+
+        self.profile_separator.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            padx=5
+        )
+
+        self.paned_window.grid(
+            row=2,
+            column=0,
+            sticky="nsew"
+        )
+
+        self.right_pane.grid(
+            row=2,
+            column=1,
+            sticky="nsew"
+        )
+
+        self.bottom_pane.grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            sticky="se"
+        )
 
         # Configure grid expansion
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=0)  # Profile
+        self.rowconfigure(1, weight=0)  # Separator
+        self.rowconfigure(2, weight=1)  # Main content
+        self.rowconfigure(3, weight=0)  # Bottom
         self.middle_pane.grid_columnconfigure(0, weight=1)
         self.middle_pane.grid_rowconfigure(0, weight=1)
 
@@ -580,6 +679,13 @@ class FileUsageFrame(ttk.Frame):
         self.create_notes_list()
         self.create_details_view()
         self.create_sp_list()
+
+        self.make_treeview_sortable(self.meetings_tree)
+        self.make_treeview_sortable(self.events_tree)
+        self.make_treeview_sortable(self.emails_tree)
+        self.make_treeview_sortable(self.chats_tree)
+        self.make_treeview_sortable(self.notes_tree)
+        self.make_treeview_sortable(self.files_tree)
 
         self.email_header = EmailHeaderFrame(self.middle_pane)
         self.meeting_header = MeetingHeaderFrame(self.middle_pane)
@@ -714,21 +820,167 @@ class FileUsageFrame(ttk.Frame):
         self.details_tree.pack(side="left", fill="both", expand=True)
         details_scroll.pack(side="right", fill="y")
 
+        self.details_tree.bind("<Button-1>", lambda e: "break")
+
     def clear_details_tree(self):
         """Clear all items from the details treeview."""
         self.details_tree.delete(*self.details_tree.get_children())
 
-    def set_data(self, data: pd.DataFrame):
-        """Set and filter the meetings dataframe, then populate the meetings list."""
-        if self.data is None:
-            self.data = data
-        else:
-            self.data = pd.concat(
-                [self.data, data],
-                ignore_index=True
+    def make_treeview_sortable(self, tree):
+        """Make all Treeview columns sortable."""
+
+        tree._original_headings = {}
+
+        for column in tree["columns"]:
+            text = tree.heading(column)["text"]
+
+            tree._original_headings[column] = text
+
+            tree.heading(
+                column,
+                text=text,
+                command=lambda c=column: self.sort_treeview(tree, c)
             )
 
+    def sort_treeview(self, tree, column, reverse=False):
+        """Sort a Treeview column and display a sort indicator."""
+
+        items = []
+
+        for item in tree.get_children(""):
+            value = tree.set(item, column)
+
+            try:
+                sort_value = float(value.replace(",", ""))
+                value_type = 0
+            except (ValueError, AttributeError):
+                sort_value = str(value).lower()
+                value_type = 1
+
+            items.append(
+                (value_type, sort_value, item)
+            )
+
+        items.sort(
+            key=lambda x: (x[0], x[1]),
+            reverse=reverse
+        )
+
+        # Reorder Treeview
+        for index, (_, _, item) in enumerate(items):
+            tree.move(item, "", index)
+
+        # Update heading indicators
+        for col in tree["columns"]:
+
+            heading_text = tree._original_headings[col]
+
+            if col == column:
+                indicator = "▼" if reverse else "▲"
+                heading_text = f"{heading_text} {indicator}"
+
+            tree.heading(
+                col,
+                text=heading_text,
+                command=lambda c=col: self.sort_treeview(
+                    tree,
+                    c,
+                    not reverse if c == column else False
+                )
+            )
+
+    def set_data(self, data: pd.DataFrame, profile_name=None):
+        """Create a new profile from the supplied DataFrame."""
+
+        if data.empty:
+            return
+
+        # Generate a profile name if one wasn't supplied
+        if profile_name is None:
+            self.profile_counter += 1
+            profile_name = f"Profile {self.profile_counter}"
+
+        # Make sure the name is unique
+        original_name = profile_name
+        counter = 2
+
+        while profile_name in self.profiles:
+            profile_name = f"{original_name} ({counter})"
+            counter += 1
+
+        # Store a copy so later modifications to the original
+        # DataFrame don't affect this profile.
+        self.profiles[profile_name] = data.copy()
+
+        # Update dropdown
+        self.profile_combo["values"] = list(self.profiles.keys())
+
+        # Automatically select the newly-created profile
+        self.profile_combo.set(profile_name)
+
+        self.current_profile = profile_name
+        self.data = self.profiles[profile_name]
+
+        # Reset data structures that are rebuilt by populate_list()
+        self.tree_data = {}
+
         self.populate_list()
+
+        self.available_content["email"] |= (
+            len(self.emails_tree.get_children()) > 0
+        )
+
+        self.available_content["meeting"] |= (
+            len(self.meetings_tree.get_children()) > 0
+        )
+
+        self.available_content["event"] |= (
+            len(self.events_tree.get_children()) > 0
+        )
+
+        self.available_content["chat"] |= (
+            len(self.chats_tree.get_children()) > 0
+        )
+
+        self.available_content["notes"] |= (
+            len(self.notes_tree.get_children()) > 0
+        )
+
+        self.available_content["sharepoint"] |= (
+            len(self.files_tree.get_children()) > 0
+        )
+
+    def on_profile_selected(self, event=None):
+        """Switch the active FileUsageFrame profile."""
+
+        profile_name = self.profile_combo.get()
+
+        if not profile_name:
+            return
+
+        if profile_name not in self.profiles:
+            return
+
+        self.current_profile = profile_name
+        self.data = self.profiles[profile_name]
+
+        # Rebuild all views using the selected profile
+        self.tree_data = {}
+
+        self.populate_list()
+
+        # Remove the combobox text highlight/focus
+        self.profile_combo.selection_clear()
+        self.profile_combo.master.focus_set()
+
+        # Clear detail views
+        self.clear_details_tree()
+        self.file_treeview.clear()
+
+        self.email_header.clear_email()
+        self.meeting_header.clear_meeting()
+        self.sp_header.clear_sp()
+        self.sp_header.o_file_treeview.clear()
 
     def populate_list(self):
         """Populate the meetings treeview."""
@@ -772,7 +1024,7 @@ class FileUsageFrame(ttk.Frame):
                         )
 
                     elif isinstance(row.get("file.ItemProperties.Shared.TeamsMessageThreadId"), str) and \
-                        'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
+                            'notes' in row.get("file.ItemProperties.Shared.TeamsMessageThreadId"):
 
                         text = shared_by if subject == '' else subject
 
@@ -813,6 +1065,10 @@ class FileUsageFrame(ttk.Frame):
 
             for child, child_indexes in sorted(data["children"].items()):
                 self.files_tree.insert(parent_id, "end", text=child, values=(child_indexes,))  # Add child node
+
+    def has_content(self, content_type):
+        """Return True if any profile contains the specified content type."""
+        return self.available_content.get(content_type, False)
 
     def get_chat_subject(self, chat_data):
         """Return the chat subject or a comma-separated list of participants if subject is empty."""
@@ -969,7 +1225,7 @@ class FileUsageFrame(ttk.Frame):
         if "middle" in panes:
             self.paned_window.add(self.middle_pane)
         if "right" in panes:
-            self.right_pane.grid(row=0, column=1, sticky="nsew")
+            self.right_pane.grid(row=2, column=1, sticky="nsew")
 
         # Pack the specified treeview and scroll
         tree.pack(side="left", fill="both", expand=True)

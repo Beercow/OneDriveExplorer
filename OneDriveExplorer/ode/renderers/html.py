@@ -22,14 +22,60 @@
 # SOFTWARE.
 #
 
+import base64
 import os
 import pandas as pd
 import logging
+from io import BytesIO
+from PIL import Image
 
 log = logging.getLogger(__name__)
 
 
-def print_html(df, rbin_df, name, html_path, db_name, fus):
+
+def image_to_html(image_data, width=150, height=150):
+    if image_data is None:
+        return ""
+
+    if isinstance(image_data, (bytearray, memoryview)):
+        image_data = bytes(image_data)
+
+    if not isinstance(image_data, bytes) or not image_data:
+        return ""
+
+    try:
+        with Image.open(BytesIO(image_data)) as image:
+            image_format = image.format.lower()
+
+        mime_types = {
+            "png": "image/png",
+            "jpeg": "image/jpeg",
+            "jpg": "image/jpeg",
+            "gif": "image/gif",
+            "webp": "image/webp",
+            "bmp": "image/bmp",
+            "tiff": "image/tiff",
+            "ico": "image/x-icon",
+        }
+
+        mime_type = mime_types.get(image_format)
+
+        if not mime_type:
+            return ""
+
+        encoded = base64.b64encode(image_data).decode("ascii")
+        src = f"data:{mime_type};base64,{encoded}"
+
+        return (
+            f'<img src="{src}" '
+            f'class="thumbnail" '
+            f'width="150">'
+        )
+
+    except Exception:
+        return ""
+
+def print_html(df, rbin_df, name, html_path, db_name, fus, odt):
     log.info('Started writing HTML file')
 
     if not os.path.exists(html_path):
@@ -50,6 +96,7 @@ def print_html(df, rbin_df, name, html_path, db_name, fus):
 
     html_file = os.path.basename(name).split('.')[0]+"_OneDrive.html"
     fus_file = os.path.basename(name).split('.')[0]+"_FileUsageSync.html"
+    odt_file = os.path.basename(name).split('.')[0]+"_thumbnails.html"
     file_extension = os.path.splitext(name)[1][1:]
 
     if db_name == 'Microsoft.ListSync.db':
@@ -70,4 +117,49 @@ def print_html(df, rbin_df, name, html_path, db_name, fus):
     if not fus.empty:
         output = open(html_path + '/' + fus_file, 'w', encoding='utf-8')
         output.write(fus.to_html(index=False))
+        output.close()
+
+    if not odt.empty:
+        odt_copy = odt.copy()
+        odt_copy["thumbnail"] = odt_copy["thumbnail"].apply(image_to_html)
+        
+        output = open(html_path + '/' + odt_file, 'w', encoding='utf-8')
+
+        output.write(
+            """
+            <script>
+            document.addEventListener("dblclick", function(event) {
+            
+                if (event.target.tagName !== "IMG") {
+                    return;
+                }
+            
+                const dataUrl = event.target.src;
+            
+                if (!dataUrl.startsWith("data:image/")) {
+                    return;
+                }
+            
+                const parts = dataUrl.split(",");
+            
+                const mime = parts[0].match(/data:(.*?);base64/)[1];
+                const binary = atob(parts[1]);
+            
+                const bytes = new Uint8Array(binary.length);
+            
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+            
+                const blob = new Blob([bytes], { type: mime });
+                const blobUrl = URL.createObjectURL(blob);
+            
+                window.open(blobUrl, "_blank");
+            
+            });
+            </script>
+            """
+            )
+            
+        output.write(odt_copy.to_html(escape=False, index=False))
         output.close()

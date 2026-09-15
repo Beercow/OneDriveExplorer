@@ -108,3 +108,7 @@ class ScrollableNotebook(ttk.Frame):
     def enable_traversal(self):
         self.notebookContent.enable_traversal()
         self.notebookTab.enable_traversal()
+
+    def get_frame(self, tab_id):
+        content_id = self.__ContentTabID(tab_id)
+        return self.nametowidget(content_id)

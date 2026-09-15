@@ -22,6 +22,7 @@
 # SOFTWARE.
 #
 
+import base64
 import os
 import json
 import pandas as pd
@@ -30,7 +31,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def print_csv(df, rbin_df, name, csv_path, comment, fus):
+def print_csv(df, rbin_df, name, csv_path, comment, fus, odt):
     log.info('Started writing CSV file')
     data_dict = json.loads(comment)
 
@@ -49,6 +50,7 @@ def print_csv(df, rbin_df, name, csv_path, comment, fus):
 
     csv_file = os.path.basename(name).split('.')[0]+"_OneDrive.csv"
     fus_file = os.path.basename(name).split('.')[0]+"_FileUsageSync.csv"
+    odt_file = os.path.basename(name).split('.')[0]+"_thumbnails.csv"
 
     if data_dict["Name"] == 'Microsoft.ListSync.db':
         csv_file = os.path.basename(name).split('.')[0]+"_OneDrive_list_sync.csv"
@@ -70,3 +72,14 @@ def print_csv(df, rbin_df, name, csv_path, comment, fus):
     if not fus.empty:
         with open(csv_path + '/' + fus_file, 'w', encoding='utf-8', newline='') as f:
             fus.to_csv(f, index=False, encoding='utf-8')
+
+    if not odt.empty:
+        odt_copy = odt.copy()
+        with open(csv_path + '/' + odt_file, 'w', encoding='utf-8', newline='') as f:
+            odt_copy["thumbnail"] = odt_copy["thumbnail"].apply(
+                lambda x: base64.b64encode(x).decode("ascii")
+                if isinstance(x, bytes)
+                else x
+            )
+            odt_copy.to_csv(f, index=False, encoding='utf-8')
+

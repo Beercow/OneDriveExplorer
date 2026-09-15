@@ -33,6 +33,7 @@ import warnings
 import threading
 import traceback
 import queue
+from io import StringIO
 from datetime import datetime
 import ode.parsers.dat as dat_parser
 import ode.parsers.onedrive as onedrive_parser
@@ -45,13 +46,28 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 pd.set_option('future.no_silent_downcasting', True)
 
+INVESTIGATE = 25
+
+logging.addLevelName(INVESTIGATE, "INVESTIGATE")
+
+
+def investigate(self, message, *args, **kwargs):
+    if self.isEnabledFor(INVESTIGATE):
+        self._log(INVESTIGATE, message, args, **kwargs)
+
+
+logging.Logger.investigate = investigate
+
+log_capture_string = StringIO()
+
 logging.basicConfig(level=logging.INFO,
                     format='\n\n%(asctime)s, %(levelname)s, %(message)s\n',
-                    datefmt='%Y-%m-%d %H:%M:%S'
+                    datefmt='%Y-%m-%d %H:%M:%S',
+                    handlers=[logging.StreamHandler(log_capture_string)]
                     )
 
 __author__ = "Brian Maloney"
-__version__ = "2026.08.19"
+__version__ = "2026.09.15"
 __email__ = "bmmaloney97@gmail.com"
 
 rbin = []
@@ -153,8 +169,33 @@ def thread_parser(Parser):
     parsing_complete.set()  # Signal that parsing is complete
 
 
+def report_log(args):
+    log_data = log_capture_string.getvalue()
+
+    log_data = '\n'.join(
+        line for line in log_data.splitlines()
+        if line.strip()
+    )
+
+    with open(
+        os.path.join(args.output_dir, 'OneDriveExplorerMessages_' + datetime.now().strftime("%Y-%m-%dT%H%M%S.log")),
+        "w",
+        encoding="utf-8"
+    ) as f:
+        f.write(log_data)
+
+
 def main():
-    fields_to_check = ['SETTINGS_DAT', 'SYNC_ENGINE', 'SAFE_DEL', 'LIST_SYNC', 'FILES_ON_DEMAND', 'FILE_USAGE_SYNC', 'LOGS']
+    fields_to_check = [
+        'SETTINGS_DAT',
+        'SYNC_ENGINE',
+        'SAFE_DEL',
+        'LIST_SYNC',
+        'FILES_ON_DEMAND',
+        'FILE_USAGE_SYNC',
+        'LIST_SYNC_THUMBNAILS',
+        'LOGS'
+    ]
 
     def has_settings(data):
         if isinstance(data, dict):
@@ -185,6 +226,7 @@ def main():
     parser.add_argument("--LIST_SYNC", help="Microsoft.ListSync.db file to load.", default='')
     parser.add_argument("--FILES_ON_DEMAND", help="Microsoft.FilesOnDemand.db file to load.", default='')
     parser.add_argument("--FILE_USAGE_SYNC", help="Microsoft.FileUsageSync.db file to load.", default='')
+    parser.add_argument("--LIST_SYNC_THUMBNAILS", help="Microsoft.ListSync.Thumbnails.db file to load.", default='')
     parser.add_argument("--REG_HIVE", help="If a registry hive is provided then the mount points of the SyncEngines will be resolved.")
     parser.add_argument("--RECYCLE_BIN", help="$Recycle.Bin folder to load.")
     parser.add_argument("--LOGS", help="Directory to recursively process for ODL logs.", nargs='?', const=True)
@@ -229,7 +271,7 @@ def main():
     active_modes = sum((live_mode, profile_mode, fields_mode))
 
     if active_modes > 1:
-        parser.error("Only one of --LIVE, --PROFILE, or any of --SETTINGS_DAT, --SYNC_ENGINE, --SAFE_DEL, --LIST_SYNC, --FILE_USAGE_SYNC can be used.")
+        parser.error("Only one of --LIVE, --PROFILE, or any of --SETTINGS_DAT, --SYNC_ENGINE, --SAFE_DEL, --LIST_SYNC, --FILE_USAGE_SYNC, --LIST_SYNC_THUMBNAILS can be used.")
 
     # Enforce dependency: --RECYCLE_BIN requires --REG_HIVE
     if args.RECYCLE_BIN and not args.REG_HIVE:
@@ -283,6 +325,9 @@ def main():
 
         if fatal_error_event.is_set():
             log_error_and_exit(fatal_error_message, title="Thread Exception")
+
+    if args.debug:
+        report_log(args)
 
     sys.exit()
 
